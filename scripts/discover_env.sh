@@ -25,7 +25,7 @@ ver() {  # ver <cmd> [version-flag]
   p="$(command -v "$c" 2>/dev/null)"
   if [ -z "$p" ]; then printf '%-12s MISSING\n' "$c"; return; fi
   if is_stub "$p"; then printf '%-12s %s | macOS stub (Xcode CLT not installed)\n' "$c" "$p"; return; fi
-  printf '%-12s %s | %s\n' "$c" "$p" "$("$c" $flag 2>&1 | head -1)"
+  printf '%-12s %s | %s\n' "$c" "$p" "$("$c" "$flag" 2>&1 | head -1)"
 }
 
 {

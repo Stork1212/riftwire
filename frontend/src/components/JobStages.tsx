@@ -15,7 +15,7 @@ export function JobStages({ jobs }: { jobs: Job[] }) {
           <div className="stage" key={t}>
             <span className="stage-label">{LABEL[t]}</span>
             <ProgressBar value={j ? j.progress_percent : 0} label={`${LABEL[t]} progress`} tone={tone} />
-            <span>{j ? <StatusBadge status={j.status} /> : <span className="muted">Waiting</span>}</span>
+            <span style={{ justifySelf: "end" }}>{j ? <StatusBadge status={j.status} /> : <span className="muted">Waiting</span>}</span>
             {j?.last_error && j.status !== "COMPLETED" && (
               <span className="err-text" style={{ gridColumn: "2 / 4" }}>{j.last_error}</span>
             )}

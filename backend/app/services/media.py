@@ -143,6 +143,11 @@ def kill_orphan_if_matches(pid: int, started_at: str | None,
     return "killed"
 
 
+def _scrub(text: str, path: Path) -> str:
+    """Remove internal filesystem paths from tool output shown to users."""
+    return text.replace(str(path), "<input>").replace(str(path.parent), "<dir>")
+
+
 def run_command(args: list[str], timeout: float, *,
                 on_spawn: Callable[[int, str | None], None] | None = None,
                 should_cancel: Callable[[], bool] | None = None,
@@ -205,7 +210,7 @@ def tool_status(executable: str, timeout: float = 10.0) -> ToolStatus:
     except MediaError:
         return ToolStatus(False, path, None)
     first = r.stdout.decode("utf-8", "replace").splitlines()[:1]
-    version = first[0] if first else None
+    version = first[0].split(" Copyright")[0].strip() if first else None
     hw: list[str] = []
     if os.path.basename(path).startswith("ffmpeg"):
         try:
@@ -334,7 +339,8 @@ def probe(ffprobe: str, path: Path, timeout: float, **kw) -> MediaInfo:
     r = run_command([ffprobe, "-v", "error", "-print_format", "json", "-show_format",
                      "-show_streams", "-i", str(path)], timeout, **kw)
     if r.returncode != 0:
-        raise InvalidMedia(f"ffprobe could not read the file: {r.stderr.strip()[:500]}")
+        raise InvalidMedia("ffprobe could not read the file: "
+                           + _scrub(r.stderr.strip(), path)[:500])
     try:
         data = json.loads(r.stdout or b"{}")
     except json.JSONDecodeError as e:
@@ -350,7 +356,7 @@ def _decodes_frame(ffmpeg: str, path: Path, seek: float, timeout: float, **kw) -
     r = run_command(args, timeout, **kw)
     frames = [ln for ln in r.stdout.decode("utf-8", "replace").splitlines()
               if ln and not ln.startswith("#")]
-    return (r.returncode == 0 and bool(frames)), r.stderr.strip()[:500]
+    return (r.returncode == 0 and bool(frames)), _scrub(r.stderr.strip(), path)[:500]
 
 
 def verify_decodable(ffmpeg: str, path: Path, timeout: float,
@@ -416,4 +422,4 @@ def render_thumbnail(ffmpeg: str, src: Path, dst: Path, *, seek: float, width: i
              "-c:v", "mjpeg", "-q:v", "3", "-f", "image2", str(dst)]
     r = run_command(args, timeout, **kw)
     if r.returncode != 0 or not is_valid_jpeg(dst):
-        raise MediaError(f"thumbnail extraction failed: {r.stderr.strip()[:500]}")
+        raise MediaError("thumbnail extraction failed: " + _scrub(r.stderr.strip(), src)[:500])

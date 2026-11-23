@@ -101,6 +101,8 @@ def test_import_duplicate_409(client, media_dir):
 def test_import_rejections(client, settings, media_dir, name, status, code):
     err = assert_error(upload(client, media_dir / name), status, code)
     assert err["message"]
+    assert str(settings.data_dir) not in err["message"]  # no server paths leaked
+    assert "/tmp" not in err["message"] and ".part" not in err["message"]
     assert list(settings.temp_dir.iterdir()) == []
 
 
