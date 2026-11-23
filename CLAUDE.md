@@ -22,8 +22,9 @@ publishing in Phase 1.
 
 ## 2. Target environment
 
-- Apple Silicon MacBook Pro, 18 GB unified memory, 512 GB SSD, macOS.
-- Homebrew is installed per-user (`~/.homebrew`); no administrator access is assumed.
+- Apple Silicon MacBook Pro, 18 GB unified memory, 512 GB SSD (~70 GiB free at inspection), macOS.
+- Apple M3 Pro, macOS 26.5. Homebrew at `/opt/homebrew`; no administrator access is assumed.
+- Project Python: **3.13** (`python3.13`); the default `python3` is 3.15, too new for some wheels.
 - All primary processing is local. Cloud AI is allowed later only where it clearly improves
   quality per dollar.
 - **One heavy processing worker at a time** by default.

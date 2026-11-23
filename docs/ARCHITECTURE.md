@@ -28,8 +28,8 @@ Explicitly out of scope: AI highlight detection, editing/rendering, publishing, 
 |---|---|---|
 | CPU/GPU | Apple Silicon (arm64) | FFmpeg uses all cores per job; VideoToolbox HW encode for Phase 3 |
 | Memory | 18 GB unified | Stream all media I/O; one heavy job at a time; Phase 2 ML models run sequentially and quantized |
-| Storage | 512 GB SSD | ≥ 60 GB free floor enforced; data dir relocatable to an external APFS SSD |
-| OS | macOS | No Docker; native processes; per-user Homebrew (no sudo) |
+| Storage | 512 GB SSD, **~70 GiB free** at inspection | ≥ 60 GB free floor enforced → only ~9 GB usable internally; external APFS SSD for `RIFTWIRE_DATA_DIR` recommended |
+| OS | macOS 26.5, M3 Pro | No Docker; native processes; Homebrew at `/opt/homebrew` (no sudo); project venv on Python 3.13 |
 
 Storage reality check: 1 h of 1080p60 capture ≈ 10–25 GB, 4K60 HEVC ≈ 25–50 GB. With the
 60 GB floor, the internal SSD realistically holds ~10–25 hours of 1080p footage. Plan an
