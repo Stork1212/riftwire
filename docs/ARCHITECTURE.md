@@ -1,6 +1,15 @@
 # RIFTWIRE — Architecture (Phase 1: Foundation)
 
-Status: **Proposed — awaiting owner approval.** Implementation has not started.
+Status: **Approved in principle (2026-11-23)**, subject to three owner requirements, now
+incorporated:
+
+1. Crash-safe ingestion, including a crash between database insert and final file move → §6.
+2. Worker crashes, expired leases and orphaned FFmpeg processes can never cause concurrent
+   processing or corrupt recordings → §7.
+3. The read-only macOS environment inspection must be complete before any dependency is
+   installed → §16.
+
+Implementation has not started and needs a separate go-ahead.
 
 ## 1. Goals for Phase 1
 
@@ -101,7 +110,8 @@ riftwire/
 | video_codec, audio_codec | audio nullable |
 | has_audio | |
 | imported_at | UTC |
-| status | IMPORTED · PROCESSING · READY · FAILED |
+| staging_filename | `<import_id>.staged` in `temp/` until finalized; NULL afterwards |
+| status | STAGED · PROCESSING · READY · FAILED (see §6) |
 | thumbnail_status | PENDING · READY · FAILED |
 | error_message | |
 
@@ -116,6 +126,8 @@ riftwire/
 | created_at, updated_at, started_at, completed_at | UTC |
 | next_attempt_at | backoff schedule |
 | lease_expires_at, claimed_by | crash recovery |
+| lease_token | random per-attempt **fencing token**; every write by a running job must match it (§7) |
+| process_pid, process_started_at | the FFmpeg/ffprobe child currently running for this attempt (§7.4) |
 | last_error | |
 
 Unique `(recording_id, job_type)` → enqueueing is idempotent.
@@ -140,49 +152,185 @@ Connection pragmas: `foreign_keys=ON`, `busy_timeout=15000`, `journal_mode=WAL`,
 `synchronous=NORMAL`. Startup verifies the schema is at Alembic head and reports
 "not ready" otherwise; it never creates tables itself.
 
-## 6. Ingestion flow
+## 6. Ingestion flow (crash-safe)
+
+**Owner requirement:** ingestion must survive a crash at any point, including between the
+database insert and the final file move, without losing, duplicating, overwriting or
+deleting a recording.
+
+### 6.1 Design principle
+
+The database row is written **before** the file is moved and acts as a write-ahead
+**intent record**. Moving the file into `recordings/` is done by exactly one idempotent
+operation, the `INGEST` job, which can be re-run any number of times and always converges.
+The API never moves files itself, so there is never more than one actor finalizing a file.
+
+### 6.2 Request path (API process)
 
 ```
-POST /api/v1/recordings/import  (raw streamed body, filename in query)
- 1. Check extension allow-list, Content-Length ≤ max size, free space ≥ size + 60 GB
- 2. Stream 1 MB chunks → data/temp/<uuid>.part, SHA-256 as it streams,
-    re-check free space periodically; abort + delete .part on disconnect/limit
- 3. ffprobe: allowed container family, ≥1 real video stream (not cover art)
- 4. ffmpeg: decode first frame (catches corrupt/undecodable codecs)
- 5. Duplicate check by sha256 → 409 with existing recording id
- 6. INSERT recording + INGEST job (one transaction), then atomic link/rename
-    into data/recordings/<uuid>.<ext> (never overwrites)
- 7. 201 Created → dashboard switches from "upload progress" to "processing progress"
+POST /api/v1/recordings/import   (raw streamed body, ?filename=…)
+ 1. Pre-checks: extension allow-list, Content-Length ≤ max size,
+    free space ≥ Content-Length + RIFTWIRE_MIN_FREE_DISK_BYTES (60 GB)        → 415/413/507
+ 2. Stream 1 MB chunks → temp/<import_id>.part, SHA-256 + byte count as it streams;
+    free space re-checked every 256 MB; abort + delete .part on disconnect or limit
+ 3. fsync(.part)
+ 4. ffprobe: allowed container family, ≥1 real video stream (not cover art)  → 415/422
+ 5. ffmpeg: decode first frame (corrupt / undecodable codec)                   → 422
+ 6. rename .part → temp/<import_id>.staged          (atomic; marks "validated")
+ 7. ONE transaction:
+      INSERT recordings(status=STAGED, sha256, staging_filename, stored_filename=<id>.<ext>)
+      INSERT jobs(INGEST)
+    sha256 UNIQUE violation → delete .staged, 409 with the existing recording id
+ 8. 201 Created (recording visible in dashboard as STAGED → processing)
 ```
 
-The upload is a raw streamed body rather than multipart so the server writes the file once
-(multipart parsing spools to a system temp file first, doubling disk writes on 20–50 GB
-files). Stale `.part` files older than a configurable age are removed at API startup; files
-in `recordings/` are never touched.
+Every file the API writes lives in `temp/`. Nothing in `recordings/` is ever written by the
+API.
+
+### 6.3 Finalize step (INGEST job, idempotent)
+
+```
+src = temp/<staging_filename>        dst = recordings/<stored_filename>
+case src exists, dst missing   → verify SHA-256 of src
+                                 os.link(src, dst)   # fails if dst exists: never overwrites
+                                 fsync(dst), fsync(recordings/)  → then unlink(src), fsync(temp/)
+case src exists, dst exists    → crash happened after link: verify dst hash == sha256,
+                                 then unlink(src). If hash differs → FAILED, alert,
+                                 touch nothing (never overwrite, never delete)
+case src missing, dst exists   → crash after unlink: verify dst hash; done
+case both missing              → recording FAILED "file missing", ERROR event; nothing deleted
+then (fenced, one transaction) → staging_filename = NULL, status = PROCESSING,
+                                 enqueue METADATA
+finally                        → chmod dst 0444 (read-only: no later stage can modify it)
+```
+
+`os.link` + `unlink` is used instead of `rename` because `link` refuses to replace an
+existing file, giving "never overwrite" at the filesystem level. `temp/` and `recordings/`
+are always on the same volume (both inside `RIFTWIRE_DATA_DIR`).
+
+### 6.4 Crash matrix
+
+| Crash point | State left behind | Recovery |
+|---|---|---|
+| During upload (steps 1–3) | `temp/*.part`, no row | Startup sweep deletes `.part` files older than `RIFTWIRE_STALE_TEMP_SECONDS` |
+| After step 6, before commit | `temp/*.staged`, no row | Startup sweep deletes `.staged` files with **no matching row** older than the threshold (never registered, so not a recording) |
+| After commit, before INGEST runs | row STAGED + `.staged` + INGEST PENDING | Worker runs INGEST normally |
+| During INGEST, before link | same as above, INGEST RUNNING | Lease expires (§7) → INGEST retried |
+| After link, before unlink | file in **both** places | INGEST re-run verifies hash, unlinks temp copy |
+| After unlink, before DB update | file only in `recordings/`, row STAGED | INGEST re-run verifies, updates row |
+| Row STAGED but INGEST job missing (should be impossible — same transaction) | — | Startup reconciler re-enqueues INGEST (unique constraint makes it a no-op if present) |
+
+### 6.5 Startup reconciler (API and worker)
+
+1. `.part` older than threshold → delete (temp only).
+2. `.staged` with no recording row and older than threshold → delete (temp only).
+3. Recording rows in STAGED → ensure an INGEST job exists and is not terminal.
+4. Files in `recordings/` with **no** row → `WARNING` event "orphan recording file";
+   **never deleted** automatically.
+5. READY rows whose file is missing → `ERROR` event; status unchanged, shown on dashboard.
 
 Error mapping: unsupported type 415 · invalid/corrupt 422 · too large 413 · duplicate 409 ·
 low disk 507.
 
-## 7. Job queue and worker
+The upload is a raw streamed body rather than multipart so the server writes the file once
+(multipart parsing spools to a system temp file first, doubling disk writes on 20–50 GB files).
 
-- **Claim:** compare-and-set `UPDATE jobs SET status='RUNNING', claimed_by=?, lease_expires_at=?,
-  attempt_count=attempt_count+1 WHERE id=? AND status IN ('PENDING','RETRY_WAIT') AND
-  next_attempt_at <= now`; only the worker whose update hits 1 row runs the job.
-- **Lease + heartbeat:** a background thread renews the lease every lease/3 seconds and
-  updates the worker heartbeat.
-- **Completion** is conditional on still owning the lease, so a worker that lost its lease
-  cannot overwrite a newer attempt.
-- **Recovery:** on startup and every poll, RUNNING jobs with expired leases go to
-  RETRY_WAIT (or FAILED if attempts are exhausted) and an event is logged.
-- **Retries:** transient errors → backoff `base × 2^(attempt-1)` capped; permanent errors →
-  FAILED immediately.
-- **Concurrency:** `RIFTWIRE_WORKER_CONCURRENCY` (default 1).
-- **Shutdown:** SIGINT/SIGTERM stops claiming, lets the current job finish within a grace
-  period, marks the worker STOPPED. A hard kill is handled by lease expiry.
+## 7. Job queue and worker (crash-safe execution)
 
-Pipeline: `INGEST` (verify stored file size + SHA-256) → `METADATA` (full ffprobe → DB,
-recording READY) → `THUMBNAIL`. Each stage enqueues the next in the same transaction that
-completes it.
+**Owner requirement:** worker crashes, expired leases and orphaned FFmpeg subprocesses must
+never cause concurrent processing of the same job or corrupt a recording.
+
+### 7.1 Claiming
+
+Compare-and-set inside `BEGIN IMMEDIATE`:
+
+```sql
+UPDATE jobs SET status='RUNNING', claimed_by=:worker, lease_token=:new_random_token,
+       lease_expires_at=:now+lease, attempt_count=attempt_count+1, started_at=:now
+WHERE id=:id AND status IN ('PENDING','RETRY_WAIT') AND next_attempt_at <= :now;
+```
+
+Only the claimer whose update affects 1 row runs the job. A fresh `lease_token` is generated
+per attempt.
+
+### 7.2 Fencing (prevents a "zombie" attempt from acting)
+
+Every write a running job makes — progress, completion, failure, recording updates,
+enqueueing the next stage — is a single transaction whose first statement is:
+
+```sql
+UPDATE jobs SET updated_at=:now WHERE id=:id AND status='RUNNING' AND lease_token=:token;
+-- 0 rows → the attempt has lost its lease: roll back, kill its subprocess, stop.
+```
+
+So once a lease is recovered and the job re-claimed with a new token, the old attempt can no
+longer change anything in the database, even if it is still alive (e.g. after a laptop wake).
+
+### 7.3 Output safety (prevents a zombie from corrupting files)
+
+- **Original recordings are never written by any job.** They are opened read-only and
+  `chmod 0444` after finalize.
+- Every generated file is written to an **attempt-unique** temp path
+  (`temp/<job_id>.<lease_token>.<ext>`) and published with an atomic `os.replace` to its
+  deterministic final path **inside the fenced transaction** (the write lock is held, so the
+  lease cannot be recovered between the fence check and the rename).
+- Two attempts can never write the same temp file; a zombie's leftover temp output is
+  swept by age and never becomes a final file.
+
+### 7.4 Subprocess (FFmpeg/ffprobe) control
+
+- Children start with `start_new_session=True` (own process group) so the whole group can be
+  killed; argument lists only; every call has a timeout → `SIGTERM` to the group, then
+  `SIGKILL` after 5 s.
+- The child's PID and start time are recorded on the job row (`process_pid`,
+  `process_started_at`) before it does any work.
+- If the lease-renewal thread fails a fence check, the worker kills the child group
+  immediately and abandons the attempt.
+- **Orphan cleanup:** before any RUNNING job from another worker is recovered, the
+  recovering process checks the recorded PID. It kills it only if the PID is alive **and**
+  its start time and executable (`ps -o lstart=,comm=`) match what was recorded, which
+  protects against PID reuse. Only after the child is confirmed gone does the job move to
+  RETRY_WAIT.
+
+### 7.5 Single worker process + lease recovery
+
+- The worker takes an exclusive OS lock (`fcntl.flock` on `data/worker.lock`) at start. A
+  second worker process exits with a clear error. The OS releases the lock automatically if
+  the worker dies, so **holding the lock proves no other worker process is alive**.
+- Concurrency (`RIFTWIRE_WORKER_CONCURRENCY`, default 1) is threads inside that one process.
+- On startup (lock held): RUNNING jobs claimed by any other worker id are recovered
+  immediately (orphan child killed first, §7.4) rather than waiting for lease expiry.
+- While running: a heartbeat thread renews leases every `lease/3` s (fenced) and updates the
+  `workers` row. Every poll also recovers RUNNING jobs whose lease has expired.
+- Recovered jobs → RETRY_WAIT with backoff, or FAILED once `max_attempts` is reached; a
+  `WARNING` event records the recovery.
+
+### 7.6 Retries, idempotency, shutdown
+
+- Transient errors (timeouts, I/O) → RETRY_WAIT with backoff `base × 2^(attempt-1)`,
+  capped. Permanent errors (invalid/corrupt media, hash mismatch) → FAILED immediately.
+- Handlers are idempotent: INGEST per §6.3; METADATA overwrites the same fields; THUMBNAIL
+  skips if a valid output exists. Completed jobs are never re-claimed.
+- SIGINT/SIGTERM: stop claiming, let the current job finish within a grace period, otherwise
+  kill the child group and release the lease (job → RETRY_WAIT); mark worker STOPPED.
+- macOS sleep/lid close: leases expire during sleep; on wake the renewal fence fails and the
+  attempt kills its child and stops. Optional `caffeinate -i` wrapper in `scripts/start.sh`.
+
+### 7.7 Pipeline
+
+`INGEST` (finalize + verify, §6.3) → `METADATA` (full ffprobe → DB, recording READY) →
+`THUMBNAIL`. Each stage enqueues the next inside its fenced completion transaction.
+
+### 7.8 Crash-safety tests (required)
+
+- Kill (`SIGKILL`) the worker mid-INGEST at each point in the crash matrix (§6.4) via test
+  hooks; restart; assert exactly one stored file, correct hash, recording READY.
+- Two workers racing to claim: each job executes exactly once.
+- Zombie attempt: expire the lease, re-claim, then let the old attempt try to complete →
+  rejected by the fence; final outputs come only from the new attempt.
+- Orphaned FFmpeg: SIGKILL the worker while a long FFmpeg child runs; restart; assert the
+  child is killed before the job is retried; PID-reuse guard tested with a mismatched start time.
+- Second worker process refused by the lock.
 
 ## 8. Media handling
 
@@ -231,7 +379,7 @@ limits, backoff, lease duration, log level, FFmpeg/ffprobe paths and timeouts, t
 
 JSON logs (timestamp, level, component, job_id, recording_id, message, error) to rotating
 files in `data/logs/`. Startup sequence: verify DB + migrations → ensure directories →
-recover expired leases → check FFmpeg → report readiness. Originals are never deleted
+run the ingestion reconciler (§6.5) → take the worker lock and recover leases/orphans (§7.5) → check FFmpeg → report readiness. Originals are never deleted
 automatically.
 
 ## 13. Testing strategy
@@ -261,3 +409,17 @@ Phase 2 adds job types (TRANSCRIBE via whisper.cpp/MLX, AUDIO_PEAKS, SCENE_DETEC
 HIGHLIGHT_CANDIDATES) and a clip-manifest table with confidence scores — all grounded in
 timestamps from real footage. Cloud AI is used only for final ranking where it measurably
 beats local models.
+
+## 16. Environment gate (before any install)
+
+No dependency (Homebrew package, Python, Node) is installed until:
+
+1. `scripts/discover_env.sh` (read-only: no installs, no sudo, no writes except its own
+   report file) has been run on the development Mac;
+2. the results are recorded in `docs/PROJECT_STATUS.md`;
+3. the owner has approved the specific install list derived from them.
+
+The script reports macOS version, chip, cores, memory, disk free on the data volume vs. the
+60 GB floor, filesystem type, Homebrew prefix, Python (≥ 3.11 required), Git, FFmpeg/ffprobe
+(versions, VideoToolbox support), Node/npm, SQLite version, and Xcode command-line tools.
+

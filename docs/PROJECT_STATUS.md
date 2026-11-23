@@ -3,8 +3,9 @@
 _Last updated: 2026-11-23_
 
 ## Current phase
-**Phase 1 — Foundation: planning.** Architecture proposed in `docs/ARCHITECTURE.md`;
-awaiting owner approval. No application code has been committed.
+**Phase 1 — Foundation: planning.** Architecture **approved in principle** (2026-11-23,
+after external review) subject to three requirements, now written into
+`docs/ARCHITECTURE.md` (§6, §7, §16). No application code has been committed.
 
 ## Completed
 - [x] GitHub repository `Stork1212/riftwire` connected; `main` verified (initial commit `faf765e`).
@@ -12,6 +13,16 @@ awaiting owner approval. No application code has been committed.
 - [x] Partial environment inspection (see below).
 - [x] Proposed architecture, data model, queue design, API and dashboard (`docs/ARCHITECTURE.md`).
 - [x] Engineering instructions and coding standards (`CLAUDE.md`).
+- [x] Owner requirement 1 — crash-safe ingestion design: DB row as write-ahead intent,
+      single idempotent finalize step (link → fsync → unlink), crash matrix, startup
+      reconciler (ARCHITECTURE §6).
+- [x] Owner requirement 2 — crash-safe execution design: per-attempt fencing tokens,
+      attempt-unique output paths, process-group control of FFmpeg, PID-reuse-safe orphan
+      cleanup, single-worker OS lock (ARCHITECTURE §7).
+- [x] Owner requirement 3 — environment gate defined (ARCHITECTURE §16);
+      `scripts/discover_env.sh` written (read-only, guards against the macOS
+      Command Line Tools install prompt) and placed on the Mac at
+      `~/Claude/riftwire-env/discover_env.sh`.
 
 ## Environment (development Mac)
 | Item | Status |
@@ -26,13 +37,19 @@ awaiting owner approval. No application code has been committed.
 | FFmpeg / ffprobe | **not yet verified** |
 | Node.js / npm | **not yet verified** |
 
-The AI agent's connection to the Mac provides file access via a sandbox, not a macOS shell,
-so tool versions must be confirmed by running `scripts/discover_env.sh` (read-only) or the
-equivalent command in Terminal.
+The AI agent's connection to the Mac provides file access via a sandbox, not a macOS shell
+(and Terminal is click-only under computer use), so the inspection must be run once by the
+owner:
+
+```bash
+bash ~/Claude/riftwire-env/discover_env.sh ~/Claude/riftwire-env/environment.txt
+```
+
+The agent can read `environment.txt` directly and will record the results here.
 
 ## Blockers
-1. **Architecture approval** from the owner.
-2. **Environment confirmation** — output of the read-only inspection command.
+1. **Environment inspection** — owner runs the command above (requirement 3).
+2. **Go-ahead for implementation** from the owner after reviewing the inspection results.
 3. **Possible installs** (per-user Homebrew, needs owner approval): `ffmpeg`, `python@3.12`,
    `node` — only those found missing.
 
