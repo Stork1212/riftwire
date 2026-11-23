@@ -13,6 +13,20 @@ cannot run macOS commands. The Mac has FFmpeg **9.1**, while the container has F
 **6.1**. Phase 1 should be considered complete only after the owner runs the macOS
 verification in §9 and the results are recorded here.
 
+### Re-verification from a fresh GitHub clone (2026-11-23, 23:40 UTC)
+
+To rule out anything that existed only in the working copy, branch `phase1/foundation` at
+`f49f7fa` was cloned fresh from GitHub into an empty directory and set up with
+`scripts/bootstrap.sh` (pinned `constraints.txt`, `npm ci`), exactly as the owner would:
+
+| Check | Result |
+|---|---|
+| `scripts/test.sh`: ruff, pytest, eslint, tsc, vitest, vite build | ✅ exit 0. **148 passed**, 0 failed (pytest); **13 passed**, 0 failed (vitest); build OK |
+| `scripts/acceptance.py --min-free-gib 1` | ✅ **19/19 steps** ([JSON](acceptance/2026-11-23-fresh-clone-f49f7fa.json)) |
+
+Failures: **none**. Only non-blocking warnings: a Starlette deprecation notice in tests and a
+setuptools "editable install" notice during bootstrap.
+
 ## 1. What was implemented
 
 | Area | Implementation |

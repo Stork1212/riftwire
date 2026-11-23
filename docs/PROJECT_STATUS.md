@@ -89,7 +89,11 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
 - [x] Docs: README, INSTALLATION, TESTING, TROUBLESHOOTING, PHASE1_REPORT, screenshots.
 - [x] Dev-container verification: 148 backend tests (also on Python 3.11), 13 frontend
       tests, lint/typecheck, build, **19/19 acceptance steps**, real-browser UI check.
-- [ ] **macOS verification** (owner runs PHASE1_REPORT §9; agent records results).
+- [x] Re-verified from a **fresh GitHub clone** of `f49f7fa`: 148 + 13 tests, build, 19/19
+      acceptance steps, no failures.
+- [ ] **macOS verification** (owner runs PHASE1_REPORT §9; agent records results). As of
+      23:40 UTC, `~/Claude/riftwire` on the Mac contains only an empty `.git` skeleton (76 KB, no
+      objects): the clone did not complete, probably GitHub sign-in for the private repo.
 - [ ] Pull request `phase1/foundation` → `main` (squash merge recommended).
 
 ## Blockers
