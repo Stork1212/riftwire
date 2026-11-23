@@ -45,7 +45,7 @@ if [ ! -d "$VENV" ]; then
 fi
 info "Installing backend dependencies into backend/.venv"
 "$PY" -m pip install --quiet --upgrade pip
-"$PY" -m pip install --quiet -e "${BACKEND}[dev]"
+"$PY" -m pip install --quiet -c "$BACKEND/constraints.txt" -e "${BACKEND}[dev]"
 ok "Backend environment ready ($("$PY" --version))"
 
 info "Installing frontend dependencies (npm ci)"

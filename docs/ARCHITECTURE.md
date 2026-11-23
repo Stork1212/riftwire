@@ -9,7 +9,8 @@ incorporated:
 3. The read-only macOS environment inspection must be complete before any dependency is
    installed → §16.
 
-Implementation has not started and needs a separate go-ahead.
+Implementation authorized 2026-11-23 and built on branch `phase1/foundation` (see
+`docs/PHASE1_REPORT.md`). §17 lists implementation details added within this design.
 
 ## 1. Goals for Phase 1
 
@@ -422,4 +423,25 @@ No dependency (Homebrew package, Python, Node) is installed until:
 The script reports macOS version, chip, cores, memory, disk free on the data volume vs. the
 60 GB floor, filesystem type, Homebrew prefix, Python (≥ 3.11 required), Git, FFmpeg/ffprobe
 (versions, VideoToolbox support), Node/npm, SQLite version, and Xcode command-line tools.
+
+## 17. Implementation notes (Phase 1 build, within the approved design)
+
+No architectural changes were made. Details added during implementation:
+
+- **Truncation check:** media validation decodes one frame at the start *and* near the end of
+  the file; a recording cut off mid-capture is rejected (422) even though its first frame decodes.
+- **Error hygiene:** FFmpeg/ffprobe stderr is scrubbed of internal paths before it reaches API
+  error messages or job errors.
+- **Worker states** in `workers`: RUNNING, STOPPING, STOPPED, DEAD (marked by the next lock
+  holder); the API reports UNRESPONSIVE when the heartbeat is older than
+  `RIFTWIRE_WORKER_STALE_AFTER_SECONDS` (20 s). Worker exit codes: 2 = schema not at head,
+  3 = another worker holds the lock.
+- **API startup** also runs the ingestion reconciler and recovers *expired* leases (it never
+  recovers live foreign leases; only the lock-holding worker does that).
+- **Test-only hooks** (`RIFTWIRE_ENV=test` only): named crash points and a slow-FFmpeg child,
+  used by the real-process crash tests and `scripts/acceptance.py`.
+- **Thumbnail endpoint** returns an SVG placeholder (`X-Thumbnail-Fallback: true`) while the
+  thumbnail is pending or after it failed.
+- **Reproducible installs:** `backend/constraints.txt` (pip) and `frontend/package-lock.json`.
+- **Runtime files:** PID files in `data/run/`, raw process output in `data/logs/*.out`.
 
