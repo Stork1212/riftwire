@@ -247,3 +247,5 @@ frontend/dist/
 .DS_Store
 # Inspection reports (machine-specific)
 riftwire_environment.txt
+# Build artefacts
+*.whl
