@@ -221,3 +221,29 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---- RIFTWIRE ----
+# Runtime data: recordings, thumbnails, temp files, exports, logs, database
+data/*
+!data/.gitkeep
+!data/README.md
+*.db
+*.db-wal
+*.db-shm
+*.lock
+# Media files must never be committed
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.part
+*.staged
+# Frontend
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+# Local env / OS
+.env.local
+.DS_Store
+# Inspection reports (machine-specific)
+riftwire_environment.txt
