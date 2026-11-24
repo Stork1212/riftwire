@@ -33,8 +33,10 @@ _Last updated: 2026-11-24_
       acceptance 28/28, smoke 28 + 1 macOS-only skip.
     - Also fixed a pre-existing Phase 1 shutdown race: the final heartbeat could overwrite
       STOPPED.
+  - **Mac verification of `9cbe705`** (2026-11-24): all stages exit 0. Backend 365 + 3
+    skipped, bench 47 + 1, frontend 28, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
+    Evidence: `docs/acceptance/2026-11-24-macos-m2-9cbe705/`.
   - **Pending:**
-    - Mac run of the PR head (also covers the merged M1 cache and marker changes);
     - independent review;
     - merge (owner).
     M3 is not started.

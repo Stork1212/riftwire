@@ -54,10 +54,9 @@ physical-SSD gate remains open separately._
 |---|---|---|
 | Cloud container (Linux) | head of PR #12 | `scripts/test.sh` exit 0: ruff clean; backend **367 passed, 1 skipped** (macOS-only), 1 third-party warning; bench **48**; frontend lint/typecheck clean, **28/28**; build OK. Acceptance **28/28** (`--min-free-gib 1`, test-only: the container has 28 GiB free). Alembic up/down/up + `alembic check` clean. Smoke (test-only 1 GiB floor) **28 PASS + 1 macOS-only SKIP**, twice |
 | Mutation checks | — | Removing the output fence, the supersession check or the aggregate re-check each made the corresponding test fail |
-| Owner's Mac | pending | Pinned script; this run also covers the final M1 cache and marker changes merged in `8e5b5e3` |
+| Owner's Mac (macOS 26.5.2, M3 Pro, APFS internal disk, **60 GiB floor**) | `9cbe705` | All stages exit 0, clean tree before and after: backend **365 passed, 3 skipped** (second filesystem), including the macOS volume-identity test; bench 47 + 1; frontend **28/28**; build; acceptance **28/28** (M2-1 to M2-6); smoke **30/30**. Also covers the M1 cache and marker changes merged in `8e5b5e3`. Evidence: `docs/acceptance/2026-11-24-macos-m2-9cbe705/` |
 
 **Not yet verified:**
-- the Mac run;
 - a visual check of the new dashboard pages in a real browser (covered by component
   tests, not yet looked at);
 - the M1 physical-SSD gate (unchanged).
