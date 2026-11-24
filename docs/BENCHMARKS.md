@@ -83,6 +83,7 @@ run started.
 | models (tiny + base + small) | 679 MB |
 | speech datasets + TTS cache | 226 MB + 29 MB |
 | Hugging Face cache / temp area | 0 (redirected; empty after the run) |
+| `~/.cache/huggingface` left by the superseded old-launcher runs | 380 KB (owner-checked; metadata only) |
 | results | < 1 MB |
 
 Free space on `/System/Volumes/Data`: 63.10 GiB at start, **minimum 61.97 GiB**. The floor
