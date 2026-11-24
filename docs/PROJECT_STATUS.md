@@ -3,14 +3,82 @@
 _Last updated: 2026-11-24_
 
 ## Current phase
-**Phase 1 — Foundation: complete and merged into `main`** (PR #1, squash commit `3c52e53`).
-Verified on the target Mac (169/169 backend, 13/13 frontend, build, 19/19 acceptance at 60 GiB)
-and accepted after two independent reviews. The roadmap and product spec (PR #2) are merged
-(`0ccf674`).
+**Phase 2 — Sources & Signals: in progress.** Phases 2–3 are delivered as milestones M0–M7
+(approved [`PHASE2_PROPOSAL.md`](PHASE2_PROPOSAL.md); phase numbering unchanged).
 
-**Release candidate:** `v0.1.0` = `main` @ `7ed5be7` (launch scripts and dashboard verified
-on the Mac). The tag is pushed by the owner.
-**Next:** review of the Phase 2 technical proposal (PR #3). **Phase 2 is not authorized.**
+- **M0 (benchmark spike): complete.** The owner approved it on 2026-11-24 as a completed
+  benchmarking milestone, with the documented timestamp-accuracy and memory limitations.
+  It is **not** production acceptance of transcription or highlight detection. Results:
+  [`BENCHMARKS.md`](BENCHMARKS.md). Tag `v0.2.0-m0`.
+- **Next: M1, Storage Architecture.** The checklist
+  ([`M1_STORAGE_CHECKLIST.md`](M1_STORAGE_CHECKLIST.md)) awaits owner approval. **M1 has not
+  started.** M2 is not authorized.
+
+### Merged state of `main` (2026-11-24)
+| PR | Content | Reviewed head | Squash commit on `main` |
+|---|---|---|---|
+| #1 | Phase 1 Foundation | `4867e70` | `3c52e53` |
+| #2 | Product spec + roadmap | — | `0ccf674` |
+| #4 | Storage lifecycle & retention manager (D10), docs only | `f6c1219` | `1b84d80` |
+| #3 | Phase 2 technical proposal (M0–M7) | `c53a9cb` | `6502a52` |
+| #5 | M0 benchmark harness + results | `20184ca` | `a7554b3` |
+
+Tags: `v0.1.0` → `7ed5be7` (pushed by the owner). `v0.2.0-m0` → the verified `main` after
+this close-out (see below).
+
+### Combined verification before merging PR #5 (`main` @ `6502a52` + `20184ca`)
+The merged tree was byte-identical to the verified tree (`e768cea`).
+
+- `scripts/test.sh`: ruff clean; backend **169/169**; bench **48/48**; frontend **13/13**;
+  lint, typecheck and production build OK.
+- `scripts/acceptance.py`: **19/19**.
+- `scripts/smoke_test.sh`: **28 passed, 0 failed, 1 skipped** (`caffeinate`, macOS only).
+
+Both the acceptance and smoke scripts ran in the cloud container with an explicit test-only
+floor of 1 GiB: the container has only about 28 GiB free, and at 60 GiB the floor correctly
+refuses every import. On the Mac, these scripts passed at the 60 GiB floor (19/19 and 30/30
+in Phase 1). The product floor is unchanged.
+
+### Approved technical decisions (owner, 2026-11-24)
+- **Transcription:** MLX Whisper. **base** is the provisional default; **small** is optional,
+  pending chunked memory testing.
+- **Timestamps:** raw word timestamps are preserved unchanged. Any correction needs
+  independent validation on authorized real commentary.
+- **Storage:** 60 GiB free-space floor, mandatory per volume. External storage is the
+  **SanDisk 1 TB Portable SSD**; the architecture is capacity-independent.
+- **Budgets:** benchmark storage 3.5 GB. Cloud AI **$0**. **Ollama deferred.**
+- **Retention manager** (D10): design approved, documentation only. Not implemented
+  (Phase 5).
+
+### Storage on the Mac (measured 2026-11-24 04:33 UTC)
+- **Free space** on `/System/Volumes/Data`: **62.48 GiB**, 2.48 GiB above the 60 GiB floor.
+- **M0 benchmark** in `~/Claude/riftwire`:
+  - `bench/.venv`: 597 MiB;
+  - `data/models`: 679 MiB (whisper tiny, base, small);
+  - `data/bench`: 725 MiB (datasets, TTS cache, signal videos).
+  - Total about 2.0 GiB (2.06 GB), within the approved 3.5 GB. Everything is regenerable.
+- `~/Claude/riftwire-env`: 18 MB (results, smoke data). `~/.cache/huggingface`: 380 KB.
+- A leftover worktree folder `~/Claude/riftwire-m0` (1.9 MB, from the refused 22:40 run) is
+  marked prunable. The owner may remove it with `git worktree prune` and delete the folder.
+  The agent did not delete it.
+
+### Remaining limitations (M0)
+- **Synthetic data only:**
+  - WER/timing come from macOS `say` speech;
+  - signals come from easy hard cuts between test patterns;
+  - nothing validates highlight quality.
+  Authorized real gameplay remains a separate evaluation set.
+- **Raw word timing fails the targets** for every model: starts are early by 51–283 ms, and
+  base/small ends are early by about 110–150 ms. The constant-offset correction is
+  synthetic-only and **not validated**.
+- **Memory:** a single 60-minute pass with small reached a 7.2 GB footprint (MLX peak
+  3.12 GB) and grew swap by 1 GiB. Chunked transcription is required before small can be
+  used (M4).
+- Whisper's temperature fallback causes small run-to-run WER differences (largest: tiny,
+  5.8 % vs 6.5 %).
+- No thermal data: `pmset` reports no CPU power status on this Mac.
+- Internal headroom is only about 2.5 GiB above the floor. Real footage needs the external
+  SSD (M1).
 
 ## Completed
 - [x] GitHub repository `Stork1212/riftwire` connected; `main` verified (initial commit `faf765e`).
@@ -120,23 +188,39 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
       status.sh, stop.sh, restart persistence, caffeinate, localhost-only, dashboard serving).
 - [x] Dashboard checked in the built-in browser on the Mac: all pages render with real data,
       thumbnails load, no console errors (`docs/acceptance/2026-11-24-macos-dashboard-check.md`).
-- [ ] Tag `v0.1.0` on `7ed5be7` (verified `main`). Pushing tags is blocked for the agent's
-      session (proxy policy 403); the owner pushes the tag from the Mac.
-- [x] Phase 2 technical implementation proposal: PR #3 (`docs/PHASE2_PROPOSAL.md`), awaiting review and approval. No Phase 2 code.
+- [x] Tag `v0.1.0` on `7ed5be7` (verified `main`), pushed by the owner (agent tag pushes are
+      blocked by proxy policy).
+- [x] Phase 2 technical implementation proposal: PR #3, approved and merged (`6502a52`).
+
+## Phase 2 progress
+- [x] Retention manager specification (D10), PR #4. Merged (`1b84d80`), documentation only.
+- [x] **M0 benchmark spike**, PR #5. Merged (`a7554b3`).
+  - Isolated `bench/.venv` (mlx-whisper 0.4.3, no PyTorch); hash-pinned dependencies.
+  - Free-space watchdog on every volume; git-safety checks; per-volume peak estimate.
+  - Official Mac run 2026-11-24 04:04 UTC: 24/24 transcription runs plus signals.
+    Reproduced by the 03:47 run.
+  - Approved by the owner as a completed benchmarking milestone.
+- [ ] Tag `v0.2.0-m0` on verified `main`.
+- [ ] **M1 Storage Architecture**: checklist prepared, awaiting approval.
 
 ## Blockers
-None. Before importing **real footage** at scale, the external APFS SSD (ordered: SanDisk 1 TB Portable SSD) is needed (only
-~9 GiB is importable above the 60 GiB floor on the internal SSD).
+None for planning. **M1 Mac-side multi-volume verification** needs either the SSD
+(owner-formatted APFS) or an approved disk-image test. Real footage at scale needs the SSD.
 
 ## Decisions pending
-- Approval of the Phase 2 technical proposal, including its listed dependency and
-  model-download approvals.
-- Open questions in PRODUCT_SPEC §7 (first YouTube channel, Ollama install and model size,
-  SSD timing, Higgsfield use cases, brand assets).
+- Approval of the [M1 checklist](M1_STORAGE_CHECKLIST.md), including the multi-volume Mac
+  test method and the exFAT policy.
+- Separately and later: migrating real recordings to the SSD.
+- Open questions in PRODUCT_SPEC §7 (first YouTube channel, Ollama and model size when
+  un-deferred, Higgsfield use cases, brand assets).
 
 ## Next steps
-1. Review of the Phase 2 technical proposal, PR #3 (ChatGPT + owner) → approval or amendments.
-2. Owner decisions listed in the proposal (§0, §19, §22).
+1. Owner review of `docs/M1_STORAGE_CHECKLIST.md` → approval or amendments.
+2. M1 implementation on branch `phase2/m1-storage`, with tests, Mac verification and
+   independent review.
+3. Optional owner housekeeping: switch `~/Claude/riftwire` to `main`
+   (`git checkout main && git pull --ff-only`) and remove the prunable `riftwire-m0`
+   worktree.
 
 ## Review notes for external reviewers
 - Source of truth is this repository's `main` branch.

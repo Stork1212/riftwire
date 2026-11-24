@@ -23,8 +23,14 @@ decisions D1–D9: [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md)):
 5. **Publishing** — YouTube Shorts first, human approval, official APIs.
 6. **Analytics & Optimization**.
 
-**Current:** Phase 1 complete. The next phase starts only after the owner approves its
-detailed technical proposal. **Do not implement work from a later phase early.**
+Phases 2 and 3 are delivered as milestones **M0–M7** ([`docs/PHASE2_PROPOSAL.md`](docs/PHASE2_PROPOSAL.md),
+approved): M0–M4 belong to Phase 2, M5–M7 to Phase 3. Phase numbering is unchanged.
+
+**Current:** Phase 2 in progress. **M0 (benchmark spike) complete (v0.2.0-m0)**; results in
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md). **Next: M1 Storage Architecture**, which starts
+only after the owner approves [`docs/M1_STORAGE_CHECKLIST.md`](docs/M1_STORAGE_CHECKLIST.md).
+Each milestone needs owner approval before it starts. **Do not implement work from a later
+milestone or phase early.**
 
 ## 2. Target environment
 
@@ -34,11 +40,24 @@ detailed technical proposal. **Do not implement work from a later phase early.**
 - All primary processing is local. Cloud AI is allowed later only where it clearly improves
   quality per dollar, and only within an owner-set budget (initially **$0**).
 - **One heavy processing worker at a time** by default.
-- **Keep ≥ 60 GB free** on the data volume (configurable `RIFTWIRE_MIN_FREE_DISK_BYTES`).
+- **Keep ≥ 60 GiB free on every volume RIFTWIRE writes to** (`RIFTWIRE_MIN_FREE_DISK_BYTES`).
+  The floor is mandatory; only isolated test runs may lower it, explicitly.
 - Storage plan: an **external APFS SSD** for recordings, temp files, models and exports
   (configurable locations, Phase 2). Ordered: **SanDisk 1 TB Portable SSD**. Storage logic is
   **capacity-independent**: never assume a drive size; use measured free space and per-volume
   floors. Until it arrives, ~9 GiB is importable on the internal SSD.
+
+### Approved technical decisions (owner, 2026-11-24, after M0)
+- **Transcription engine: MLX Whisper (`mlx-whisper`).** **`base` is the provisional
+  default.** `small` is an optional higher-quality model, pending chunked memory testing.
+  `tiny` is not used.
+- **Raw word timestamps are preserved unchanged.** Any timestamp correction is a separate,
+  versioned layer and needs independent validation on authorized real commentary.
+- **60 GiB floor mandatory per volume.** Benchmark storage budget: **3.5 GB**.
+- **Cloud AI budget: $0.** **Ollama remains deferred.**
+- **External storage: SanDisk 1 TB Portable SSD**, capacity-independent architecture.
+- M0 is a completed benchmarking milestone, **not** production acceptance of transcription
+  or highlight detection.
 
 ## 3. Stack (Phase 1)
 
@@ -162,4 +181,5 @@ cd frontend && npm test && npm run build
 scripts/test.sh                   # everything: lint, tests, build
 backend/.venv/bin/python scripts/acceptance.py   # 19-step E2E (isolated data dir)
 scripts/smoke_test.sh             # launch scripts + dashboard smoke test (isolated data dir)
+bench/run_m0.sh                   # M0 benchmark on the Mac (isolated bench/.venv; see bench/README.md)
 ```

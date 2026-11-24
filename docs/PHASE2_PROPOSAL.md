@@ -1,9 +1,10 @@
 # RIFTWIRE — Phase 2 Technical Implementation Proposal
 
-_Status: **PROPOSAL — for owner approval and independent review. Not authorized for
-implementation.** Author: Claude (AI engineer), 2026-11-24. Baseline: `main` after Phase 1
-(v0.1.0). Requirements: [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md) (owner decisions D1–D9),
-[`ROADMAP.md`](ROADMAP.md)._
+_Status: **APPROVED by the owner** (merged 2026-11-24, PR #3). Each milestone still needs
+owner approval before implementation. **M0 complete** ([`BENCHMARKS.md`](BENCHMARKS.md),
+`v0.2.0-m0`); **next: M1** ([`M1_STORAGE_CHECKLIST.md`](M1_STORAGE_CHECKLIST.md)). Author:
+Claude (AI engineer), 2026-11-24. Baseline: `main` after Phase 1 (v0.1.0). Requirements:
+[`PRODUCT_SPEC.md`](PRODUCT_SPEC.md), [`ROADMAP.md`](ROADMAP.md)._
 
 ---
 
@@ -22,8 +23,8 @@ authorized source ─► rights confirmed ─► permitted acquisition (file / s
 As the owner requested, this proposal covers **roadmap Phases 2 and 3 together** (Sources &
 Signals + Highlight Detection & Review), delivered in **8 milestones (M0–M7)**. Each
 milestone is a separate PR that is tested, verified on the Mac and reviewed.
-Editing/rendering and publishing remain Phases 4–5. On approval, `ROADMAP.md` will be
-renumbered to match.
+Editing/rendering and publishing remain Phases 4–5. **Roadmap phase numbering is unchanged
+(owner, 2026-11-24):** M0–M4 belong to Phase 2 and M5–M7 to Phase 3.
 
 **Decisions requested** (detail in §19):
 1. Approve this proposal (scope, milestones, acceptance criteria).
