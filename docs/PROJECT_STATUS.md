@@ -244,8 +244,13 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
         `/private/var`.
     - Fixed in the tests. The 2 skips are the real second-filesystem tests (macOS has no
       `/dev/shm`); they run on Linux and are covered by the SSD checks.
+  - **Mac verification, internal disk (owner, 2026-11-24 06:28 UTC, `9fc026f`): passed.**
+    - `scripts/test.sh`: backend 208 passed + 2 skipped (the real second-filesystem tests;
+      macOS has no `/dev/shm`); bench 47 + 1 skipped; frontend 17/17; build OK.
+    - **Acceptance 22/22 at the 60 GiB floor** (FFmpeg 9.1, VideoToolbox), including
+      storage steps M1–M3.
+    - Evidence: `docs/acceptance/2026-11-24-macos-m1-9fc026f-*`.
   - **Not yet verified:**
-    - Mac re-run of the fixed tests;
     - every physical-SSD check (checklist §11).
 
 ## Blockers

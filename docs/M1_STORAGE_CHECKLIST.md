@@ -155,7 +155,8 @@ capacity-independent: never assume a size; decide on measured free space.
 - [x] Phase 1 suite, acceptance and smoke stay green. Acceptance is extended with steps
       M1–M3: **22/22**. Smoke in the Linux container: 28 passed, 1 macOS-only skip.
 - [ ] Mac verification:
-  - [ ] internal disk only, first;
+  - [x] internal disk only, first: owner run 2026-11-24 on `9fc026f`. Tests pass (2 skips:
+        second filesystem); **acceptance 22/22 at 60 GiB**; smoke 30/30 (on `29f612e`).
   - [ ] then, **with approval**, the SanDisk SSD, owner-formatted APFS, with an empty
         `riftwire` folder. No real data is moved.
 
