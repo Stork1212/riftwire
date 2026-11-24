@@ -22,7 +22,7 @@ from riftbench import config, dataset, models, signals
 from riftbench.config import FLOOR_BYTES, MARGIN_BYTES, ROOT, bench_dir, dir_size, models_dir
 
 WAV_BPS = 32_000
-VENV_INSTALLED = 426 * 1000**2      # measured: closure installed size (no torch)
+VENV_INSTALLED = 600 * 1000**2      # measured on the Mac: 597 MB incl. bytecode (no torch)
 PIP_TRANSIENT = 350 * 1000**2       # 121 MB wheels + unpack/compile area, freed after setup
 RESULTS = 50 * 1000**2              # results.json, per-run hypotheses, logs
 HF_METADATA = 5 * 1000**2           # huggingface_hub metadata under HF_HOME / local_dir/.cache

@@ -176,7 +176,10 @@ def transcribe_all(a: argparse.Namespace, dirs: list[Path], out: Path, res: dict
                 h = r["result"]
                 row.update(load_s=h["load_s"], transcribe_s=h["transcribe_s"],
                            rtf=h["transcribe_s"] / row["audio_s"],
-                           mlx_peak_bytes=h.get("mlx_peak_bytes"), scores=score(truth, h))
+                           mlx_peak_bytes=h.get("mlx_peak_bytes"), scores=score(truth, h),
+                           tts_artifact_words=sum(
+                               w["w"].strip(".,!?").lower() in report.TTS_ARTIFACTS
+                               for w in h["words"]))
                 for key in ("mlx_version", "mlx_whisper_version", "torch_installed"):
                     res[key] = h.get(key)
                 print(f"  {k:<5} {truth['name']:<18} RTF {row['rtf']:.3f}  "
@@ -200,6 +203,7 @@ def finalize(out: Path, res: dict) -> None:
         by_model.setdefault(r["model"], []).append(r)
     res["evaluation"] = {m: report.evaluate_model(rs) for m, rs in by_model.items()}
     res["recommendation"] = report.recommend(res["evaluation"])
+    res["dataset_version"] = dataset.DATASET_VERSION
     res["disk"] = {
         "bench_venv": dir_size(ROOT / "bench" / ".venv"),
         "models": dir_size(models_dir()),

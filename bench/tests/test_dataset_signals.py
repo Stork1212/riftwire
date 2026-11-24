@@ -46,3 +46,23 @@ def test_signals_detects_known_cuts_and_bursts(tmp_path):
 def test_match_tolerance():
     m = signals.match([1.0, 5.0], [1.2, 5.4, 9.0])
     assert m["true_positives"] == 1 and m["precision"] == 1 / 3
+
+
+def test_isolated_words_are_spoken_lowercase_and_old_versions_rebuilt(tmp_path):
+    spoken = []
+
+    class Recording(ToneTTS):
+        def _synth(self, text, voice, out, trimmed):
+            spoken.append(text)
+            super()._synth(text, voice, out, trimmed)
+
+    spec = dataset.DatasetSpec("t-v", "timing", 0.2, "clean")
+    d = dataset.build(spec, Recording(tmp_path / "c"), tmp_path / "ds")
+    truth = json.loads((d / "truth.json").read_text())
+    assert truth["version"] == dataset.DATASET_VERSION
+    assert spoken and all(t == t.lower() for t in spoken)  # never a lone upper-case "I"
+    assert any(w["w"] != w["w"].lower() for w in truth["words"])  # truth keeps the word
+    truth["version"] = 1
+    (d / "truth.json").write_text(json.dumps(truth))
+    dataset.build(spec, Recording(tmp_path / "c"), tmp_path / "ds")
+    assert json.loads((d / "truth.json").read_text())["version"] == dataset.DATASET_VERSION

@@ -100,6 +100,19 @@ def _pct(xs: list[float], q: float) -> float:
     return xs[lo] + (xs[hi] - xs[lo]) * (k - lo)
 
 
+def _bias(s_signed: list[float], e_signed: list[float]) -> dict:
+    """Signed errors (hyp − ref): negative = early. Shows systematic offsets that a
+    constant correction or padding could remove, which absolute errors hide."""
+    return {
+        "start_bias_median_ms": statistics.median(s_signed) if s_signed else float("nan"),
+        "end_bias_median_ms": statistics.median(e_signed) if e_signed else float("nan"),
+        "start_late_over_100ms": sum(x > 100 for x in s_signed) / len(s_signed)
+        if s_signed else float("nan"),
+        "end_early_over_100ms": sum(x < -100 for x in e_signed) / len(e_signed)
+        if e_signed else float("nan"),
+    }
+
+
 def timing(ref_words: list[dict], hyp_words: list[dict]) -> dict:
     """ref_words: [{w,start_ms,end_ms}]; hyp_words: [{w,start_ms,end_ms}]."""
     ref = [norm_word(r["w"]) for r in ref_words]
@@ -107,13 +120,15 @@ def timing(ref_words: list[dict], hyp_words: list[dict]) -> dict:
     keep = [i for i, w in enumerate(hyp_norm) if w]
     hyp = [hyp_norm[i] for i in keep]
     a = align(ref, hyp)
-    starts, ends = [], []
+    starts, ends, s_signed, e_signed = [], [], [], []
     for ri, hj in a.pairs:
         if ri is None or hj is None or ref[ri] != hyp[hj]:
             continue
         r, h = ref_words[ri], hyp_words[keep[hj]]
-        starts.append(abs(h["start_ms"] - r["start_ms"]))
-        ends.append(abs(h["end_ms"] - r["end_ms"]))
+        s_signed.append(h["start_ms"] - r["start_ms"])
+        e_signed.append(h["end_ms"] - r["end_ms"])
+        starts.append(abs(s_signed[-1]))
+        ends.append(abs(e_signed[-1]))
     n = len(starts)
     return {
         "matched_words": n, "ref_words": len(ref),
@@ -123,6 +138,7 @@ def timing(ref_words: list[dict], hyp_words: list[dict]) -> dict:
         "end_p95_ms": _pct(ends, 0.95),
         "start_within_100ms": sum(x <= 100 for x in starts) / n if n else float("nan"),
         "start_within_250ms": sum(x <= 250 for x in starts) / n if n else float("nan"),
+        **_bias(s_signed, e_signed),
     }
 
 
@@ -151,6 +167,8 @@ def score_timing_set(ref_words: list[dict], hyp_words: list[dict], block: int = 
            "hyp_words": 0}
     starts: list[float] = []
     ends: list[float] = []
+    s_signed: list[float] = []
+    e_signed: list[float] = []
     for rb, hb in zip(ref_blocks, hyp_blocks, strict=True):
         w = wer(" ".join(r["w"] for r in rb), " ".join(h["w"] for h in hb))
         for key in tot:
@@ -160,8 +178,10 @@ def score_timing_set(ref_words: list[dict], hyp_words: list[dict], block: int = 
         hyp = [norm_word(hb[i]["w"]) for i in keep]
         for ri, hj in align(ref, hyp).pairs:
             if ri is not None and hj is not None and ref[ri] == hyp[hj]:
-                starts.append(abs(hb[keep[hj]]["start_ms"] - rb[ri]["start_ms"]))
-                ends.append(abs(hb[keep[hj]]["end_ms"] - rb[ri]["end_ms"]))
+                s_signed.append(hb[keep[hj]]["start_ms"] - rb[ri]["start_ms"])
+                e_signed.append(hb[keep[hj]]["end_ms"] - rb[ri]["end_ms"])
+                starts.append(abs(s_signed[-1]))
+                ends.append(abs(e_signed[-1]))
     n = len(starts)
     errors = tot["substitutions"] + tot["deletions"] + tot["insertions"]
     return {
@@ -172,5 +192,6 @@ def score_timing_set(ref_words: list[dict], hyp_words: list[dict], block: int = 
         "end_p95_ms": _pct(ends, 0.95),
         "start_within_100ms": sum(x <= 100 for x in starts) / n if n else float("nan"),
         "start_within_250ms": sum(x <= 250 for x in starts) / n if n else float("nan"),
+        **_bias(s_signed, e_signed),
         "aligned_in_blocks_of": block,
     }

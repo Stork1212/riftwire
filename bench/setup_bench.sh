@@ -20,7 +20,7 @@ done
 
 # Check each volume written to: the venv (repo volume) and pip's temp area (TMPDIR).
 TMP="${TMPDIR:-/tmp}"
-VENV_MB=450   # measured ~426 MB installed
+VENV_MB=620   # measured 597 MB installed on the Mac (incl. bytecode)
 PIP_TMP_MB=350  # wheels (~121 MB) + unpack area, freed after install
 need_on() {  # need_on PATH MB
   local mount free_kb need_kb

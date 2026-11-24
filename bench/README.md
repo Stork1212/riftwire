@@ -10,7 +10,7 @@ It is **not** part of the RIFTWIRE app: nothing under `backend/` imports it.
 - **Isolated environment:** a project-local `bench/.venv` (Python 3.13). It contains only
   the hash-pinned packages in `requirements.txt`: mlx-whisper 0.4.3 and yt-dlp 2026.11.23
   plus their dependencies, **without PyTorch** (about 121 MB download, about 426 MB
-  installed). yt-dlp is installed but this harness never uses it. No system-wide installs.
+  estimated installed; measured 597 MB on the Mac including bytecode). yt-dlp is installed but this harness never uses it. No system-wide installs.
 - **Models:** only `mlx-community/whisper-{tiny,base,small}-mlx`, and only the two files
   each needs (`config.json`, `weights.npz`). Downloads happen only through
   `fetch-models --confirm`, after a free-space check, and each file is verified by size
@@ -38,6 +38,10 @@ cd ../riftwire-m0
 bench/run_m0.sh            # add RIFTWIRE_BENCH_BUDGET_GB=<approved GB> if the owner raises it
 ```
 
+Re-runs may also use an existing **clean** checkout of this branch that already has
+`bench/.venv` and the models: nothing is downloaded again, and the plan counts only what is
+still to be written. The launcher's git checks apply the same way.
+
 `run_m0.sh` runs these steps; it stops on any failure:
 
 1. `plan` (stdlib only, before anything is installed): a **per-volume peak** estimate. It
@@ -63,15 +67,15 @@ Exit codes: 0 ok · 1 step failed · 3 floor breach · 4 git safety · 10 floor 
 
 | Component | Final | Transient | Where |
 |---|---|---|---|
-| bench venv (no torch) | 426 MB | +350 MB pip unpack area | repo volume / `TMPDIR` |
+| bench venv (no torch) | 600 MB (measured 597 MB on the Mac) | +350 MB pip unpack area | repo volume / `TMPDIR` |
 | whisper tiny / base / small | 74 / 144 / 481 MB | none (same-dir `.incomplete` → rename) | data dir |
 | HF metadata | ≤ 5 MB | none | `HF_HOME` in data dir |
-| speech WAVs (111 min, 16 kHz mono) | 217 MB | +38 MB variant mixing | data dir |
+| speech WAVs (121 min, 16 kHz mono) | 237 MB | +38 MB variant mixing | data dir |
 | TTS clip cache | ≤ 70 MB | none | data dir |
 | 10 min 1080p60 video at 12 Mbit/s + 640 px proxy, ×1.3 margin | 1.34 GB | none (`.tmp` → rename) | data dir |
 | results | ≤ 50 MB | none | `~/Claude/riftwire-env` |
-| **Total with small** | **2.81 GB** | **peak ≈ 3.16 GB** | |
-| **Total without small** | **2.32 GB** | **peak ≈ 2.67 GB** | |
+| **Total with small** | **3.00 GB** | **peak ≈ 3.35 GB** | |
+| **Total without small** | **2.51 GB** | **peak ≈ 2.86 GB** | |
 
 `plan` prints these figures from the actual registry and dataset parameters, minus anything
 already on disk. Use `bench/run.py plan --models ... --budget-gb N`.
@@ -105,10 +109,10 @@ This deletes the worktree, including its venv, models and datasets; results stay
 | Measurement | How |
 |---|---|
 | WER | Word-level Levenshtein alignment on normalized text, run on every set. |
-| Word timing | `timing-*` sets: each word is synthesized separately, its silence trimmed, then the words are concatenated with seeded gaps, so every word's start and end is known to the sample. Reported: median, p95, and the share of words within 100 ms and 250 ms. |
+| Word timing | `timing-*` sets: each word is synthesized separately (spoken lower-case, since `say` reads a lone "I" as "capital I"), its silence trimmed, then the words are concatenated with seeded gaps, so every word's start and end is known to the sample. Reported: absolute median and p95, signed bias (negative = early) for starts and ends, and the share of words within 100 ms and 250 ms. A harness check fails if any hypothesis contains a TTS artifact such as "capital". |
 | Speed | RTF = transcription seconds ÷ audio seconds. Model load time is reported separately. |
-| Memory | Peak memory footprint (includes Metal unified memory) and max RSS, per run. |
-| Robustness | `noisy` variant: pink noise at about 10 dB SNR plus loud bursts. `music` variant: a tonal bed about 15 dB below the speech. |
+| Memory | Per run: peak RSS (the proposal's target, ≤ 3 GB), process peak footprint (includes Metal buffers and MLX's cache, the strict figure) and MLX's own peak allocation. |
+| Robustness | `noisy` variant: pink noise at about 10 dB SNR plus loud bursts. `music` variant: a tonal bed about 15 dB below the speech. WER targets are judged on the `natural-*` sets (clean, noisy, music). Timing-set WER is information only: isolated-word speech is unnatural. |
 | Duration scaling | Timing sets of 1, 10 and 60 minutes. |
 | Signals | 10 min of synthetic 1080p60 video with known hard cuts and loudness bursts: proxy throughput (VideoToolbox), scene-cut and loudness-burst recall and precision at ±250 ms. |
 | Disk | Measured sizes of the venv, models, datasets, signal files and results. Free space is logged before and after each run. |

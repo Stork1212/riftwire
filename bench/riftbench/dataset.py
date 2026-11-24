@@ -49,6 +49,10 @@ class DatasetSpec:
     seed: int = 7
 
 
+# v2: isolated words are spoken lower-case. macOS `say` reads a lone upper-case "I" as
+# "capital I", which corrupted v1 timing sets (found in the first Mac run, 2026-11-24).
+DATASET_VERSION = 2
+
 DEFAULT_SETS = (
     DatasetSpec("timing-1m-clean", "timing", 1, "clean"),
     DatasetSpec("timing-10m-clean", "timing", 10, "clean"),
@@ -57,6 +61,7 @@ DEFAULT_SETS = (
     DatasetSpec("timing-60m-clean", "timing", 60, "clean"),
     DatasetSpec("natural-10m-clean", "natural", 10, "clean"),
     DatasetSpec("natural-10m-noisy", "natural", 10, "noisy"),
+    DatasetSpec("natural-10m-music", "natural", 10, "music"),
 )
 QUICK_SETS = (
     DatasetSpec("timing-1m-clean", "timing", 1, "clean"),
@@ -68,7 +73,8 @@ def build(spec: DatasetSpec, tts: TTS, out_dir: Path) -> Path:
     """Build (or reuse) a dataset; returns the directory containing audio.wav + truth.json."""
     d = out_dir / spec.name
     truth_path = d / "truth.json"
-    if truth_path.exists() and (d / "audio.wav").exists():
+    if (truth_path.exists() and (d / "audio.wav").exists()
+            and json.loads(truth_path.read_text()).get("version") == DATASET_VERSION):
         return d
     d.mkdir(parents=True, exist_ok=True)
     rng = random.Random(f"{spec.name}:{spec.seed}")
@@ -85,7 +91,8 @@ def build(spec: DatasetSpec, tts: TTS, out_dir: Path) -> Path:
         texts.append(sent)
         if spec.kind == "timing":
             for i, w in enumerate(sent.split()):
-                clip = read_pcm(tts.clip(w, voice, trimmed=True))
+                # Spoken lower-case (see DATASET_VERSION); ground truth keeps the word.
+                clip = read_pcm(tts.clip(w.lower(), voice, trimmed=True))
                 start = duration_ms(pcm)
                 pcm.extend(clip)
                 words.append({"w": w, "start_ms": round(start, 1),
@@ -102,7 +109,8 @@ def build(spec: DatasetSpec, tts: TTS, out_dir: Path) -> Path:
     if audio != clean and clean.exists() and spec.variant != "clean":
         clean.unlink()
     truth = {
-        "name": spec.name, "kind": spec.kind, "variant": spec.variant, "tts": tts.name,
+        "version": DATASET_VERSION, "name": spec.name, "kind": spec.kind,
+        "variant": spec.variant, "tts": tts.name,
         "voices": voices, "seed": spec.seed, "duration_ms": round(duration_ms(pcm), 1),
         "text": " ".join(texts), "words": words if spec.kind == "timing" else None,
         "snr_db": snr_db,
