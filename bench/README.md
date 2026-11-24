@@ -24,6 +24,16 @@ It is **not** part of the RIFTWIRE app: nothing under `backend/` imports it.
 
 ## Run on the Mac
 
+One command does everything below, with free space measured before setup and every 5 s
+during the run (`free_space.csv`). A watchdog stops the whole run if free space drops below
+60 GiB:
+
+```bash
+bench/run_m0.sh
+```
+
+Or step by step:
+
 ```bash
 bench/setup_bench.sh                                     # creates bench/.venv (checks space)
 bench/.venv/bin/python bench/run.py plan                 # exact files/sizes, no network
