@@ -10,15 +10,21 @@ A local-first, AI-powered gaming media automation platform. It turns authorized 
 gameplay recordings (initially GTA VI) into short-form 9:16 videos and, in later phases,
 publishes them to YouTube Shorts, Instagram Reels, Facebook Reels and X.
 
-Phases:
-1. **Foundation** (current) — ingestion, metadata, thumbnails, persistent job queue, dashboard.
-2. Analysis — transcription, scene/audio analysis, highlight candidates.
-3. Editing — vertical reframing, subtitles, hooks, rendering (VideoToolbox).
-4. Publishing — official platform APIs, scheduling, human approval gates.
-5. Analytics — performance tracking feeding back into highlight selection.
+Phases (approved roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md); requirements and owner
+decisions D1–D9: [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md)):
+1. **Foundation** — ingestion, metadata, thumbnails, persistent job queue, dashboard.
+   **Complete (v0.1.0)**.
+2. **Sources & Signals** — rights/provenance, permitted acquisition (local, authorized
+   YouTube/Twitch, selective sections), configurable storage, local transcription, signals.
+3. **Highlight Detection & Review** — AI provider interface ($0 budget), per-game prompts,
+   evidence-backed highlights, review dashboard, exports.
+4. **Editing Preset Studio & Rendering** — per-channel brand kits, 1080×1920 presets,
+   subtitles, hooks, outro, VideoToolbox renders.
+5. **Publishing** — YouTube Shorts first, human approval, official APIs.
+6. **Analytics & Optimization**.
 
-**Do not implement work from a later phase early.** No AI clipping, auto-editing or social
-publishing in Phase 1.
+**Current:** Phase 1 complete. The next phase starts only after the owner approves its
+detailed technical proposal. **Do not implement work from a later phase early.**
 
 ## 2. Target environment
 
@@ -26,9 +32,11 @@ publishing in Phase 1.
 - Apple M3 Pro, macOS 26.5. Homebrew at `/opt/homebrew`; no administrator access is assumed.
 - Project Python: **3.13** (`python3.13`); the default `python3` is 3.15, too new for some wheels.
 - All primary processing is local. Cloud AI is allowed later only where it clearly improves
-  quality per dollar.
+  quality per dollar, and only within an owner-set budget (initially **$0**).
 - **One heavy processing worker at a time** by default.
 - **Keep ≥ 60 GB free** on the data volume (configurable `RIFTWIRE_MIN_FREE_DISK_BYTES`).
+- Storage plan: a **2 TB external APFS SSD** for recordings, temp files, models and exports
+  (configurable locations, Phase 2). Until then, ~9 GiB is importable on the internal SSD.
 
 ## 3. Stack (Phase 1)
 
@@ -69,6 +77,16 @@ hosting, message brokers, extra microservices.
     phases must ground every highlight, timestamp and caption in actual footage.
 13. **Bind to `127.0.0.1` only.** No permissive CORS. No secrets in code, logs or commits.
 14. **Respect content rights.** Only authorized footage; official APIs for publishing.
+    Sources require a user-confirmed rights record (ownership, creator permission or
+    licence). Use permitted acquisition methods only, and **never bypass access
+    restrictions** (DRM, members-only, private, age/geo/login gates).
+15. **$0 AI budget by default.** Local-first (Ollama, local Whisper). Paid providers are
+    optional, off by default, usage-tracked and limit-enforced. **No paid API charge without
+    explicit owner authorization.** API keys only in the macOS Keychain.
+16. **Versioned prompts.** Separate, versioned highlight-detection and editing prompts per
+    game. Every AI result records prompt version, provider, model and evidence.
+17. **Optional integrations stay optional.** The core pipeline (clipping, editing, subtitles,
+    branding, rendering) never depends on Higgsfield or any paid service.
 
 ## 5. Coding standards
 
@@ -120,10 +138,13 @@ hosting, message brokers, extra microservices.
 - Anything destructive: deleting files outside `data/temp/`, rewriting git history,
   force-pushing, dropping tables.
 - Architecture changes to this document or `docs/ARCHITECTURE.md`.
-- Adding any paid service or cloud AI call.
-- Starting a new phase.
+- Adding any paid service or cloud AI call, or raising the AI budget above $0.
+- Downloading AI models (any size during evaluation; larger models only after benchmarks).
+- New project dependencies (pip/npm) beyond those already approved.
+- Purchasing services.
+- Starting a new phase (requires an approved technical proposal).
 
-## 9. Key commands (once implemented)
+## 9. Key commands
 
 ```bash
 scripts/bootstrap.sh              # create backend/.venv and frontend/node_modules
@@ -132,4 +153,7 @@ scripts/start.sh                  # API + worker (+ built dashboard on :8000)
 scripts/stop.sh
 cd backend && .venv/bin/pytest    # backend tests
 cd frontend && npm test && npm run build
+scripts/test.sh                   # everything: lint, tests, build
+backend/.venv/bin/python scripts/acceptance.py   # 19-step E2E (isolated data dir)
+scripts/smoke_test.sh             # launch scripts + dashboard smoke test (isolated data dir)
 ```

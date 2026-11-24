@@ -1,4 +1,4 @@
-# RIFTWIRE — Architecture (Phase 1: Foundation)
+# RIFTWIRE — Architecture (Phase 1: Foundation — implemented, v0.1.0)
 
 Status: **Approved in principle (2026-11-23)**, subject to three owner requirements, now
 incorporated:
@@ -9,8 +9,10 @@ incorporated:
 3. The read-only macOS environment inspection must be complete before any dependency is
    installed → §16.
 
-Implementation authorized 2026-11-23 and built on branch `phase1/foundation` (see
-`docs/PHASE1_REPORT.md`). §17 lists implementation details added within this design.
+Implementation authorized 2026-11-23, verified on the target Mac, independently reviewed
+twice, and merged into `main` as `3c52e53` (PR #1). See `docs/PHASE1_REPORT.md`. §17 lists
+implementation details added within this design; §18 summarizes how the approved roadmap
+extends it.
 
 ## 1. Goals for Phase 1
 
@@ -428,10 +430,7 @@ invalid file → interrupted-job recovery), recorded in `docs/PHASE1_REPORT.md`.
 
 ## 15. Looking ahead (not Phase 1)
 
-Phase 2 adds job types (TRANSCRIBE via whisper.cpp/MLX, AUDIO_PEAKS, SCENE_DETECT,
-HIGHLIGHT_CANDIDATES) and a clip-manifest table with confidence scores — all grounded in
-timestamps from real footage. Cloud AI is used only for final ranking where it measurably
-beats local models.
+See §18 (approved roadmap) and `docs/PRODUCT_SPEC.md` / `docs/ROADMAP.md`.
 
 ## 16. Environment gate (before any install)
 
@@ -472,4 +471,20 @@ No architectural changes were made. Details added during implementation:
     are listed before tokens are read;
   - startup runs recovery before the reconciler.
 - **Runtime files:** PID files in `data/run/`, raw process output in `data/logs/*.out`.
+
+## 18. Planned evolution (approved roadmap; not implemented)
+
+The roadmap (`docs/ROADMAP.md`, owner decisions D1–D9 in `docs/PRODUCT_SPEC.md`) was approved
+in principle on 2026-11-23. It **extends** this architecture without replacing it:
+
+| Concern | Phase 1 (implemented) | Planned extension |
+|---|---|---|
+| Work execution | SQLite queue: leases, fencing, recovery, orphan cleanup | Same queue; new job types (probe/acquire, transcribe, signals, highlight detection, render, publish), all idempotent and fenced |
+| Storage | One `RIFTWIRE_DATA_DIR`; 60 GiB floor | Configurable recordings/temp/models/exports/assets locations; per-volume floor; cross-volume crash-safe finalize; offline-volume safety; 2 TB external APFS SSD |
+| Sources | Local upload | Rights/provenance records with user confirmation; permitted acquisition only (no bypassing); selective VOD sections |
+| AI | none | Provider interface (Ollama default; OpenAI/Anthropic optional), $0 default budget, usage ledger, per-game versioned prompts, evidence-validated outputs |
+| Editing/publishing | none | Per-channel brand kits and presets; VideoToolbox renders; human-approved publishing via official APIs (YouTube Shorts first) |
+
+Each phase gets its own technical proposal for approval before implementation. A proposal
+that changes this document's guarantees must say so explicitly.
 

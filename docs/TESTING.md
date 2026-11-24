@@ -73,3 +73,19 @@ thumbnail size, listing, jobs COMPLETED, restart, persistence, duplicate, invali
 smaller value (the dev container run used `--min-free-gib 1`).
 
 Results are recorded in [`PHASE1_REPORT.md`](PHASE1_REPORT.md) and `docs/acceptance/`.
+
+## Launch-script smoke test (macOS)
+
+```bash
+scripts/smoke_test.sh            # report → ~/Claude/riftwire-env/smoke-<timestamp>.txt
+```
+
+Uses the real `start.sh`, `status.sh` and `stop.sh` against an isolated data directory (your
+library is untouched). It checks:
+- processes, `caffeinate`, readiness, localhost-only binding and dashboard serving;
+- two synthetic imports plus a duplicate, processing to READY, thumbnails and metadata;
+- graceful stop (processes and port gone, worker recorded STOPPED, PID files removed);
+- restart with persistence.
+
+It leaves RIFTWIRE running for a browser check and prints the stop command.
+
