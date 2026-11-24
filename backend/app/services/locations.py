@@ -250,7 +250,11 @@ def register_root(rows: list[StorageLocation], kind: str, root: Path,
     """Write (or adopt) the marker in an existing, verified-safe root and return a new
     row (not yet added to a session). The caller checked that creating/using ``root`` is
     safe (internal default, or a mounted, allowed volume)."""
-    vi = volumes.volume_info(root)
+    try:
+        vi = volumes.volume_info(root)
+    except Exception as e:
+        raise StorageOffline(f"{kind}: the drive could not be identified ({e})",
+                             details={"kind": kind, "reason": PROBE_FAILED}) from e
     if not volumes.filesystem_allowed(vi.fs_type):
         raise StorageOffline(f"{kind}: filesystem '{vi.fs_type}' is not allowed (APFS "
                              "required)", details={"kind": kind,
@@ -298,7 +302,13 @@ def load_layout(db: Database, settings: Settings, component: str = "app", *,
                 continue
             root = settings.default_location(kind)
             root.mkdir(parents=True, exist_ok=True)  # internal data dir: always safe
-            row = register_root(rows, kind, root, settings.min_free_disk_bytes)
+            try:
+                row = register_root(rows, kind, root, settings.min_free_disk_bytes)
+            except Exception as e:  # never crash startup: the kind stays unregistered
+                log.error(f"could not register {kind} location: {e}")
+                record_event(s, Severity.ERROR, component, "storage_registration_failed",
+                             f"Could not register the {kind} location: {e}")
+                continue
             s.add(row)
             rows.append(row)
             record_event(s, Severity.INFO, component, "storage_location_registered",

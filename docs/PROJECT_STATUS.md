@@ -224,13 +224,19 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
     database journal, full re-hash, one-transaction switch, never deletes.
   - **Dashboard:** Storage page; `GET /api/v1/storage`.
   - **Verified in the cloud container:**
-    - `scripts/test.sh`: backend **206**, bench 48, frontend **17**, build;
+    - `scripts/test.sh`: backend **210**, bench 48, frontend **17**, build;
     - acceptance **22/22** (new storage steps M1–M3, real processes);
     - smoke 28 passed, 1 macOS-only skip.
     - The real end-to-end migration of `exports` to a second filesystem was checked in a
       browser.
+  - **First Mac run (owner, 2026-11-24 06:15 UTC) failed at startup.** On macOS
+    `diskutil info` accepts only mount points or devices, not folders inside a drive, and
+    the probe failure was fatal. Fixed: the mount point now comes from `df -P`, the
+    filesystem from `mount`, and the volume UUID from `diskutil` on the mount point. A probe
+    failure now leaves that location offline and never crashes startup. Tests use real macOS
+    output formats.
   - **Not yet verified:**
-    - Mac run on the internal disk;
+    - Mac re-run on the internal disk;
     - every physical-SSD check (checklist §11).
 
 ## Blockers

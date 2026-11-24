@@ -310,7 +310,10 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
     mig = open_migration(db, kind)
     if mig is None:
         dest.mkdir(parents=True, exist_ok=True)
-        vi = volumes.volume_info(dest)
+        try:
+            vi = volumes.volume_info(dest)
+        except Exception as e:
+            raise MigrationRefused(f"could not identify the destination drive: {e}") from e
         if not volumes.filesystem_allowed(vi.fs_type):
             raise MigrationRefused(f"filesystem '{vi.fs_type}' is not allowed (APFS required)")
         vol_uuid = _volume_uuid_for(db, dest, vi.hw_volume_uuid)

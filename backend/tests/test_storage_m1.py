@@ -757,3 +757,90 @@ def test_migration_destination_validation_and_canonical_paths(db, mig_settings, 
     p = migration.plan(db, mig_settings, lay, "exports", link / "exports" / ".." / "exp")
     assert p.ok, p.problems
     assert p.dest == real / "exp"          # symlink and '..' resolved before anything is stored
+
+
+# =========================================================================== macOS probe
+
+DF_DATA = """Filesystem   512-blocks      Used Available Capacity  Mounted on
+/dev/disk3s5  965595304 812345678 131234567    87%    /System/Volumes/Data
+"""
+DF_SSD = """Filesystem   512-blocks      Used Available Capacity  Mounted on
+/dev/disk5s1  1953503232 1024 1953502208     1%    /Volumes/SanDisk SSD
+"""
+MOUNT = """/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
+devfs on /dev (devfs, local, nobrowse)
+/dev/disk3s5 on /System/Volumes/Data (apfs, local, journaled, nobrowse, protect, root data)
+/dev/disk5s1 on /Volumes/SanDisk SSD (apfs, local, nodev, nosuid, journaled, noowners)
+/dev/disk6s1 on /Volumes/Camera Card (exfat, local, nodev, nosuid, noowners, noatime, fskit)
+"""
+
+
+def _plist(uuid_: str, name: str, fs: str = "apfs") -> str:
+    import plistlib
+    return plistlib.dumps({"VolumeUUID": uuid_, "VolumeName": name, "FilesystemType": fs,
+                           "MountPoint": "/x"}).decode()
+
+
+class FakeRunner:
+    def __init__(self, df: str, diskutil: str | None):
+        self.df, self.diskutil, self.calls = df, diskutil, []
+
+    def __call__(self, args):
+        self.calls.append(args)
+        if args[0].endswith("df"):
+            return self.df
+        if args[0].endswith("mount"):
+            return MOUNT
+        if self.diskutil is None:
+            raise RuntimeError("diskutil failed")
+        return self.diskutil
+
+
+def test_darwin_probe_asks_diskutil_about_the_mount_point_not_the_folder():
+    run = FakeRunner(DF_DATA, _plist("DATA-UUID", "Data"))
+    vi = volumes.DarwinProbe(run).info(Path("/Users/greg/Claude/riftwire/data/recordings"))
+    assert vi == volumes.VolumeInfo("/System/Volumes/Data", "apfs", "DATA-UUID", "Data")
+    du = [c for c in run.calls if c[0].endswith("diskutil")][0]
+    assert du[-1] == "/System/Volumes/Data"  # regression: diskutil rejects plain folders
+
+
+def test_darwin_probe_handles_names_with_spaces_and_exfat():
+    vi = volumes.DarwinProbe(FakeRunner(DF_SSD, _plist("SSD-UUID", "SanDisk SSD"))).info(
+        Path("/Volumes/SanDisk SSD/riftwire/recordings"))
+    assert (vi.mount_point, vi.fs_type, vi.hw_volume_uuid) == (
+        "/Volumes/SanDisk SSD", "apfs", "SSD-UUID")
+    df_card = DF_SSD.replace("/Volumes/SanDisk SSD", "/Volumes/Camera Card")
+    vi = volumes.DarwinProbe(FakeRunner(df_card, _plist("C", "Card", "exfat"))).info(
+        Path("/Volumes/Camera Card/x"))
+    assert vi.fs_type == "exfat" and not volumes.filesystem_allowed(vi.fs_type, "Darwin")
+
+
+def test_darwin_probe_survives_diskutil_failure():
+    vi = volumes.DarwinProbe(FakeRunner(DF_DATA, None)).info(Path("/Users/x"))
+    assert vi.fs_type == "apfs" and vi.hw_volume_uuid is None  # still identified by marker
+
+
+class BrokenProbe(volumes.VolumeProbe):
+    cacheable = False
+
+    def info(self, path):
+        raise RuntimeError("probe exploded")
+
+
+def test_probe_failure_never_crashes_startup(settings, tmp_path):
+    from tests.conftest import run_migrations
+    run_migrations(settings.database_url)
+    d = Database(settings.database_url)
+    volumes.set_probe(BrokenProbe())
+    try:
+        lay = load_layout(d, settings, "test")           # must not raise
+        assert lay.locations == {}
+        assert all(st.reason == locations.NOT_REGISTERED for st in lay.states())
+        assert len(events(d, "storage_registration_failed")) == 5
+        with pytest.raises(StorageOffline):
+            UploadSession(settings, "x.mp4", 10, d)
+    finally:
+        volumes.set_probe(None)
+    lay = load_layout(d, settings, "test")               # probe works again → registers
+    assert all(st.online for st in lay.states())
+    d.dispose()

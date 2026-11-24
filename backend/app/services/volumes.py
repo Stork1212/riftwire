@@ -16,6 +16,7 @@ import plistlib
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,14 +45,58 @@ class VolumeProbe:
         raise NotImplementedError
 
 
+Runner = Callable[[list[str]], str]
+
+
+def _run(args: list[str]) -> str:
+    return subprocess.run(args, capture_output=True, text=True, timeout=15,
+                          check=True).stdout
+
+
+def parse_df_mount_point(df_out: str) -> str:
+    """``df -P <path>`` → the "Mounted on" column (may contain spaces)."""
+    lines = [ln for ln in df_out.splitlines() if ln.strip()]
+    if len(lines) < 2:
+        raise ValueError("unexpected df output")
+    parts = lines[-1].split(None, 5)
+    if len(parts) < 6:
+        raise ValueError("unexpected df output")
+    return parts[5]
+
+
+def parse_mount_fs(mount_out: str, mount_point: str) -> str | None:
+    """``mount`` (macOS): ``/dev/disk3s5 on /System/Volumes/Data (apfs, local, ...)``."""
+    for line in mount_out.splitlines():
+        head, sep, opts = line.rpartition(" (")
+        if not sep or " on " not in head:
+            continue
+        mnt = head.split(" on ", 1)[1]
+        if mnt == mount_point:
+            return opts.split(",", 1)[0].strip(" )").lower()
+    return None
+
+
 class DarwinProbe(VolumeProbe):
+    """macOS: mount point from ``df -P``, filesystem from ``mount``, OS volume UUID and
+    name from ``diskutil info -plist <mount point>`` (diskutil accepts mount points and
+    devices, not arbitrary folders). All read-only; no administrator rights needed."""
+
+    def __init__(self, run: Runner | None = None):
+        self.run = run or _run
+
     def info(self, path: Path) -> VolumeInfo:
-        out = subprocess.run([DISKUTIL, "info", "-plist", str(path)], capture_output=True,
-                             timeout=15, check=True).stdout
-        d = plistlib.loads(out)
-        fs = (d.get("FilesystemType") or d.get("FilesystemName") or "unknown").lower()
-        return VolumeInfo(mount_point=d.get("MountPoint") or "/", fs_type=fs,
-                          hw_volume_uuid=d.get("VolumeUUID"), label=d.get("VolumeName"))
+        mnt = parse_df_mount_point(self.run(["/bin/df", "-P", str(path)]))
+        fs = parse_mount_fs(self.run(["/sbin/mount"]), mnt)
+        hw = label = None
+        try:
+            d = plistlib.loads(self.run([DISKUTIL, "info", "-plist", mnt]).encode())
+            hw, label = d.get("VolumeUUID"), d.get("VolumeName")
+            fs = fs or (d.get("FilesystemType") or "").lower() or None
+        except Exception as e:  # identity unavailable: verify() treats a recorded UUID
+            log.warning(f"diskutil could not describe {mnt}: {e}")  # mismatch as offline
+        if not fs:
+            raise RuntimeError(f"could not determine the filesystem of {mnt}")
+        return VolumeInfo(mount_point=mnt, fs_type=fs, hw_volume_uuid=hw, label=label)
 
 
 class LinuxProbe(VolumeProbe):
