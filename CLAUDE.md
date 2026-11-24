@@ -88,6 +88,8 @@ hosting, message brokers, extra microservices.
 17. **Optional integrations stay optional.** The core pipeline (clipping, editing, subtitles,
     branding, rendering) never depends on Higgsfield or any paid service.
 
+18. **Approved RumbleFrame Media outro asset.** The 2.5-second YouTube Shorts outro and rendering requirements are documented in [`docs/branding/RUMBLEFRAME_OUTRO.md`](docs/branding/RUMBLEFRAME_OUTRO.md). Use it once in every final RumbleFrame Media YouTube Short when the planned rendering phase is approved and implemented; preserve source audio and mix the brief sting under it. Do not change the Phase 1 pipeline for this asset.
+
 ## 5. Coding standards
 
 ### Python
