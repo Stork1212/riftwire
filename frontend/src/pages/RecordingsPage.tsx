@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { EmptyState, ErrorBanner, Loading, Pagination, Panel, StatusBadge } from "../components/ui";
+import { EmptyState, ErrorBanner, Loading, PageHeader, Pagination, Panel, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
 import { formatBytes, formatDate, formatDuration, formatResolution } from "../services/format";
 import { usePolling } from "../services/usePolling";
@@ -22,18 +22,14 @@ export function RecordingsPage() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Recordings</h1>
-          <p>{data ? `${data.total} recording${data.total === 1 ? "" : "s"}` : " "}</p>
-        </div>
-        <div className="toolbar">
+      <PageHeader title="Recordings"
+        description={data ? `${data.total} recording${data.total === 1 ? "" : "s"}` : " "}
+        actions={<>
           <label className="visually-hidden" htmlFor="rec-search">Search recordings</label>
           <input id="rec-search" type="search" placeholder="Search by filename…" value={query}
             onChange={(e) => setQuery(e.target.value)} />
           <Link to="/import" className="btn btn-primary">Import</Link>
-        </div>
-      </div>
+        </>} />
       {error && <ErrorBanner error={error} title="Cannot load recordings" />}
       <Panel>
         {loading && !data && <Loading />}
@@ -59,7 +55,7 @@ export function RecordingsPage() {
                 {data.items.map((r) => (
                   <tr key={r.id}>
                     <td><img className="thumb" src={r.thumbnail_url} alt="" loading="lazy" /></td>
-                    <td><Link className="row-link" to={`/recordings/${r.id}`}>{r.original_filename}</Link></td>
+                    <td className="cell-primary"><Link className="row-link" to={`/recordings/${r.id}`}>{r.original_filename}</Link></td>
                     <td className="num">{formatDuration(r.duration_ms)}</td>
                     <td className="num">{formatResolution(r.width, r.height)}</td>
                     <td className="num">{formatBytes(r.file_size_bytes)}</td>

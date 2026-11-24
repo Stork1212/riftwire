@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { PLATFORMS } from "../components/rights";
-import { EmptyState, ErrorBanner, Loading, Panel } from "../components/ui";
+import { EmptyState, ErrorBanner, Loading, PageHeader, Panel } from "../components/ui";
 import { rightsApi } from "../services/rightsApi";
 import { usePolling } from "../services/usePolling";
 
@@ -46,9 +46,9 @@ function Games() {
       {games.loading && <Loading />}
       {games.data && games.data.length === 0 && <EmptyState title="No games yet" />}
       {games.data && games.data.length > 0 && (
-        <ul className="plain">
+        <ul className="item-list">
           {games.data.map((g) => (
-            <li key={g.id}>{g.name} <span className="muted">({g.slug})</span>{" "}
+            <li key={g.id}><span>{g.name} <span className="muted">({g.slug})</span></span>
               <button className="btn btn-sm btn-ghost" onClick={() => toggle(g.id, !g.active)}>
                 {g.active ? "Deactivate" : "Activate"}</button>
             </li>
@@ -102,7 +102,7 @@ function BrandChannels() {
           onChange={() => setMonetized(!monetized)} /> Monetized</label>
         <button className="btn btn-primary" type="submit" disabled={!slugify(name)}>Add channel</button>
       </form>
-      <p className="muted small">Monetized channels can only use footage whose licence allows monetization.</p>
+      <p className="hint">Monetized channels can only use footage whose licence allows monetization.</p>
       {err && <ErrorBanner error={err} />}
       {list.error && <ErrorBanner error={list.error} title="Could not load brand channels" />}
       {list.loading && <Loading />}
@@ -134,8 +134,9 @@ function BrandChannels() {
 export function CatalogPage() {
   return (
     <>
-      <div className="page-head"><h1>Games &amp; channels</h1></div>
-      <div className="grid">
+      <PageHeader title="Games & channels"
+        description="Games you cover and the RIFTWIRE channels you publish to. Everything here is your own configuration." />
+      <div className="grid-2">
         <Games />
         <BrandChannels />
       </div>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { DecisionLine, METHODS, RightsBadge, ScopeSummary, UseChips } from "../components/rights";
-import { EmptyState, ErrorBanner, Loading, Panel, StatusBadge } from "../components/ui";
+import { EmptyState, ErrorBanner, Loading, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
 import { formatDate } from "../services/format";
 import { rightsApi } from "../services/rightsApi";
@@ -77,10 +77,10 @@ function Timeline({ events }: { events: ProvenanceEvent[] }) {
     <ol className="timeline">
       {events.map((e) => (
         <li key={e.id}>
-          <span className="muted">{formatDate(e.at)}</span>{" "}
-          <strong>{e.entity}</strong> {ACTION_TEXT[e.action] ?? e.action}
+          <span className="muted nowrap">{formatDate(e.at)}</span>
+          <span><strong>{e.entity}</strong> {ACTION_TEXT[e.action] ?? e.action}
           {e.actor === "system" && <span className="muted"> (system)</span>}
-          {typeof e.details.reason === "string" && <span className="muted"> — {e.details.reason}</span>}
+          {typeof e.details.reason === "string" && <span className="muted"> — {e.details.reason}</span>}</span>
         </li>
       ))}
     </ol>
@@ -112,12 +112,10 @@ export function SourceDetailPage() {
 
   return (
     <>
-      <div className="page-head">
-        <h1>{s.title_user || s.url_canonical || "Local source"}</h1>
-        <RightsBadge status={s.rights_status} />
-      </div>
+      <PageHeader eyebrow={<Link to="/sources" className="muted">← Sources</Link>}
+        title={s.title_user || s.url_canonical || "Local source"} actions={<RightsBadge status={s.rights_status} />} />
       {err && <ErrorBanner error={err} />}
-      <div className="grid">
+      <div className="grid-2">
         <Panel title="Source" actions={
           <div className="toolbar">
             {s.status === "active"
@@ -135,10 +133,10 @@ export function SourceDetailPage() {
           </dl>
         </Panel>
         <Panel title="Rights">
-          <p><strong>Authorized now:</strong> <UseChips uses={s.authorized_uses} /></p>
+          <div className="authorized"><strong>Authorized now</strong> <UseChips uses={s.authorized_uses} /></div>
           <DecisionLine label="Obtain footage" d={s.acquire} />
           <DecisionLine label="Analyse" d={s.analyze} />
-          <p className="muted small">Editing and publishing are checked for each clip, platform and
+          <p className="hint">Editing and publishing are checked for each clip, platform and
             brand channel when those steps exist (M3 onwards).</p>
           {s.records.length === 0 && <EmptyState title="No licence covers this source">
             Add one on the <Link to="/creators">Creators</Link> page.</EmptyState>}
@@ -151,7 +149,7 @@ export function SourceDetailPage() {
           ))}
         </Panel>
       </div>
-      <div className="grid">
+      <div className="grid-2">
         <Panel title="Brand channels">
           <Assignments key={s.brand_channel_ids.join()} src={s} brands={brands.data ?? []} onSaved={refresh} />
         </Panel>

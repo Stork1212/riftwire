@@ -82,7 +82,7 @@ export function LinkResolver({ onSource, submitLabel = "Create source" }: {
           }} />
         <button className="btn btn-primary" type="submit" disabled={busy || !url.trim()}>Check link</button>
       </form>
-      <p className="muted small">Checked offline; nothing is downloaded. Footage arrives through a
+      <p className="hint">Checked offline; nothing is downloaded. Footage arrives through a
         permitted method: your import of the creator's file or your own platform download.</p>
       {err !== undefined && <ActionableError error={err} title="Link not accepted" />}
       {res && (
@@ -173,7 +173,7 @@ function CreatorSetup({ platform, suggestedHandle, onDone, onCancel }: {
           <input type="text" value={handle} onChange={(e) => setHandle(e.target.value)} required />
         </label>
       </div>
-      <p className="muted small">This only records who the creator is. Their footage stays unusable
+      <p className="hint">This only records who the creator is. Their footage stays unusable
         until you attest a licence on Creators &amp; Rights.</p>
       {err !== undefined && <ActionableError error={err} />}
       <div className="toolbar">

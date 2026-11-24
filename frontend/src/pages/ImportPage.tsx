@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { JobStages } from "../components/JobStages";
 import { LinkResolver } from "../components/LinkResolver";
-import { ErrorBanner, Panel, ProgressBar, StatusBadge } from "../components/ui";
+import { ErrorBanner, PageHeader, Panel, ProgressBar, StatusBadge } from "../components/ui";
 import { ApiError, api, uploadRecording, type UploadHandle } from "../services/api";
 import { formatBytes } from "../services/format";
 import { rightsApi } from "../services/rightsApi";
@@ -68,12 +68,8 @@ export function ImportPage() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Import</h1>
-          <p>MP4, MOV, MKV or WEBM. Files are checked by content, fingerprinted and stored safely.</p>
-        </div>
-      </div>
+      <PageHeader title="Import"
+        description="MP4, MOV, MKV or WEBM. Files are checked by content, fingerprinted and stored safely." />
 
       <div className="mode-tabs" role="tablist" aria-label="Import from">
         <button role="tab" aria-selected={mode === "file"} className={`chip${mode === "file" ? " active" : ""}`}
@@ -92,7 +88,7 @@ export function ImportPage() {
           ) : (
             <LinkResolver submitLabel="Use this video" onSource={(id) => setUrlSource(id)} />
           )}
-          <p className="muted small">RIFTWIRE does not download from YouTube or Twitch. Provide the
+          <p className="hint">RIFTWIRE does not download from YouTube or Twitch. Provide the
             footage below: the creator's original file, or your own download from YouTube Studio or
             the Twitch dashboard for your channel.</p>
         </Panel>
@@ -112,7 +108,7 @@ export function ImportPage() {
           <strong>{file ? file.name : "Drop a recording here or click to browse"}</strong>
           <small>{file ? formatBytes(file.size) : "Large files are streamed to disk — they are never loaded into memory."}</small>
         </label>
-        <div className="toolbar" style={{ marginTop: 14 }}>
+        <div className="toolbar mt-4">
           {mode === "url" ? (
             <select aria-label="How this file was obtained" value={urlMethod} disabled={uploading}
               onChange={(e) => setUrlMethod(e.target.value)}>
@@ -196,7 +192,7 @@ function Processing({ recording }: { recording: Recording }) {
     <Panel title="3 · Background processing"
       actions={data && <StatusBadge status={data.status} />}>
       <JobStages jobs={data?.jobs ?? []} />
-      <p style={{ marginTop: 12 }}>
+      <p className="mt-4">
         <Link to={`/recordings/${recording.id}`}>View recording →</Link>
       </p>
     </Panel>

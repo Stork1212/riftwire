@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { LicenceForm, RightsBadge, ScopeSummary } from "../components/rights";
 import type { LicenceFormValue } from "../components/rights";
-import { EmptyState, ErrorBanner, Loading, Panel } from "../components/ui";
+import { EmptyState, ErrorBanner, Loading, PageHeader, Panel } from "../components/ui";
 import { formatBytes, formatDate } from "../services/format";
 import { rightsApi } from "../services/rightsApi";
 import { usePolling } from "../services/usePolling";
@@ -118,7 +118,7 @@ function Evidence({ record, onAdded }: { record: RightsRecord; onAdded: () => vo
           onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         <button className="btn btn-sm" type="submit" disabled={!file && !ref.trim()}>Add evidence</button>
       </form>
-      <p className="muted small">Supporting documentation only (max 25 MB per file). It never activates rights by itself.</p>
+      <p className="hint">Supporting documentation only (max 25 MB per file). It never activates rights by itself.</p>
       {err && <ErrorBanner error={err} />}
     </div>
   );
@@ -167,7 +167,7 @@ function RecordCard({ r, brands, creator, onChanged }: { r: RightsRecord; brands
         )}
       </div>
       <ScopeSummary scope={r.scope} brands={brands} />
-      <p className="muted small">Attested {r.attested_at ? formatDate(r.attested_at) : "—"}
+      <p className="hint">Attested {r.attested_at ? formatDate(r.attested_at) : "—"}
         {r.valid_until && <> · valid until {formatDate(r.valid_until)}</>}
         {r.revoked_at && <> · revoked {formatDate(r.revoked_at)}: {r.revoked_reason}</>}</p>
       {r.attestation_text && <blockquote>{r.attestation_text}</blockquote>}
@@ -212,6 +212,7 @@ function CreatorPanel({ creator, brands, onChanged }: { creator: Creator; brands
     <Panel title={creator.display_name} actions={
       <button className="btn btn-sm btn-ghost" onClick={archive}>{creator.archived ? "Unarchive" : "Archive"}</button>}>
       {err && <ErrorBanner error={err} />}
+      <div className="subsection">
       <h3>Channels</h3>
       {creator.channels.length === 0 ? <p className="muted">No channels yet.</p> : (
         <ul className="plain">
@@ -219,7 +220,9 @@ function CreatorPanel({ creator, brands, onChanged }: { creator: Creator; brands
         </ul>
       )}
       <AddChannel creator={creator} onAdded={onChanged} />
-      <h3>Rights</h3>
+      </div>
+      <div className="subsection">
+      <h3>Licences</h3>
       {recs.error && <ErrorBanner error={recs.error} />}
       {recs.loading && <Loading />}
       {recs.data && recs.data.length === 0 && !adding && (
@@ -230,6 +233,7 @@ function CreatorPanel({ creator, brands, onChanged }: { creator: Creator; brands
       {adding ? <LicenceForm channels={creator.channels} brands={brands} busy={busy} onSubmit={create}
         onCancel={() => setAdding(false)} />
         : !creator.archived && <button className="btn btn-primary" onClick={() => setAdding(true)}>New licence</button>}
+      </div>
     </Panel>
   );
 }
@@ -244,7 +248,8 @@ export function CreatorsPage() {
 
   return (
     <>
-      <div className="page-head"><h1>Creators &amp; rights</h1></div>
+      <PageHeader title="Creators & rights"
+        description="Who the footage belongs to, and the licences you have attested. Nothing is usable without one." />
       <Panel title="Creators" actions={
         <label className="check"><input type="checkbox" checked={archived} onChange={() => setArchived(!archived)} /> Show archived</label>}>
         <NewCreator onCreated={(c) => { creators.refresh(); setSelected(c.id); }} />

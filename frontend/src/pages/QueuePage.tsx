@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { EmptyState, ErrorBanner, Loading, Pagination, Panel, ProgressBar, StatusBadge } from "../components/ui";
+import { EmptyState, ErrorBanner, Loading, PageHeader, Pagination, Panel, ProgressBar, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
 import { formatDate } from "../services/format";
 import { usePolling } from "../services/usePolling";
@@ -36,18 +36,14 @@ export function QueuePage() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Processing Queue</h1>
-          <p>{recordingId ? <>Jobs for one recording · <Link to="/queue">show all</Link></> : "All background jobs, newest first."}</p>
-        </div>
-        <div className="toolbar">
+      <PageHeader title="Processing Queue"
+        description={recordingId ? <>Jobs for one recording · <Link to="/queue">show all</Link></> : "All background jobs, newest first."}
+        actions={<>
           <label className="visually-hidden" htmlFor="status-filter">Filter by status</label>
           <select id="status-filter" value={status} onChange={(e) => { setStatus(e.target.value); setOffset(0); }}>
             {STATUSES.map((s) => <option key={s} value={s}>{s ? s.replace("_", " ") : "All statuses"}</option>)}
           </select>
-        </div>
-      </div>
+        </>} />
       {error && <ErrorBanner error={error} title="Cannot load jobs" />}
       {actionError && <ErrorBanner error={actionError} title="Retry failed" />}
       <Panel>
@@ -62,23 +58,25 @@ export function QueuePage() {
             <table>
               <thead>
                 <tr>
-                  <th>Job</th><th>Recording</th><th>Status</th><th>Progress</th>
-                  <th>Attempts</th><th>Started</th><th>Completed</th><th>Error</th><th aria-label="Actions" />
+                  <th>Job</th><th>Recording</th><th>Status</th>
+                  <th>Attempts</th><th>Timing</th><th>Error</th><th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
                 {data.items.map((j) => (
                   <tr key={j.id} data-testid={`job-${j.id}`}>
-                    <td><strong>{j.job_type}</strong></td>
-                    <td><Link className="row-link" to={`/recordings/${j.recording_id}`}>{j.recording_filename ?? j.recording_id}</Link></td>
-                    <td><StatusBadge status={j.status} /></td>
-                    <td style={{ minWidth: 110 }}>
+                    <td className="nowrap"><strong>{j.job_type}</strong></td>
+                    <td className="cell-primary"><Link className="row-link" to={`/recordings/${j.recording_id}`}>{j.recording_filename ?? j.recording_id}</Link></td>
+                    <td className="cell-status">
+                      <StatusBadge status={j.status} />
                       <ProgressBar value={j.progress_percent} label={`${j.job_type} progress`}
                         tone={j.status === "FAILED" ? "bad" : j.status === "COMPLETED" ? "ok" : "info"} />
                     </td>
                     <td className="num">{j.attempt_count} / {j.max_attempts}</td>
-                    <td className="num">{formatDate(j.started_at)}</td>
-                    <td className="num">{formatDate(j.completed_at)}</td>
+                    <td className="num">
+                      <div>Started {formatDate(j.started_at)}</div>
+                      <div className="sub">Completed {formatDate(j.completed_at)}</div>
+                    </td>
                     <td>{j.last_error && j.status !== "COMPLETED" ? <span className="err-text">{j.last_error}</span> : <span className="muted">—</span>}</td>
                     <td>
                       {j.retryable && (

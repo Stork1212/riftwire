@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { LinkResolver } from "../components/LinkResolver";
 import { RightsBadge, UseChips } from "../components/rights";
-import { EmptyState, ErrorBanner, Loading, Pagination, Panel } from "../components/ui";
+import { EmptyState, ErrorBanner, Loading, PageHeader, Pagination, Panel } from "../components/ui";
 import { formatDate } from "../services/format";
 import { rightsApi } from "../services/rightsApi";
 import { usePolling } from "../services/usePolling";
@@ -25,7 +25,8 @@ export function SourcesPage() {
 
   return (
     <>
-      <div className="page-head"><h1>Sources</h1></div>
+      <PageHeader title="Sources"
+        description="Every video RIFTWIRE may work with, its creator and what its licence allows." />
       <AddVideo onCreated={list.refresh} />
       <Panel title="All sources" actions={
         <select aria-label="Status filter" value={status} onChange={(e) => { setStatus(e.target.value); setOffset(0); }}>
@@ -52,15 +53,15 @@ export function SourcesPage() {
               <tbody>
                 {list.data.items.map((s) => (
                   <tr key={s.id}>
-                    <td><Link className="row-link" to={`/sources/${s.id}`}>
+                    <td className="cell-primary"><Link className="row-link" to={`/sources/${s.id}`}>
                       {s.title_user || s.url_canonical || "Local source"}</Link>
-                      <div className="muted small">{s.kind}{s.status !== "active" && ` · ${s.status}`}</div></td>
+                      <div className="sub">{s.kind}{s.status !== "active" && ` · ${s.status}`}</div></td>
                     <td>{s.creator_name ?? "—"}</td>
                     <td>{s.game_name ?? "—"}</td>
                     <td><RightsBadge status={s.rights_status} /></td>
                     <td><UseChips uses={s.authorized_uses} /></td>
                     <td className="num">{s.recording_count}</td>
-                    <td>{formatDate(s.created_at)}</td>
+                    <td className="num">{formatDate(s.created_at)}</td>
                   </tr>
                 ))}
               </tbody>

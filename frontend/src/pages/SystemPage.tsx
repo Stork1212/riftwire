@@ -1,4 +1,4 @@
-import { EmptyState, ErrorBanner, Loading, Panel, StatusBadge } from "../components/ui";
+import { EmptyState, ErrorBanner, Loading, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { StorageBar } from "../components/StorageBar";
 import { api } from "../services/api";
 import { formatDate } from "../services/format";
@@ -18,7 +18,7 @@ export function SystemPage() {
 
   return (
     <>
-      <div className="page-head"><div><h1>System</h1><p>Health of the local RIFTWIRE services.</p></div></div>
+      <PageHeader title="System" description="Health of the local RIFTWIRE services." />
       {status.error && <ErrorBanner error={status.error} title="Backend unreachable" />}
       {status.loading && !d && <Loading />}
       {d && (

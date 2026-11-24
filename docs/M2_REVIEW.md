@@ -137,4 +137,58 @@ Each suspected backend defect was first written as a regression test and run aga
 - **Acceptance:** **28/28** at the 60 GiB floor.
 - **Smoke:** **30/30**.
 
-**Not yet verified:** a visual check of the dashboard in a real browser.
+## 8. Dashboard layout refinement (owner request, within M2)
+
+Frontend-only. No backend, API, schema or dependency changes; all functionality kept.
+
+### 8.1 What was wrong (found in a real browser)
+Every page was checked in headless Chrome at **1440×900, 1280×800 and 1920×1080**
+(13 views × 3 sizes = 39 page views), with an automated check for page-level horizontal
+scrolling, elements beyond the viewport, clipped text, overlapping controls and overlapping
+text, plus tables that scroll inside their panel.
+
+- **All 39 views failed before.** The grouped navigation added in `55ae624` broke the
+  sidebar: the groups rendered inline and overlapped page content on every page. This was
+  a regression I introduced; the jsdom tests could not see it.
+- Page-level horizontal scrolling on Recordings (1280) and Processing Queue (1280, 1440).
+- Cramped forms and tables; dates wrapping onto three lines; long filenames and URLs
+  pushing columns off-screen; the System worker badge overlapping its heartbeat text.
+
+### 8.2 What changed
+- **Global tokens** in `styles.css`:
+  - spacing 4 / 8 / 12 / 16 / 24 / 32 / 48 px;
+  - a type scale (11.5 to 24 px);
+  - fixed control heights (36 px, 30 px small);
+  - sidebar and content-width tokens.
+- **Shell:**
+  - a grid sidebar with labelled groups and an accent bar on the active item;
+  - `min-width: 0` on the main column, which removes the page-level scrolling;
+  - a single-column layout below 860 px.
+- **Reusable components and classes:**
+  - layout and header: `PageHeader` (title, description, optional back link, actions), `Field`, `.grid-2` (stacks below about 1100 px of content), `.stack`, `.toolbar`, `.subsection`;
+  - forms and lists: `.form` / `.form-row`, `.item-list`, `.hint`;
+  - text: `.wrap-anywhere` / `.truncate` / `.nowrap`;
+  - tables: `cell-primary` / `cell-status` / `num`.
+  - All 11 pages use them; page-specific inline styles were removed.
+- **Tables:** taller rows and more padding, with tighter padding below 1500 px. Long
+  names wrap inside a bounded primary column. Dates do not wrap.
+  - Processing Queue now has the progress bar under the status badge.
+  - It also combines Started and Completed into one Timing cell, so all columns fit at 1280.
+- **Small fixes:**
+  - Ghost buttons have a visible outline.
+  - System key/value rows wrap instead of overlapping.
+  - Games use a divided item list.
+
+### 8.3 Verification (cloud container, headless Chrome)
+| Check | Result |
+|---|---|
+| Layout check, 39 page views | **before: 39 with issues; after: 0** (viewport top and scrolled bottom) |
+| `scripts/test.sh` (exit 0) | ruff clean; backend **376 passed, 1 skipped**; bench **48**; frontend lint/typecheck clean, **35/35**; build OK |
+| `alembic check` | no new upgrade operations |
+| Acceptance (`--min-free-gib 1`, test-only) | **28/28** |
+| Smoke (test-only floor) | **28 PASS, 0 FAIL** |
+
+The screenshots and the checker script are review aids kept out of the repository. Fonts
+in the container differ slightly from macOS, so the Mac run of the pinned script is still
+the reference for everything except the visual check.
+
