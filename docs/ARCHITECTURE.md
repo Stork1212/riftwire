@@ -9,7 +9,8 @@ incorporated:
 3. The read-only macOS environment inspection must be complete before any dependency is
    installed → §16.
 
-Implementation has not started and needs a separate go-ahead.
+Implementation authorized 2026-11-23 and built on branch `phase1/foundation` (see
+`docs/PHASE1_REPORT.md`). §17 lists implementation details added within this design.
 
 ## 1. Goals for Phase 1
 
@@ -208,6 +209,19 @@ finally                        → chmod dst 0444 (read-only: no later stage can
 existing file, giving "never overwrite" at the filesystem level. `temp/` and `recordings/`
 are always on the same volume (both inside `RIFTWIRE_DATA_DIR`).
 
+**Fallback for filesystems without hard links** (`EPERM`/`ENOTSUP`/`EXDEV`/`EMLINK` from
+`os.link`; added after review of PR #1). The final path never holds partial data:
+1. Copy into an **attempt-unique staging file** on the destination volume,
+   `recordings/.staging/<rec_id>.<lease_token>.partial` (`open(..., "xb")`), then fsync.
+2. Verify the copy's SHA-256 (a mismatch is a transient error and is retried).
+3. **Promote without overwriting:** under an exclusive `flock` on
+   `recordings/.staging/<rec_id>.lock`, check that the final path does not exist, then
+   `os.rename` (atomic on one volume). If it exists, leave it untouched and verify it.
+4. fsync the directory, then unlink the temp source (same as the link path).
+
+Incomplete staging files from dead attempts are removed by the reconciler (§6.5), because
+their lease token no longer owns a RUNNING job.
+
 ### 6.4 Crash matrix
 
 | Crash point | State left behind | Recovery |
@@ -286,11 +300,20 @@ longer change anything in the database, even if it is still alive (e.g. after a 
   `process_started_at`) before it does any work.
 - If the lease-renewal thread fails a fence check, the worker kills the child group
   immediately and abandons the attempt.
-- **Orphan cleanup:** before any RUNNING job from another worker is recovered, the
-  recovering process checks the recorded PID. It kills it only if the PID is alive **and**
-  its start time and executable (`ps -o lstart=,comm=`) match what was recorded, which
-  protects against PID reuse. Only after the child is confirmed gone does the job move to
-  RETRY_WAIT.
+- **Orphan cleanup (fence → terminate → transition).** Recovery never acts on information
+  read earlier:
+  1. **Fence:** one transaction re-checks eligibility (RUNNING, lease still expired or
+     foreign) and only then replaces the lease token with a recovery token, reading the
+     recorded PID in the same transaction. An owner that renewed first makes the job
+     ineligible (skipped, nothing killed). An owner that renews later fails the token
+     check and stops its own child.
+  2. **Terminate:** kill the recorded child only if the PID is alive **and** its start time
+     and executable (`ps -o lstart=,comm=`) match what was recorded (PID-reuse guard). If
+     it cannot be confirmed dead (`kill_failed`), the job stays fenced and a later pass
+     retries.
+  3. **Transition:** RETRY_WAIT / FAILED by compare-and-set on the recovery token.
+  If the recoverer dies after step 1, the recovery fence expires after 30 s and the job is
+  recovered by a later pass.
 
 ### 7.5 Single worker process + lease recovery
 
@@ -422,4 +445,31 @@ No dependency (Homebrew package, Python, Node) is installed until:
 The script reports macOS version, chip, cores, memory, disk free on the data volume vs. the
 60 GB floor, filesystem type, Homebrew prefix, Python (≥ 3.11 required), Git, FFmpeg/ffprobe
 (versions, VideoToolbox support), Node/npm, SQLite version, and Xcode command-line tools.
+
+## 17. Implementation notes (Phase 1 build, within the approved design)
+
+No architectural changes were made. Details added during implementation:
+
+- **Truncation check:** media validation decodes one frame at the start *and* near the end of
+  the file; a recording cut off mid-capture is rejected (422) even though its first frame decodes.
+- **Error hygiene:** FFmpeg/ffprobe stderr is scrubbed of internal paths before it reaches API
+  error messages or job errors.
+- **Worker states** in `workers`: RUNNING, STOPPING, STOPPED, DEAD (marked by the next lock
+  holder); the API reports UNRESPONSIVE when the heartbeat is older than
+  `RIFTWIRE_WORKER_STALE_AFTER_SECONDS` (20 s). Worker exit codes: 2 = schema not at head,
+  3 = another worker holds the lock.
+- **API startup** also runs the ingestion reconciler and recovers *expired* leases (it never
+  recovers live foreign leases; only the lock-holding worker does that).
+- **Test-only hooks** (`RIFTWIRE_ENV=test` only): named crash points and a slow-FFmpeg child,
+  used by the real-process crash tests and `scripts/acceptance.py`.
+- **Thumbnail endpoint** returns an SVG placeholder (`X-Thumbnail-Fallback: true`) while the
+  thumbnail is pending or after it failed.
+- **Reproducible installs:** `backend/constraints.txt` (pip) and `frontend/package-lock.json`.
+- **Review round 1 (PR #1) fixes:**
+  - recovery is fence → terminate → transition (§7.4);
+  - the copy fallback stages, verifies and promotes without overwriting (§6.3);
+  - attempt-scoped temp and staging files are cleaned by lease token, not by age; files
+    are listed before tokens are read;
+  - startup runs recovery before the reconciler.
+- **Runtime files:** PID files in `data/run/`, raw process output in `data/logs/*.out`.
 

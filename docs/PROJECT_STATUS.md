@@ -1,11 +1,11 @@
 # RIFTWIRE — Project Status
 
-_Last updated: 2026-11-23_
+_Last updated: 2026-11-24_
 
 ## Current phase
-**Phase 1 — Foundation: planning.** Architecture **approved in principle** (2026-11-23,
-after external review) subject to three requirements, now written into
-`docs/ARCHITECTURE.md` (§6, §7, §16). No application code has been committed.
+**Phase 1 — Foundation: review-round-1 fixes implemented and verified on the target Mac
+(169 + 13 tests, 19/19 acceptance at 60 GiB); awaiting the second independent review.** Code is on branch `phase1/foundation`, pull request #1 to `main`. Details:
+`docs/PHASE1_REPORT.md`. Phase 2 has **not** started and needs approval.
 
 ## Completed
 - [x] GitHub repository `Stork1212/riftwire` connected; `main` verified (initial commit `faf765e`).
@@ -41,16 +41,16 @@ Source: `scripts/discover_env.sh`, run by the owner on the Mac (read-only).
 | Python | default `python3` = **3.15.2**; also **3.13.2** and 3.14.7 (python.org framework installs); no 3.11/3.12 | OK — use **3.13** for the project venv (see below) |
 | SQLite | CLI 3.51.0; Python's `sqlite3` module 3.53.4 | OK (WAL, `RETURNING`, etc.) |
 | Node.js / npm | v24.17.0 / 11.13.0 (`/usr/local/bin`, official installer) | OK |
-| **FFmpeg / ffprobe** | **MISSING** | ❌ **Required — must be installed** |
+| FFmpeg / ffprobe | **9.1** at `/opt/homebrew/bin` (installed 2026-11-23, owner-approved); hwaccels `videotoolbox`; encoders `h264/hevc/prores_videotoolbox` | OK (re-inspected 23:00 UTC) |
 | Existing RIFTWIRE folders | only `~/Claude/riftwire-env` (the inspection script) | No conflicts |
 
-### Missing dependencies
+### Missing dependencies (resolved)
 
 | Dependency | Needed for | Proposed install (awaiting owner approval) |
 |---|---|---|
 | FFmpeg + ffprobe | metadata, validation, thumbnails, all later rendering | `brew install ffmpeg` |
 
-That is the **only** missing system dependency. Notes:
+That was the **only** missing system dependency; it is now installed. Notes:
 - Homebrew's `ffmpeg` bottle is built with VideoToolbox (hardware encode/decode on the M3
   Pro), needed in Phase 3. It pulls in a number of codec libraries; expect roughly 1 GB of
   disk. Verify afterwards with `ffmpeg -hide_banner -hwaccels` (should list `videotoolbox`).
@@ -79,27 +79,52 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
   3. Temporarily lower `RIFTWIRE_MIN_FREE_DISK_BYTES` (not recommended; macOS degrades badly
      when the system disk is nearly full).
 
+## Phase 1 build progress (2026-11-23)
+- [x] FFmpeg 9.1 installed on the Mac by the owner (approved); VideoToolbox verified from the
+      inspection report (`h264/hevc/prores_videotoolbox`).
+- [x] Backend: config, JSON logging, DB + Alembic 0001, crash-safe ingestion, media service,
+      persistent queue with fencing + orphan cleanup, worker process, REST API.
+- [x] Dashboard: Overview, Recordings + detail, Import, Processing Queue, System.
+- [x] Scripts: bootstrap, migrate, start/stop/status, test, acceptance, discover_env.
+- [x] Docs: README, INSTALLATION, TESTING, TROUBLESHOOTING, PHASE1_REPORT, screenshots.
+- [x] Dev-container verification: 148 backend tests (also on Python 3.11), 13 frontend
+      tests, lint/typecheck, build, **19/19 acceptance steps**, real-browser UI check.
+- [x] Re-verified from a **fresh GitHub clone** of `f49f7fa`: 148 + 13 tests, build, 19/19
+      acceptance steps, no failures.
+- [x] **macOS verification** (owner-run, 2026-11-24 01:46 UTC, commit `9d1e8c5`): macOS 26.5.2,
+      M3 Pro, Python 3.13.2, FFmpeg 9.1 — ruff clean, **148/148** pytest, **13/13** Vitest, build
+      OK, **19/19 acceptance at the 60 GiB floor**, VideoToolbox detected. Evidence in
+      `docs/acceptance/2026-11-23-macos-m3pro-9d1e8c5*`.
+- [x] Fixed the React `act(...)` test warning from the Mac log (test-only change; suite
+      re-run: 148 + 13 passed, build OK).
+- [x] Independent review round 1 (ChatGPT, PR #1 at `6d16b85`): 2 findings.
+- [x] Fixed: recovery race (fence → terminate → transition) and crash-safe copy fallback
+      (staging + verify + no-overwrite promote), plus 3 related cleanup/ordering issues.
+      18 new deterministic tests; 166 + 13 tests pass; build OK; acceptance 19/19 (dev).
+- [x] macOS run of `599f910`: acceptance 19/19 at 60 GiB, but pytest 165/166. A macOS-only
+      zombie-process bug in the new `kill_failed` check. Fixed, with 3 tests including a
+      BSD-semantics emulation that reproduces the Mac failure on any OS; 169 + 13 pass (dev).
+- [x] **macOS re-run on `10ea57b`** (owner, 02:22 UTC): ruff clean, **169/169** pytest, **13/13** Vitest, build OK, **19/19 acceptance at 60 GiB**.
+- [x] Replied to the review on PR #1 (implementation, tests, macOS evidence).
+- [ ] **Second independent review** (ChatGPT).
+- [ ] Owner authorization and squash-merge of PR #1 `phase1/foundation` → `main`.
+
 ## Blockers
-1. **Approval to install FFmpeg** (`brew install ffmpeg`) — the only missing dependency.
-2. **Go-ahead for implementation** from the owner.
-3. **Data location decision** (before importing real footage, not before development):
-   internal SSD (~9 GB usable above the floor) vs. external APFS SSD.
+None for Phase 1. Before importing **real footage**, decide the data location: only ~9 GiB is
+importable above the 60 GiB floor on the internal SSD; an external APFS SSD is recommended.
 
 ## Decisions pending
-- Project location on the Mac (proposed: `~/Claude/riftwire`; currently only
-  `~/Claude/riftwire-env` exists there).
-- Data location (see "Disk space" above).
+- Merge strategy for the PR (squash recommended; it also keeps an accidentally committed
+  3.8 MB wheel out of `main`).
+- Data location (above).
+- Phase 2 scope (proposal in PHASE1_REPORT §10). It will not start without approval.
 
-## Next steps (after approval)
-1. Scaffold backend + config + logging; tests.
-2. Database models + Alembic initial migration; tests.
-3. Media service (ffprobe/ffmpeg); tests with synthetic clips.
-4. Ingestion service (streaming, hashing, dedupe, safety); tests.
-5. Persistent job queue + worker (claims, leases, retries, recovery); tests incl. worker kill.
-6. Thumbnails; tests.
-7. REST API `/api/v1`; tests.
-8. React dashboard; Vitest tests; production build.
-9. Live acceptance run; `docs/PHASE1_REPORT.md`; remaining docs.
+## Next steps
+1. Owner/reviewer: final review of PR #1; squash-merge into `main`.
+2. Optional owner smoke test on the Mac: `scripts/start.sh`, open http://127.0.0.1:8000,
+   import a small synthetic clip, `scripts/stop.sh` (the only Phase 1 items not yet run on macOS).
+3. Owner: decide on the data location (external SSD) before real footage.
+4. Owner: approve or amend the Phase 2 proposal (PHASE1_REPORT §10). Not started.
 
 ## Review notes for external reviewers
 - Source of truth is this repository's `main` branch.
