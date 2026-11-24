@@ -8,10 +8,8 @@ Verified on the target Mac (169/169 backend, 13/13 frontend, build, 19/19 accept
 and accepted after two independent reviews. The roadmap and product spec (PR #2) are merged
 (`0ccf674`).
 
-**Now:**
-- macOS smoke test of `start.sh`/`stop.sh` and the dashboard;
-- then tag **v0.1.0**;
-- Phase 2 technical proposal for review. **Phase 2 is not authorized.**
+**Released:** `v0.1.0` (launch scripts and dashboard verified on the Mac).
+**Next:** review of the Phase 2 technical proposal (PR #3). **Phase 2 is not authorized.**
 
 ## Completed
 - [x] GitHub repository `Stork1212/riftwire` connected; `main` verified (initial commit `faf765e`).
@@ -117,10 +115,12 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
 - [x] PR #1 squash-merged into `main` as `3c52e53` (tree identical to the reviewed head).
 - [x] PR #2 (product spec + roadmap) squash-merged as `0ccf674` (no conflicts).
 - [x] CLAUDE.md, ARCHITECTURE.md (§18) and this file updated for the approved roadmap.
-- [ ] macOS smoke test: `scripts/smoke_test.sh` (start.sh, stop.sh, restart persistence,
-      caffeinate, dashboard in the Mac's browser) with small synthetic media.
-- [ ] Tag `v0.1.0` on the verified `main` commit.
-- [ ] Phase 2 technical implementation proposal (PR for review). No Phase 2 code.
+- [x] macOS smoke test on `main` @ `0ae8c2f`: `scripts/smoke_test.sh` **30/30 PASS** (start.sh,
+      status.sh, stop.sh, restart persistence, caffeinate, localhost-only, dashboard serving).
+- [x] Dashboard checked in the built-in browser on the Mac: all pages render with real data,
+      thumbnails load, no console errors (`docs/acceptance/2026-11-24-macos-dashboard-check.md`).
+- [x] Tag `v0.1.0` on the verified `main` commit (this commit).
+- [x] Phase 2 technical implementation proposal: PR #3 (`docs/PHASE2_PROPOSAL.md`), awaiting review and approval. No Phase 2 code.
 
 ## Blockers
 None. Before importing **real footage** at scale, the 2 TB external APFS SSD is needed (only
@@ -133,10 +133,8 @@ None. Before importing **real footage** at scale, the 2 TB external APFS SSD is 
   SSD timing, Higgsfield use cases, brand assets).
 
 ## Next steps
-1. Owner runs `scripts/smoke_test.sh` on the Mac; the agent checks the dashboard in the Mac's
-   browser and records the evidence.
-2. Tag `v0.1.0`.
-3. Review of the Phase 2 technical proposal (ChatGPT + owner) → approval or amendments.
+1. Review of the Phase 2 technical proposal, PR #3 (ChatGPT + owner) → approval or amendments.
+2. Owner decisions listed in the proposal (§0, §19, §22).
 
 ## Review notes for external reviewers
 - Source of truth is this repository's `main` branch.

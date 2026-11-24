@@ -207,15 +207,21 @@ Verified on the Mac by the owner's run (previously open items):
 | 60 GiB production free-space floor with ~69 GiB free | acceptance ran at `min_free_gib: 60.0`; X3 refusal also passes |
 | VideoToolbox detection | step 3: `videotoolbox=True` |
 
+Verified on the Mac after merge (2026-11-24, `main` @ `0ae8c2f`):
+
+| Item | Evidence |
+|---|---|
+| `scripts/start.sh` / `status.sh` / `stop.sh` (bash 3.2), restart persistence, localhost-only binding | `scripts/smoke_test.sh`: **30/30 PASS** (`acceptance/2026-11-24-macos-smoke-0ae8c2f.txt`) |
+| `RIFTWIRE_CAFFEINATE=1` (caffeinate runs with the worker, exits on stop) | same report |
+| Dashboard in a real browser on the Mac (all pages, thumbnails, detail, queue, system, no console errors) | `acceptance/2026-11-24-macos-dashboard-check.md` |
+
 Still not verified:
 
-| Item | Why | Suggested check |
+| Item | Why | Note |
 |---|---|---|
-| `scripts/start.sh` / `stop.sh` / `status.sh` **on macOS** (bash 3.2) | The acceptance test launches processes directly; the scripts were exercised in the dev container only | `scripts/start.sh`, open http://127.0.0.1:8000, `scripts/stop.sh` |
-| Dashboard in a real browser **on the Mac** | Browser check was done with headless Chrome in the dev container | Open the dashboard, import a small synthetic clip |
-| `RIFTWIRE_CAFFEINATE=1` | macOS-only, not exercised | `RIFTWIRE_CAFFEINATE=1 scripts/start.sh` |
-| Recordings larger than ~120 MB on the Mac; multi-GB files | Owner instruction to use small synthetic files; ~9 GiB headroom | Streaming is memory-bounded by test; test multi-GB once an external SSD exists |
-| Copy fallback on a real filesystem **without** hard links (e.g. exFAT) | APFS supports hard links; the fallback is exercised by forcing it (test setting / `EPERM` injection) on APFS and ext4 | Recommended: keep RIFTWIRE data on APFS (as planned) |
+| Upload via the file picker **on the Mac** | browser automation cannot pick local files | Same endpoint verified on the Mac via the API (smoke test) and via the UI with a 111 MB file in headless Chrome (dev container) |
+| Recordings larger than ~120 MB on the Mac; multi-GB files | owner instruction: small synthetic files; ~8 GiB headroom | Streaming memory-bounded by test; test at scale on the SSD |
+| Copy fallback on a real filesystem **without** hard links (e.g. exFAT) | APFS has hard links | Forced/`EPERM`-injected tests + real hard-crash tests pass; keep data on APFS |
 
 ## 7. Known issues
 
