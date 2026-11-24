@@ -83,6 +83,7 @@ CREATOR_ARCHIVED = "creator_archived"
 SCOPE_UNSUPPORTED = "scope_unsupported"
 USE_NOT_IN_SCOPE = "use_not_in_scope"
 METHOD_NOT_PERMITTED = "acquisition_method_not_permitted"
+METHOD_UNKNOWN = "acquisition_method_unknown"
 PLATFORM_PERMISSION_MISSING = "platform_permission_missing"
 URL_ACQUISITION_DISABLED = "url_acquisition_disabled"
 PLATFORM_NOT_IN_SCOPE = "platform_not_in_scope"
@@ -111,6 +112,7 @@ REASON_TEXT = {
     SCOPE_UNSUPPORTED: "the rights scope is not understood (unsupported version or field)",
     USE_NOT_IN_SCOPE: "this use is not covered by the rights",
     METHOD_NOT_PERMITTED: "this acquisition method is not permitted by the rights",
+    METHOD_UNKNOWN: "how this recording's footage was obtained is not on record",
     PLATFORM_PERMISSION_MISSING: "URL fetching needs written platform permission on record",
     URL_ACQUISITION_DISABLED: "URL fetching is switched off",
     PLATFORM_NOT_IN_SCOPE: "publishing to this platform is not covered",
@@ -142,6 +144,7 @@ REASON_ACTION = {
     USE_NOT_IN_SCOPE: "Edit the licence on Creators & Rights to allow this use.",
     METHOD_NOT_PERMITTED: "Use a permitted way of obtaining the footage, or edit the licence "
                           "to allow this method.",
+    METHOD_UNKNOWN: "On the source's page, record how this recording's footage was obtained.",
     PLATFORM_PERMISSION_MISSING: "Attach written platform permission as evidence first.",
     URL_ACQUISITION_DISABLED: "URL fetching is not available in this version.",
     PLATFORM_NOT_IN_SCOPE: "Edit the licence to allow this platform.",
@@ -306,8 +309,9 @@ def _check_record(s: Session, r: RightsRecord, scope: Scope, source: Source, use
             if not _has_platform_permission(s, r.id):
                 return PLATFORM_PERMISSION_MISSING
         return OK
-    # Media must have been obtained by a method these rights permit (R1): the recording's
-    # actual method when known, else the source's declared one (review finding A).
+    # Media must have been obtained by a method these rights permit (R1). For a recording
+    # this is its actual method, always known here (``evaluate_recording`` refuses when it
+    # is not); the source's declared method applies only to source-level questions.
     if (media_method or source.acquisition_method) not in scope.acquisition_methods:
         return METHOD_NOT_PERMITTED
     if use in ("edit", "publish"):
@@ -407,6 +411,10 @@ def evaluate_recording(s: Session, recording_id: str, use: str, **kw) -> Decisio
     if rec is None or rec.source_id is None:
         return Decision(False, NOT_ATTESTED_MEDIA, use, None)
     kw.setdefault("media_method", rec.acquisition_method)
+    if kw["media_method"] is None and use != "acquire":
+        # Fail closed: never fall back to the source's declared method for real media
+        # (independent audit of 63a2e5e, finding 2).
+        return Decision(False, METHOD_UNKNOWN, use, rec.source_id)
     return evaluate(s, rec.source_id, use, **kw)
 
 

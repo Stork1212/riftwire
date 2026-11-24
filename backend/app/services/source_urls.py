@@ -99,7 +99,10 @@ def parse_source_url(raw: str) -> ParsedSourceUrl:
                                                                        "m.", "clips.")):
             raise SourceUrlError("unsupported_scheme", "Only https links are accepted.")
         url = "https://" + url
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:              # e.g. "https://[" (unbalanced IPv6 bracket), bad port
+        raise SourceUrlError("invalid_url", "The link is not a valid URL.") from None
     if parts.scheme.lower() != "https":
         raise SourceUrlError("unsupported_scheme", "Only https links are accepted.")
     host = _host(parts.netloc)

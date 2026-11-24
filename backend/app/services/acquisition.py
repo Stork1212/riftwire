@@ -90,6 +90,17 @@ def attach_media(s: Session, settings: Settings, source_id: str, recording_id: s
     m = method or src.acquisition_method
     d = check_acquire(s, settings, source_id, m)
     if rec.source_id == source_id:
+        if rec.acquisition_method is None and method is not None:
+            # Linked media whose method was never recorded (pre-0005 data without a
+            # usable provenance event): the owner states it explicitly, once.
+            rec.acquisition_method = method
+            s.flush()
+            rights.provenance(s, "recording", rec.id, "acquisition_method_recorded",
+                              actor=actor, source_id=source_id, method=method,
+                              rights_record_id=d.record_id, rights_version=d.version)
+        elif method is not None and method != rec.acquisition_method:
+            raise ConflictError("How this footage was obtained is already on record",
+                                details={"acquisition_method": rec.acquisition_method})
         return d
     if rec.source_id is not None:
         raise ConflictError("This recording already belongs to another source",

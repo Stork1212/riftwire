@@ -76,8 +76,9 @@ export const rightsApi = {
     request<Source>(`/api/v1/sources/${enc(id)}`, json("PATCH", patch)),
   setAssignments: (id: string, brand_channel_ids: string[]) =>
     request<Source>(`/api/v1/sources/${enc(id)}/assignments`, json("PUT", { brand_channel_ids })),
-  attachRecording: (id: string, recording_id: string) =>
-    request<Source>(`/api/v1/sources/${enc(id)}/recordings`, json("POST", { recording_id })),
+  attachRecording: (id: string, recording_id: string, acquisition_method?: string) =>
+    request<Source>(`/api/v1/sources/${enc(id)}/recordings`,
+      json("POST", acquisition_method ? { recording_id, acquisition_method } : { recording_id })),
   rightsCheck: (id: string, use: Use, p: { platform?: string; brand_channel_id?: string; clip_ms?: number } = {}) =>
     request<Decision>(`/api/v1/sources/${enc(id)}/rights-check${qs({ use, ...p })}`),
   provenance: (id: string) => request<ProvenanceEvent[]>(`/api/v1/sources/${enc(id)}/provenance`),

@@ -62,6 +62,7 @@ class RecordingOut(BaseModel):
     error_message: str | None
     thumbnail_url: str
     source_id: str | None = None          # M2: NULL = rights not attested yet
+    acquisition_method: str | None = None  # M2: how linked media was obtained; NULL = unknown
 
 
 class RecordingDetail(RecordingOut):

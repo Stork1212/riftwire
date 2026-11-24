@@ -761,18 +761,22 @@ R1–R6, §12). Review package: [`M2_REVIEW.md`](M2_REVIEW.md).
   unique; `acquisition_method` per R1) and `source_assignments` (to brand channels).
   `recordings.source_id` links media to its source; NULL means rights are not attested.
   `recordings.acquisition_method` (migration `0005`) records how the media was actually
-  obtained; analysis, editing and publishing are checked against it.
+  obtained; analysis, editing and publishing are checked against it. NULL on linked media
+  means "not on record" and refuses every rights-gated use (`acquisition_method_unknown`)
+  until the owner records it once; the source's declared method is never substituted.
 - **Rights:**
   - `rights_records`: versioned by `lineage_id` and `version`; draft until `attested_at`.
   - Coverage is one of `creator` (a standing licence for every channel), `channels`
     (`rights_record_channels`) or `sources` (`rights_source_links`).
   - `rights_evidence`: supporting documentation.
 - **`provenance_events`:** append-only history of everything above.
-- **Twelve SQLite triggers** enforce immutability in the database itself:
+- **Fourteen SQLite triggers** (`0004`, plus `0006` for UPDATE) enforce immutability in the
+  database itself:
   - attested content can never change;
   - `superseded_by_id` and `revoked_at` can each be set once;
   - attested rows can't be deleted;
-  - coverage links of attested records are frozen;
+  - coverage links of attested records are frozen (no insert, delete or update, checked
+    against both the old and the new parent record);
   - evidence and provenance reject UPDATE and DELETE.
 
   A future `batch_alter_table` on these tables must recreate the triggers.

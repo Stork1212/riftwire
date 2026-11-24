@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
 import { ApiError, api } from "../services/api";
 import { rightsApi } from "../services/rightsApi";
+import { recording } from "./fixtures";
 import type { Creator, Decision, Resolved, RightsRecord, Source, SourceDetail } from "../types/rights";
 
 vi.mock("../services/api", async (orig) => {
@@ -228,6 +229,27 @@ describe("Source detail", () => {
     expect(refused.length).toBeGreaterThan(0);
     expect(document.querySelector('[data-reason="revoked"]')).not.toBeNull();
     expect(await screen.findByText(/— withdrawn/)).toBeInTheDocument();
+  });
+
+  it("asks once how footage was obtained when the method is not on record", async () => {
+    const detailWith = (method: string | null) => ({
+      ...source(), analyze: decision(), acquire: decision({ use: "acquire" }), records: [],
+      recordings: [{ ...recording({ id: "rec-1", original_filename: "old.mp4" }),
+        source_id: "src-1", acquisition_method: method }],
+    } as SourceDetail);
+    r.getSource.mockResolvedValueOnce(detailWith(null)).mockResolvedValue(detailWith("creator_file"));
+    r.provenance.mockResolvedValue([]);
+    r.attachRecording.mockResolvedValue(source());
+    renderAt("/sources/src-1");
+    expect(await screen.findByText(/method not on record/)).toBeInTheDocument();
+    expect(screen.getByText(/analysis, editing\s+and publishing stay blocked/)).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Record method" });
+    expect(button).toBeDisabled();
+    await userEvent.selectOptions(screen.getByLabelText("How the footage was obtained"), "creator_file");
+    await userEvent.click(button);
+    expect(r.attachRecording).toHaveBeenCalledWith("src-1", "rec-1", "creator_file");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Record method" })).toBeNull());
+    expect(screen.getByText("Creator's original files")).toBeInTheDocument();
   });
 
   it("shows a load error", async () => {

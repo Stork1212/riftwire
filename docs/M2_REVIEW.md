@@ -195,3 +195,90 @@ frontend **35/35**, build OK; acceptance **28/28** at the 60 GiB floor; smoke **
 The screenshots and the checker script are review aids kept out of the repository. Fonts
 in the container differ slightly from macOS, so the Mac run is the reference for everything except the visual check.
 
+## 9. Independent audit of `63a2e5e`: findings and corrections
+
+Each finding was reproduced before any change. The new regression tests
+(`backend/tests/test_m2_audit.py`, 17 tests) were then run against `63a2e5e` itself:
+**13 fail there**, each for the reported reason. The other 4 cover behaviour that was
+already correct (application connections enforce foreign keys, an unpermitted method is
+refused, draft coverage stays editable, a port number was already a validation error).
+
+### 9.1 Job history lost across migrations (HIGH)
+- **Reproduced.** On a populated database, upgrading to `0004`, downgrading `0005` or
+  downgrading `0004` deleted every job and blanked every `system_events` job and recording
+  reference. M1's migrations were not affected.
+- **Cause:** `alembic/env.py` turned foreign keys **on** for the migration connection. A
+  batch migration rebuilds `recordings` (copy, `DROP TABLE`, rename). With enforcement on,
+  the `DROP` deletes every row and fires `ON DELETE CASCADE` on `jobs` and `SET NULL` on
+  `system_events`.
+- **Second defect found while fixing it:**
+  - Migrations were not atomic. Python's sqlite3 driver never opens a transaction for DDL,
+    and Alembic's SQLite default commits after every revision.
+  - A failure could therefore leave the schema changed while the version row was not.
+- **Fix, in `env.py`, so it covers every current and future migration:**
+  - SQLite's documented procedure for schema changes: foreign keys **off** while
+    migrating, then `PRAGMA foreign_key_check` before commit.
+  - The whole run is one real transaction: driver transaction handling off, explicit
+    `BEGIN IMMEDIATE`, `transactional_ddl=True`.
+  - A dangling reference rolls back everything, DDL included.
+  - The application's own connections still enforce foreign keys (tested).
+- **Tests:** a populated database through `0003→head`, `head→0004`, `0004→0003` and
+  `0001→head→0001→head`. Recordings, jobs and event references survive every step, and
+  `foreign_key_check` is clean. A planted orphan makes the upgrade fail with the version
+  and schema unchanged.
+
+### 9.2 Backfill used the declared method, not the actual one (HIGH)
+- **Reproduced:**
+  - `0005` copied the source's declared method onto already-linked recordings.
+  - `evaluate` also fell back to the declared method whenever the recording's method was NULL.
+  - So media attached as `creator_file` to a source declared `local_recording` was
+    authorized under a licence that permits only `local_recording`.
+- **Fix:**
+  - **Backfill:** `0005` takes the method from the recording's own `attached_to_source`
+    provenance event. Events are recorded since M2's first commit, and only those for its
+    current source count. The method is used only if it is a known method and exactly one
+    such method is recorded. Otherwise the column stays NULL.
+  - **Fail closed:** `evaluate_recording` refuses analyse, edit and publish with the new
+    reason `acquisition_method_unknown`. It never substitutes the declared method. The
+    declared method still answers source-level questions about no specific media.
+  - **Recording it:** the owner states the method once, via attach with an explicit
+    method. It is checked against the licence, recorded with an
+    `acquisition_method_recorded` provenance event, and can't be changed afterwards
+    (409).
+  - **Dashboard:** the source's media list shows each recording's method. Where it is not
+    on record, a "How was it obtained?" choice is offered.
+- **Tests:**
+  - the audit's scenario, a `local_recording` source with a `creator_file` attachment:
+    the method is backfilled as `creator_file` and analysis is refused under a
+    `local_recording`-only licence;
+  - no event, two conflicting events and an unknown method all stay blocked for
+    analyse, edit and publish until the method is recorded;
+  - an unpermitted method cannot be recorded;
+  - the frontend flow.
+
+### 9.3 Attested coverage could be changed by UPDATE (HIGH)
+- **Reproduced:** `0004` froze `rights_record_channels` and `rights_source_links` against
+  INSERT and DELETE only. An UPDATE could change which channel or source an attested link
+  names, move a link off an attested record, or move a draft's link onto one.
+- **Fix:** migration `0006` adds `BEFORE UPDATE` triggers on both tables. They refuse when
+  either the **old or the new** parent record is attested. Links between drafts stay
+  editable. That makes 14 triggers in total.
+- **Tests:** all three UPDATE forms on each table are refused with the links unchanged.
+  Draft-to-draft updates still work.
+
+### 9.4 Malformed URL caused an unhandled error (MEDIUM)
+- **Reproduced:** `POST /api/v1/sources/resolve` with `https://[` returned HTTP 500,
+  because `urlsplit` raises `ValueError`.
+- **Fix:** the error is translated into the existing structured client error, code
+  `invalid_url` (HTTP 422).
+- **Tests:** `https://[` and `https://[::1` give 422 with that code; a bad port still gives
+  `port_not_allowed`.
+
+### 9.5 Verification (cloud container)
+| Check | Result |
+|---|---|
+| `scripts/test.sh` (exit 0) | ruff clean; backend **393 passed, 1 skipped** (macOS-only), 1 third-party warning; bench **48**; frontend lint/typecheck clean, **36/36**; build OK |
+| Alembic | head → `0003` → head; `alembic check` clean; **14** triggers at head |
+| Acceptance (`--min-free-gib 1`, test-only) | **28/28** |
+| Smoke (test-only 1 GiB floor) | **28 PASS, 0 FAIL**, 1 macOS-only SKIP |
+

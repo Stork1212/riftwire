@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { ActionableError } from "../components/ActionableError";
 import { DecisionLine, METHODS, RightsBadge, ScopeSummary, UseChips } from "../components/rights";
 import { EmptyState, ErrorBanner, Loading, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
@@ -37,6 +38,43 @@ function Assignments({ src, brands, onSaved }: { src: SourceDetail; brands: Bran
   );
 }
 
+// Methods whose footage arrives through Import (the only ones available in M2).
+const RECORDABLE_METHODS = ["local_recording", "creator_file", "platform_export"];
+
+/** Linked media whose acquisition method is not on record (data linked before migration
+ * 0005 without a usable provenance event): analysis, editing and publishing stay refused
+ * until the owner states, once, how the footage was obtained. */
+function RecordMethod({ sourceId, recordingId, onDone }: {
+  sourceId: string; recordingId: string; onDone: () => void;
+}) {
+  const [method, setMethod] = useState("");
+  const [err, setErr] = useState<unknown>();
+  const save = async () => {
+    setErr(undefined);
+    try {
+      await rightsApi.attachRecording(sourceId, recordingId, method);
+      onDone();
+    } catch (x) {
+      setErr(x);
+    }
+  };
+  return (
+    <div className="stack">
+      <p className="hint">How this footage was obtained is not on record, so analysis, editing
+        and publishing stay blocked. It can be recorded once.</p>
+      <div className="toolbar">
+        <select aria-label="How the footage was obtained" value={method}
+          onChange={(e) => setMethod(e.target.value)}>
+          <option value="">How was it obtained?…</option>
+          {RECORDABLE_METHODS.map((m) => <option key={m} value={m}>{METHODS[m] ?? m}</option>)}
+        </select>
+        <button className="btn btn-sm" disabled={!method} onClick={save}>Record method</button>
+      </div>
+      {err !== undefined && <ActionableError error={err} title="Not recorded" />}
+    </div>
+  );
+}
+
 function AttachRecording({ sourceId, onDone }: { sourceId: string; onDone: () => void }) {
   const recs = usePolling(() => api.listRecordings({ limit: 200 }), 30_000);
   const [rid, setRid] = useState("");
@@ -67,7 +105,8 @@ function AttachRecording({ sourceId, onDone }: { sourceId: string; onDone: () =>
 const ACTION_TEXT: Record<string, string> = {
   created: "created", attested: "attested", revoked: "revoked", superseded: "superseded",
   channel_added: "channel added", assignments_set: "brand channels set", media_attached: "media attached",
-  attached_to_source: "linked to source", evidence_added: "evidence added", updated: "updated",
+  attached_to_source: "linked to source", acquisition_method_recorded: "acquisition method recorded",
+  evidence_added: "evidence added", updated: "updated",
   rights_refused: "refused (rights)",
 };
 
@@ -158,8 +197,16 @@ export function SourceDetailPage() {
             Import with this source selected, or attach an imported recording.</EmptyState> : (
             <ul className="plain">
               {s.recordings.map((r) => (
-                <li key={r.id}><Link to={`/recordings/${r.id}`}>{r.original_filename}</Link>{" "}
-                  <StatusBadge status={r.status} /></li>
+                <li key={r.id}>
+                  <div><Link to={`/recordings/${r.id}`}>{r.original_filename}</Link>{" "}
+                    <StatusBadge status={r.status} />{" "}
+                    <span className="muted small">
+                      {r.acquisition_method ? METHODS[r.acquisition_method] ?? r.acquisition_method
+                        : "method not on record"}
+                    </span></div>
+                  {r.acquisition_method === null &&
+                    <RecordMethod sourceId={s.id} recordingId={r.id} onDone={refresh} />}
+                </li>
               ))}
             </ul>
           )}

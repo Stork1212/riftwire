@@ -61,7 +61,16 @@ _Last updated: 2026-11-24_
     1920×1080 went from 39 page views with issues to 0.
   - **Mac verification of `ee17e07`** (2026-11-24): all stages exit 0. Backend 374 + 3
     skipped, bench 47 + 1, frontend 35, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
+  - **Independent audit of `63a2e5e`** (2026-11-24): four reproduced defects fixed with
+    regression tests ([`M2_REVIEW.md`](M2_REVIEW.md) §9):
+    - migrations deleted job history (foreign keys were on during table rebuilds; migrations
+      are now also atomic);
+    - the `0005` backfill used the declared method instead of the recorded one, and an
+      unknown method now fails closed;
+    - attested coverage could be changed by UPDATE (migration `0006`);
+    - a malformed URL returned HTTP 500.
   - **Pending:**
+    - Mac verification of the corrected code;
     - updated independent review;
     - merge (owner).
     M3 is not started.

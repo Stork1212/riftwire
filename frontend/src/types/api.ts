@@ -59,6 +59,8 @@ export interface Recording {
   error_message: string | null;
   thumbnail_url: string;
   source_id?: string | null;
+  /** How linked media was obtained; null = not on record (rights-gated uses refused). */
+  acquisition_method?: string | null;
 }
 
 export interface RecordingDetail extends Recording {
