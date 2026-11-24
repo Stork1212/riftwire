@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ActionableError } from "../components/ActionableError";
 import { DecisionLine, METHODS, RightsBadge, ScopeSummary, UseChips } from "../components/rights";
+import { SourceDownload } from "../components/SourceDownload";
 import { EmptyState, ErrorBanner, Loading, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
 import { formatDate } from "../services/format";
@@ -153,6 +154,7 @@ export function SourceDetailPage() {
     <>
       <PageHeader eyebrow={<Link to="/sources" className="muted">← Sources</Link>}
         title={s.title_user || s.url_canonical || "Local source"} actions={<RightsBadge status={s.rights_status} />} />
+      {s.url_canonical && <SourceDownload key={s.id} sourceId={s.id} />}
       {err && <ErrorBanner error={err} />}
       <div className="grid-2">
         <Panel title="Source" actions={

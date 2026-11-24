@@ -8,6 +8,7 @@ import json
 import threading
 import time
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -31,7 +32,17 @@ from app.models import (
     Source,
     SystemEvent,
 )
-from app.services import acquisition, clips, evidence, matching, queue, rights, sources
+from app.services import (
+    acquisition,
+    clips,
+    evidence,
+    matching,
+    media,
+    queue,
+    rights,
+    sources,
+    url_download,
+)
 from app.services.source_urls import parse_source_url
 from tests.conftest import requires_ffmpeg
 from tests.helpers import import_file
@@ -682,3 +693,43 @@ def test_clip_cut_checks_edit_rights_and_length(w, client, db, settings, media_d
     with db.session() as session:
         rights.revoke(session, licence, "rights withdrawn")
     assert client.post(path, params=params).status_code == 403
+
+def test_url_download_checks_permission_and_rechecks_before_delivery(
+        w, client, db, settings, monkeypatch):
+    scope = {**FULL_SCOPE, "acquisition_methods": ["url_fetch"]}
+    licence = w.licence(scope=scope)
+    source_id = w.source()
+    endpoint = f"/api/v1/sources/{source_id}/download"
+
+    refused = client.post(endpoint)
+    assert refused.status_code == 403
+    assert refused.json()["error"]["details"]["reason"] == rights.URL_ACQUISITION_DISABLED
+    settings.url_acquisition_enabled = True
+    refused = client.post(endpoint)
+    assert refused.status_code == 403
+    assert refused.json()["error"]["details"]["reason"] == rights.PLATFORM_PERMISSION_MISSING
+    evidence.add_evidence(db, settings, licence, kind="platform_permission", reference="Test only")
+    monkeypatch.setattr(url_download.shutil, "which", lambda binary: f"/test/{binary}")
+
+    def fetch(args, timeout, **kw):
+        assert args[-1] == "https://clips.twitch.tv/BigHeistMoment-AbC_123"
+        Path(args[args.index("-o") + 1]).write_bytes(b"example mp4")
+        return media.CommandResult(0, b"", "")
+
+    monkeypatch.setattr(media, "run_command", fetch)
+    result = client.post(endpoint)
+    assert result.status_code == 200, result.text
+    assert result.content == b"example mp4"
+    assert list(settings.temp_dir.glob("source-download-*")) == []
+
+    def fetch_then_revoke(args, timeout, **kw):
+        result = fetch(args, timeout, **kw)
+        with db.session() as s:
+            rights.revoke(s, licence, "withdrawn during download")
+        return result
+
+    monkeypatch.setattr(media, "run_command", fetch_then_revoke)
+    refused = client.post(endpoint)
+    assert refused.status_code == 403
+    assert refused.json()["error"]["details"]["reason"] == rights.RIGHTS_CHANGED
+    assert list(settings.temp_dir.glob("source-download-*")) == []

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { JobStages } from "../components/JobStages";
+import { SourceDownload } from "../components/SourceDownload";
 import { LinkResolver } from "../components/LinkResolver";
 import { ErrorBanner, PageHeader, Panel, ProgressBar, StatusBadge } from "../components/ui";
 import { ApiError, api, uploadRecording, type UploadHandle } from "../services/api";
@@ -88,9 +89,9 @@ export function ImportPage() {
           ) : (
             <LinkResolver submitLabel="Use this video" onSource={(id) => setUrlSource(id)} />
           )}
-          <p className="hint">RIFTWIRE does not download from YouTube or Twitch. Provide the
-            footage below: the creator's original file, or your own download from YouTube Studio or
-            the Twitch dashboard for your channel.</p>
+          {urlSource && <SourceDownload key={urlSource} sourceId={urlSource} />}
+          <p className="hint">You can also import the creator's original file or your own
+            platform export below.</p>
         </Panel>
       )}
 

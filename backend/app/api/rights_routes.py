@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from app.api.routes import CFG, DB, Limit, Offset, rec_out, require_schema
@@ -61,7 +62,7 @@ from app.schemas.rights import (
     SourcePatch,
     SupersedeIn,
 )
-from app.services import acquisition, evidence, rights, sources
+from app.services import acquisition, evidence, rights, sources, url_download
 from app.services.sources import channel_coverage
 
 m2 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_schema)])
@@ -427,6 +428,14 @@ def put_assignments(source_id: str, body: AssignmentsIn, db: DB):
     with db.session() as s:
         sources.set_assignments(s, source_id, body.brand_channel_ids)
         return source_out(s, sources.get_source(s, source_id))
+
+
+@m2.post("/sources/{source_id}/download")
+def download_source(source_id: str, db: DB, cfg: CFG):
+    output, cleanup = url_download.prepare(db, cfg, source_id)
+    return FileResponse(output, media_type="video/mp4", filename="source-video.mp4",
+                        headers={"Cache-Control": "no-store"},
+                        background=BackgroundTask(cleanup))
 
 
 @m2.post("/sources/{source_id}/recordings", response_model=SourceOut)

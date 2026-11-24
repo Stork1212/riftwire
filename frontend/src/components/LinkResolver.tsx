@@ -6,6 +6,7 @@ import { rightsApi } from "../services/rightsApi";
 import { usePolling } from "../services/usePolling";
 import type { CreatorChannel, Resolved } from "../types/rights";
 import { RightsBadge } from "./rights";
+import { SourceDownload } from "./SourceDownload";
 import { ActionableError } from "./ActionableError";
 
 function VideoPreview({ video }: { video: Resolved }) {
@@ -147,6 +148,7 @@ export function LinkResolver({ onSource, submitLabel = "Create source" }: {
       {res && (
         <div className="resolve" data-testid="resolve-result">
           <VideoPreview video={res} />
+          <SourceDownload sourceId={res.existing_source?.id} />
           <dl className="kv">
             <dt>Creator</dt>
             <dd>{res.match.status === "matched" && res.creator_name

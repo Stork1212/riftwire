@@ -71,12 +71,25 @@ export function suggestClips(id: string): Promise<{ items: ClipSuggestion[] }> {
 
 export async function downloadClip(id: string, start: number, end: number, subtitles = false): Promise<void> {
   const path = `/api/v1/recordings/${encodeURIComponent(id)}/clip${qs({ start_ms: start, end_ms: end, subtitles: subtitles ? "true" : undefined })}`;
-  const response = await fetch(path, { method: "POST" });
+  return downloadMp4(path, `clip-${start}-${end}${subtitles ? "-captioned" : ""}.mp4`);
+}
+
+export function downloadSource(id: string): Promise<void> {
+  return downloadMp4(`/api/v1/sources/${encodeURIComponent(id)}/download`, "source-video.mp4");
+}
+
+async function downloadMp4(path: string, filename: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(path, { method: "POST" });
+  } catch {
+    throw parseError(0, "");
+  }
   if (!response.ok) throw parseError(response.status, await response.text());
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
   link.href = url;
-  link.download = `clip-${start}-${end}${subtitles ? "-captioned" : ""}.mp4`;
+  link.download = filename;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

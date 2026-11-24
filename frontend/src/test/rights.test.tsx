@@ -340,7 +340,7 @@ describe("Games & channels", () => {
 });
 
 describe("Import and navigation", () => {
-  it("offers Local file and Video URL; the URL path never offers a download", async () => {
+  it("offers local import and shows download refusals for saved video links", async () => {
     r.resolve.mockResolvedValue({
       platform: "twitch", media: "vod", video_id: "1", canonical_url: "https://www.twitch.tv/videos/1",
       start_ms: null, channel_login: null, existing_source: source(),
@@ -354,8 +354,16 @@ describe("Import and navigation", () => {
     await userEvent.click(screen.getByRole("button", { name: "Check link" }));
     await userEvent.click(await screen.findByRole("button", { name: "Already a source: use it" }));
     expect(screen.getByLabelText("How this file was obtained")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
-    expect(screen.getByText(/does not download from YouTube or Twitch/)).toBeInTheDocument();
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({
+      error: { code: "rights_refused", message: "Written platform permission is required." },
+    }), { status: 403 }));
+    try {
+      await userEvent.click(screen.getByRole("button", { name: "Download MP4" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Written platform permission is required.");
+      expect(fetch).toHaveBeenCalledWith(`/api/v1/sources/${source().id}/download`, { method: "POST" });
+    } finally {
+      fetch.mockRestore();
+    }
   });
 
   it("groups navigation into Workspace, Management and System", () => {

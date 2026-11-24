@@ -358,6 +358,8 @@ def evaluate(s: Session, source_id: str | None, use: str, *, platform: str | Non
     params = {k: v for k, v in (("platform", platform), ("brand_channel_id", brand_channel_id),
                                 ("clip_ms", clip_ms), ("method", method),
                                 ("media_method", media_method)) if v is not None}
+    if url_acquisition_enabled and use == "acquire" and method == "url_fetch":
+        params["url_acquisition_enabled"] = True
 
     def no(reason: str, r: RightsRecord | None = None) -> Decision:
         return Decision(False, reason, use, source_id, r.id if r else None,
