@@ -69,8 +69,9 @@ _Last updated: 2026-11-24_
       unknown method now fails closed;
     - attested coverage could be changed by UPDATE (migration `0006`);
     - a malformed URL returned HTTP 500.
+  - **Mac verification of `57c6b16`** (2026-11-24): all stages exit 0. Backend 391 + 3
+    skipped, bench 47 + 1, frontend 36, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
   - **Pending:**
-    - Mac verification of the corrected code;
     - updated independent review;
     - merge (owner).
     M3 is not started.

@@ -282,3 +282,9 @@ refused, draft coverage stays editable, a port number was already a validation e
 | Acceptance (`--min-free-gib 1`, test-only) | **28/28** |
 | Smoke (test-only 1 GiB floor) | **28 PASS, 0 FAIL**, 1 macOS-only SKIP |
 
+**Mac run of `57c6b16`** (evidence: `docs/acceptance/2026-11-24-macos-m2-57c6b16/`): all stages
+exit 0, clean tree before and after; backend **391 passed, 3 skipped**, bench 47 + 1,
+frontend **36/36**, build OK; acceptance **28/28** at the 60 GiB floor; smoke **30/30**. Two
+earlier, overlapping runs of the script interfered with each other through shared ports
+and were discarded (see that folder's README); the script now refuses concurrent runs.
+
