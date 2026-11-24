@@ -1,8 +1,10 @@
 # M0 benchmark results (Phase 2)
 
-**Status: M0 complete and verified on the owner's Mac** (transcription and signals in one
-run). PR #5 stays a draft for independent review. **No M1 work starts until the owner
-approves.**
+**Status: M0 approved by the owner (2026-11-24) as a completed benchmarking milestone**,
+with the timestamp-accuracy and memory limitations documented below. This is **not**
+production acceptance of transcription or highlight detection. Merged as PR #5, tag
+`v0.2.0-m0`. Next: M1 ([checklist](M1_STORAGE_CHECKLIST.md)), which starts only after owner
+approval.
 
 | | |
 |---|---|

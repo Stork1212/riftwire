@@ -1,25 +1,54 @@
 # RIFTWIRE — Roadmap
 
-_Status: **approved in principle by the owner (2026-11-23)** with decisions D1–D9 (see
-[`PRODUCT_SPEC.md`](PRODUCT_SPEC.md#owner-decisions-log-2026-11-23)). Phase 1 scope and
-architecture are unchanged. **Next gate:** Phase 1 approved and merged → detailed Phase 2
-technical implementation proposal → owner approval → Phase 2 implementation._
+_Status: **approved by the owner** (2026-11-23) with decisions D1–D10 (see
+[`PRODUCT_SPEC.md`](PRODUCT_SPEC.md#owner-decisions-log-2026-11-23)). Phase 1 is complete
+(v0.1.0). Phases 2–3 are delivered as milestones M0–M7 ([`PHASE2_PROPOSAL.md`](PHASE2_PROPOSAL.md));
+M0 is complete (v0.2.0-m0). **Next gate:** owner approval of the
+[M1 checklist](M1_STORAGE_CHECKLIST.md) → M1 implementation._
 
 ## Overview
 
 | Phase | Name | Outcome | Status |
 |---|---|---|---|
-| 1 | **Foundation** | Crash-safe local ingestion, metadata, thumbnails, persistent queue, dashboard | Implemented and verified on the Mac; awaiting final review (PR #1) |
-| 2 | **Sources & Signals** | Rights confirmation + provenance; permitted acquisition (local, authorized YouTube/Twitch, selective sections); configurable storage locations; small local Whisper with word timestamps + benchmark; audio/scene signals | Approved in principle; awaiting technical proposal |
-| 3 | **Highlight Detection & Review** | Interchangeable AI provider interface (Ollama default; OpenAI/Anthropic optional at $0 budget), usage ledger + spending limits; per-game highlight prompts; validated, ranked records; review table; exports; auto-submit | Approved in principle |
+| 1 | **Foundation** | Crash-safe local ingestion, metadata, thumbnails, persistent queue, dashboard | **Complete** (v0.1.0) |
+| 2 | **Sources & Signals** | Rights confirmation + provenance; permitted acquisition (local, authorized YouTube/Twitch, selective sections); configurable storage locations; small local Whisper with word timestamps + benchmark; audio/scene signals | **In progress:** M0 complete (v0.2.0-m0); next M1 |
+| 3 | **Highlight Detection & Review** | Interchangeable AI provider interface (Ollama default; OpenAI/Anthropic optional at $0 budget), usage ledger + spending limits; per-game highlight prompts; validated, ranked records; review table; exports; auto-submit | Approved; delivered as M5–M7 |
 | 4 | **Editing Preset Studio & Rendering** | Per-channel brand kits (uploaded logos/fonts/outros); 1080×1920 35/65 presets, hooks, word-level subtitles, 2 s outro, live preview, VideoToolbox renders + QC; per-game editing prompts; **artifact registry for generated files (retention foundations)** | Approved in principle |
 | 5 | **Publishing** | **YouTube Shorts first**; multi-account channels, scheduling, generated metadata + thumbnails, mandatory human approval; then Instagram Reels, TikTok, Facebook Reels, X via official APIs; **storage lifecycle & retention manager (72 h after verified publication)** | Approved in principle |
 | 6 | **Analytics & Optimization** | Performance ingestion, scoring feedback, prompt/model A/B evaluation | Approved in principle |
 
-The earlier phase list in CLAUDE.md §1 (2 Analysis, 3 Editing, 4 Publishing, 5 Analytics) is
+The earlier phase list in CLAUDE.md §1 (2 Analysis, 3 Editing, 4 Publishing, 5 Analytics) was
 **refined, not replaced**: "Analysis" is split into Phase 2 (signals) and Phase 3 (highlight
-detection). Updating CLAUDE.md §1 is an architecture-document change and will be done only once
-this roadmap is approved.
+detection). CLAUDE.md §1 now reflects this roadmap.
+
+## Phases 2–3 milestones (M0–M7)
+
+Phases 2 and 3 are delivered as eight milestones from the approved
+[technical proposal](PHASE2_PROPOSAL.md). **Phase numbering is unchanged:** milestones span
+Phases 2 and 3 and are not renumbered. Each milestone is a separate PR, verified on the Mac,
+independently reviewed, and needs the owner's approval before it starts.
+
+| Milestone | Phase | Scope | Status |
+|---|---|---|---|
+| M0 | 2 | Benchmark spike (transcription engine/model, signal throughput) | **Complete**: [`BENCHMARKS.md`](BENCHMARKS.md), tag `v0.2.0-m0` |
+| M1 | 2 | Storage architecture: locations, volume identity, offline handling, persistent per-volume reservations, cross-volume transfers, verified migration | **Next**: [checklist](M1_STORAGE_CHECKLIST.md) awaiting approval |
+| M2 | 2 | Rights & sources | Not started |
+| M3 | 2 | Permitted acquisition | Not started |
+| M4 | 2 | Transcription & signals (MLX Whisper `base` default; `small` optional after chunked memory testing; raw timestamps preserved) | Not started |
+| M5 | 3 | AI providers & prompts ($0 budget; Ollama deferred) | Not started |
+| M6 | 3 | Highlight detection & validation | Not started |
+| M7 | 3 | Review dashboard & exports | Not started |
+
+**M0 findings that shape later milestones** (details in [`BENCHMARKS.md`](BENCHMARKS.md)):
+- **WER** on synthetic natural speech: base 1.4 / 3.8 / 3.7 %, small 0.7 / 2.1 / 0.2 %
+  (clean / noisy / music).
+- **Speed:** base transcribes 60 min of audio in about 31 s.
+- **Raw word timing is early** (base starts about −280 ms, ends about −145 ms). Any
+  correction needs validation on real commentary (M4).
+- **Memory:** a single 60-minute pass reached a 7.2 GB footprint with `small`. M4 must
+  transcribe in chunks.
+- **Signals:** scene cuts 53/53 and loudness bursts 23/23 on synthetic 1080p60; proxy at 31×
+  realtime.
 
 ## Phase 2 — Sources & Signals
 
@@ -48,8 +77,11 @@ this roadmap is approved.
 - Unmounted SSD path → no directories created on the internal disk; readiness reports offline.
 - Crash tests extended to download, transcription and cross-volume finalize.
 
-**Owner approvals needed before/within Phase 2:** the technical proposal itself; small-model
-downloads (sizes listed in the proposal); SSD timing.
+**Owner approvals before/within Phase 2:**
+- Technical proposal: approved.
+- M0 and its model downloads: approved and complete.
+- Each further milestone: needs approval.
+- Real-data migration and drive formatting: need separate approval.
 
 ## Phase 3 — Highlight Detection & Review
 
