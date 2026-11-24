@@ -276,6 +276,7 @@ LINK_UNSUPPORTED = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, e
 # <rec>[.<ext>].<token>.partial — attempt-scoped staging copies (see services.transfer).
 _PARTIAL_RE = re.compile(
     r"^(?P<rec>[0-9a-f-]{36})(?:\.[a-z0-9]{1,10})?\.(?P<token>[0-9a-z-]+)\.partial$")
+_THUMB_TMP_RE = re.compile(r"^\.job-(?P<job>[0-9a-f-]{36})-(?P<token>[0-9a-z-]+)\.tmp\.jpg$")
 _JOB_TMP_RE = re.compile(r"^job-(?P<job>[0-9a-f-]{36})-(?P<token>[0-9a-z-]+)\.tmp\.")
 
 
@@ -386,10 +387,22 @@ def _copy_across_volumes(settings: Settings, layout: Layout, rec: Recording, src
     try:
         sdir = staging_dir(settings)
         layout.require_online("recordings")
-        sdir.mkdir(exist_ok=True)
+        sdir.mkdir(exist_ok=True)  # no parents: fails if the recordings root vanished
+        keeper = (reservations.Keeper(db, layout, res, rec.file_size_bytes,
+                                      lease_seconds=settings.reservation_lease_seconds,
+                                      free_fn=free_bytes) if db is not None else None)
+
+        def on_progress(done: int) -> None:
+            if keeper is not None:
+                keeper.tick(done)  # keep the lease alive during long copies
+            if progress:
+                progress(done)
         try:
-            return transfer.transfer_file(src, dst, rec.sha256, sdir, attempt_token,
-                                          progress=progress, should_stop=should_stop)
+            return transfer.transfer_file(
+                src, dst, rec.sha256, sdir, attempt_token, progress=on_progress,
+                should_stop=should_stop,
+                # Re-verify the recordings drive immediately before promotion.
+                guard=lambda: layout.require_online("recordings"))
         except transfer.TransferError as e:
             raise FinalizeError(str(e), permanent=e.permanent) from e
     finally:
@@ -430,11 +443,13 @@ def reconcile(db: Database, settings: Settings, component: str,
     for kind, ok in (("temp", temp_ok), ("recordings", rec_ok)):
         if not ok:
             report.skipped_offline.append(kind)
-    sdir = staging_dir(settings)
     temp_files = sorted(p for p in settings.temp_dir.iterdir() if p.is_file()) \
         if temp_ok else []
+    sdir = staging_dir(settings) if rec_ok else None
     staging_files = sorted(p for p in sdir.iterdir() if p.is_file()) \
-        if rec_ok and sdir.is_dir() else []
+        if sdir is not None and sdir.is_dir() else []
+    thumb_tmp_files = sorted(settings.thumbnails_dir.glob(".job-*.tmp.jpg")) \
+        if settings.thumbnails_dir.is_dir() else []
     active = active_lease_tokens(db)  # read AFTER listing files (see docstring)
     with db.session() as s:
         staged_names = set(s.scalars(select(Recording.staging_filename)
@@ -457,6 +472,13 @@ def reconcile(db: Database, settings: Settings, component: str,
         if stale:
             p.unlink(missing_ok=True)
             report.removed_temp.append(p.name)
+
+    # Thumbnail temp files of dead attempts (thumbnails/.job-<job>-<token>.tmp.jpg).
+    for p in thumb_tmp_files:
+        m = _THUMB_TMP_RE.match(p.name)
+        if m and m["token"] not in active:
+            p.unlink(missing_ok=True)
+            report.removed_temp.append(f"thumbnails/{p.name}")
 
     for p in staging_files:
         m = _PARTIAL_RE.match(p.name)

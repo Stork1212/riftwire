@@ -85,6 +85,8 @@ class Plan:
     problems: list[str] = field(default_factory=list)
     resume_of: str | None = None
     already_verified: int = 0
+    anchor: Path | None = None        # nearest existing ancestor of dest at planning time
+    anchor_dev: int | None = None     # its device: creation must happen on this same drive
 
     @property
     def ok(self) -> bool:
@@ -110,6 +112,39 @@ def _nearest_existing(path: Path) -> Path:
     while not p.exists():
         p = p.parent
     return p
+
+
+def make_dirs_below(root: Path, rel: Path) -> None:
+    """Create ``rel`` beneath an EXISTING ``root``, one level at a time (never
+    ``parents=True``). If ``root`` vanished (drive unplugged), this fails instead of
+    recreating the path on the internal disk."""
+    if not root.is_dir():
+        raise MigrationRefused(f"{root} is no longer available (drive unplugged?)")
+    d = root
+    for part in rel.parts:
+        if part in ("", ".", ".."):
+            raise MigrationRefused(f"unsafe relative path: {rel}")
+        d = d / part
+        try:
+            d.mkdir()
+        except FileExistsError:
+            if not d.is_dir():
+                raise MigrationRefused(f"{d} exists and is not a folder") from None
+
+
+def create_destination(p: Plan) -> None:
+    """Create ``p.dest`` below the planned anchor, re-checking that the anchor is still the
+    same drive and that no unmounted drive is involved (closes the plan→create window)."""
+    if (root := volumes.unmounted_volume_root(p.dest)) is not None:
+        raise MigrationRefused(f"the drive {root} is not mounted")
+    anchor = p.anchor or _nearest_existing(p.dest)
+    if anchor in (Path("/"), Path("/Volumes")):
+        raise MigrationRefused(f"refusing to create {p.dest} directly under {anchor}")
+    if not anchor.is_dir() or os.stat(anchor).st_dev != p.anchor_dev:
+        raise MigrationRefused(f"{anchor} changed since planning (drive swapped?)")
+    make_dirs_below(anchor, p.dest.relative_to(anchor))
+    if os.stat(p.dest).st_dev != p.anchor_dev:
+        raise MigrationRefused("destination ended up on a different drive than planned")
 
 
 def _list_files(root: Path) -> list[Path]:
@@ -246,8 +281,9 @@ def plan(db: Database, settings: Settings, layout: Layout, kind: str, dest: Path
                 + (" (same drive as the source)" if same_volume else ""))
     except OSError as e:
         problems.append(f"cannot read free space at the destination: {e}")
+    anchor = _nearest_existing(dest)
     return Plan(kind, src, dest, files, total, free, floor, problems,
-                resume.id if resume else None, verified)
+                resume.id if resume else None, verified, anchor, os.stat(anchor).st_dev)
 
 
 # --------------------------------------------------------------------------- execute
@@ -306,39 +342,54 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
         raise MigrationRefused("; ".join(p.problems))
     src_loc = layout.location(kind)
 
-    # 1. Create the destination (only now, after every check) or resume it.
+    # 1. Journal row FIRST (so a crash at any later point is resumable), then the
+    #    destination folder and its marker (only now, after every check).
     mig = open_migration(db, kind)
     if mig is None:
-        dest.mkdir(parents=True, exist_ok=True)
+        with db.session() as s_:
+            mig = StorageMigration(kind=kind, source_path=str(src_loc.path),
+                                   dest_path=str(dest), dest_location_uuid=str(uuid.uuid4()),
+                                   status=MigrationStatus.COPYING.value,
+                                   total_files=len(p.files), total_bytes=p.total_bytes,
+                                   created_at=utcnow(), updated_at=utcnow())
+            s_.add(mig)
+            s_.flush()
+            record_event(s_, Severity.INFO, "migration", "storage_migration_started",
+                         f"Migration of '{kind}' to {dest} started ({len(p.files)} files, "
+                         f"{p.total_bytes} bytes)")
+            s_.expunge(mig)
+        progress(f"journal {mig.id} created")
+    else:
+        progress(f"resuming migration {mig.id}")
+    if not dest.exists():
+        create_destination(p)
+        progress(f"created destination {dest}")
+    marker = read_marker(dest)
+    if marker is None:
+        if any(n not in (STAGING,) for n in os.listdir(dest)):
+            raise MigrationRefused("destination has files but no marker; refusing")
         try:
             vi = volumes.volume_info(dest)
         except Exception as e:
             raise MigrationRefused(f"could not identify the destination drive: {e}") from e
         if not volumes.filesystem_allowed(vi.fs_type):
             raise MigrationRefused(f"filesystem '{vi.fs_type}' is not allowed (APFS required)")
-        vol_uuid = _volume_uuid_for(db, dest, vi.hw_volume_uuid)
-        loc_uuid = str(uuid.uuid4())
-        write_marker(dest, {"format": MARKER_FORMAT, "kind": kind, "location_uuid": loc_uuid,
-                            "volume_uuid": vol_uuid, "hw_volume_uuid": vi.hw_volume_uuid,
+        write_marker(dest, {"format": MARKER_FORMAT, "kind": kind,
+                            "location_uuid": mig.dest_location_uuid,
+                            "volume_uuid": _volume_uuid_for(db, dest, vi.hw_volume_uuid),
+                            "hw_volume_uuid": vi.hw_volume_uuid,
                             "created_at": utcnow().isoformat()})
-        with db.session() as s:
-            mig = StorageMigration(kind=kind, source_path=str(src_loc.path),
-                                   dest_path=str(dest), dest_location_uuid=loc_uuid,
-                                   status=MigrationStatus.COPYING.value,
-                                   total_files=len(p.files), total_bytes=p.total_bytes,
-                                   created_at=utcnow(), updated_at=utcnow())
-            s.add(mig)
-            s.flush()
-            record_event(s, Severity.INFO, "migration", "storage_migration_started",
-                         f"Migration of '{kind}' to {dest} started ({len(p.files)} files, "
-                         f"{p.total_bytes} bytes)")
-            s.expunge(mig)
-        progress(f"created destination {dest}")
-    else:
-        progress(f"resuming migration {mig.id}")
-    marker = read_marker(dest)
+        marker = read_marker(dest)
     if marker is None or marker.get("location_uuid") != mig.dest_location_uuid:
         raise MigrationRefused("destination marker does not match the migration journal")
+
+    def dest_guard() -> None:
+        """Immediately before each promotion: the destination is still our drive/folder."""
+        if volumes.unmounted_volume_root(dest) is not None or not dest.is_dir():
+            raise MigrationRefused("destination drive is no longer available")
+        m = read_marker(dest)
+        if m is None or m.get("location_uuid") != mig.dest_location_uuid:
+            raise MigrationRefused("destination identity changed (drive swapped?)")
 
     # 2. Journal: one row per file (idempotent).
     with db.session() as s:
@@ -354,6 +405,17 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
             StorageMigrationItem.migration_id == mig.id).order_by(StorageMigrationItem.id)))
         for it in items:
             s.expunge(it)
+
+    # On resume, a VERIFIED file must still be at the destination with its size (the drive
+    # may have been swapped or files removed meanwhile); otherwise copy it again.
+    for it in items:
+        if it.state == "VERIFIED":
+            f = dest / it.rel_path
+            if not f.is_file() or f.stat().st_size != it.size_bytes:
+                with db.session() as s_:
+                    s_.get(StorageMigrationItem, it.id).state = "PENDING"
+                it.state = "PENDING"
+                progress(f"re-copying {it.rel_path} (missing or changed at destination)")
 
     # 3. Copy + verify each pending file under a reservation on the destination volume.
     pending = [it for it in items if it.state != "VERIFIED"]
@@ -372,18 +434,31 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
                 raise MigrationRefused(f"source file disappeared: {it.rel_path}")
             if src.stat().st_size != it.size_bytes:
                 raise MigrationRefused(f"source file changed since planning: {it.rel_path}")
-            dst.parent.mkdir(parents=True, exist_ok=True)
+            dest_guard()
+            make_dirs_below(dest, Path(it.rel_path).parent)
+            make_dirs_below(dest, Path(STAGING))
+            token = f"migration-{mig.id[:8]}"
+            # A hard crash mid-copy leaves our own partial (same token): remove it before
+            # resuming. Safe: the maintenance lock guarantees no concurrent writer.
+            (staging / transfer.staged_name(dst.name, token)).unlink(missing_ok=True)
+            keeper = reservations.Keeper(db, None, res, remaining,
+                                         lease_seconds=settings.reservation_lease_seconds,
+                                         free_fn=free_bytes)
             try:
-                outcome = transfer.transfer_file(src, dst, it.sha256, staging,
-                                                 f"migration-{mig.id[:8]}")
+                outcome = transfer.transfer_file(src, dst, it.sha256, staging, token,
+                                                 progress=keeper.tick, guard=dest_guard)
             except transfer.TransferError as e:
                 raise MigrationRefused(f"{it.rel_path}: {e}") from e
+            except OSError as e:  # I/O error: most likely the drive went away
+                dest_guard()      # raises "no longer available" if so
+                raise MigrationRefused(f"{it.rel_path}: I/O error: {e}") from e
             with db.session() as s:
                 row = s.get(StorageMigrationItem, it.id)
                 row.state = "VERIFIED"
                 s.get(StorageMigration, mig.id).updated_at = utcnow()
             copied += 1
             remaining -= it.size_bytes
+            dest_guard()  # drive still here before touching the reservation / next file
             reservations.renew(db, None, res, remaining,
                                lease_seconds=settings.reservation_lease_seconds,
                                free_fn=free_bytes)
@@ -398,7 +473,12 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
     # 4. Final full verification of the destination.
     if rehash:
         for it in items:
-            if sha256_file(dest / it.rel_path) != it.sha256:
+            dest_guard()
+            f = dest / it.rel_path
+            if not f.is_file():
+                raise MigrationRefused(f"final verification: {it.rel_path} is missing; "
+                                       "nothing switched")
+            if sha256_file(f) != it.sha256:
                 raise MigrationRefused(f"final verification failed for {it.rel_path}; "
                                        "nothing switched")
         progress(f"final verification: {len(items)} file(s) re-hashed, all match")

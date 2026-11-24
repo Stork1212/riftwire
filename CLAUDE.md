@@ -26,11 +26,14 @@ decisions D1–D9: [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md)):
 Phases 2 and 3 are delivered as milestones **M0–M7** ([`docs/PHASE2_PROPOSAL.md`](docs/PHASE2_PROPOSAL.md),
 approved): M0–M4 belong to Phase 2, M5–M7 to Phase 3. Phase numbering is unchanged.
 
-**Current:** Phase 2 in progress. **M0 (benchmark spike) complete (v0.2.0-m0)**; results in
-[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md). **Next: M1 Storage Architecture**, which starts
-only after the owner approves [`docs/M1_STORAGE_CHECKLIST.md`](docs/M1_STORAGE_CHECKLIST.md).
-Each milestone needs owner approval before it starts. **Do not implement work from a later
-milestone or phase early.**
+**Current:** Phase 2 in progress.
+- **M0 (benchmark spike):** complete (v0.2.0-m0); results in
+  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+- **M1 (Storage Architecture):** implemented and verified on the Mac (internal disk), in
+  review (PR #9). Its **physical-SSD acceptance gate stays open** until the SanDisk SSD
+  arrives ([`docs/M1_STORAGE_CHECKLIST.md`](docs/M1_STORAGE_CHECKLIST.md) §11).
+- Each milestone needs owner approval before it starts. **Do not implement work from a later
+  milestone or phase early.**
 
 ## 2. Target environment
 
@@ -41,7 +44,10 @@ milestone or phase early.**
   quality per dollar, and only within an owner-set budget (initially **$0**).
 - **One heavy processing worker at a time** by default.
 - **Keep ≥ 60 GiB free on every volume RIFTWIRE writes to** (`RIFTWIRE_MIN_FREE_DISK_BYTES`).
-  The floor is mandatory; only isolated test runs may lower it, explicitly.
+  The floor is mandatory; only isolated test runs may lower it, explicitly. Every file write
+  goes through the persistent per-volume reservations (`services/reservations.py`); a
+  location is resolved only through the loaded layout and never falls back to another
+  location (ARCHITECTURE §19).
 - Storage plan: an **external APFS SSD** for recordings, temp files, models and exports
   (configurable locations, Phase 2). Ordered: **SanDisk 1 TB Portable SSD**. Storage logic is
   **capacity-independent**: never assume a drive size; use measured free space and per-volume
@@ -84,8 +90,11 @@ hosting, message brokers, extra microservices.
    default, no active job or lock (re-checked at a final gate before every unlink, restoring
    the file if blocked), SSD identity verified, and never remote content.
 3. **Never load whole videos into memory.** Stream in chunks.
-4. **Atomic file writes.** Write to `data/temp/` on the same volume, validate, then rename.
-   Never overwrite an existing managed file.
+4. **Atomic file writes.** Write a temporary file on the **same volume** as the destination,
+   validate it, then promote it without overwriting (`link(2)`). Across volumes, use
+   `services/transfer.py` (staged copy on the destination, verify, no-overwrite promote).
+   Never overwrite an existing managed file. Never create folders under a configured
+   location that is offline, and never use `mkdir(parents=True)` below a location root.
 5. **Validate media by content** (ffprobe + first-frame decode), not by extension alone.
 6. **No shell interpolation of user input.** `subprocess.run([...], timeout=...)`, capture
    stderr, no `shell=True`.

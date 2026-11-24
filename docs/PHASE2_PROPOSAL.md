@@ -258,8 +258,8 @@ Keeping the DB internal means the app still starts, shows the library and report
 "storage offline" when the SSD is unplugged.
 
 ### 8.2 Volume identity and offline safety
-- On first use, a location's volume gets a marker file `.riftwire-volume` (UUID). Each
-  location records the volume UUID.
+- Each location root gets a marker file `.riftwire-location.json` (location UUID, volume
+  UUID and the OS volume UUID). Implemented in M1; see ARCHITECTURE §19.
 - **Before any write**, the target path's volume must be mounted and carry the expected
   UUID. If not, readiness reports `storage_offline:<kind>`, and jobs that need it go to
   `RETRY_WAIT` (transient) with an event.
@@ -291,9 +291,9 @@ Old copies are **never deleted automatically**; the tool prints what can be remo
 owner deletes it. Dry-run mode is supported.
 
 ### 8.6 Filesystem requirements
-APFS (case-insensitive or case-sensitive) is supported. exFAT is refused for recordings by
-default: no hard links, weaker crash semantics. It can be enabled with an explicit override
-that uses the staged-copy path.
+APFS (case-insensitive or case-sensitive) is required for every location on macOS.
+**Owner decision (2026-11-24): exFAT and other filesystems are refused, with no override**
+(no hard links, weaker crash semantics).
 
 ---
 
@@ -654,5 +654,4 @@ existing React.
    evaluation set (A9), stored outside git?
 4. Which YouTube/Twitch channels will be the first authorized sources (for the rights
    templates)?
-5. When the ordered 1 TB SSD arrives: should exFAT be blocked entirely or allowed with an
-   override? (Proposal: allowed with an override; APFS recommended.)
+5. ~~exFAT policy~~ **Decided (2026-11-24):** APFS required, no exFAT override.

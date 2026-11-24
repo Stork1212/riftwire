@@ -137,3 +137,44 @@ def reserved_bytes(db: Database, volume_uuid: str) -> int:
         return int(s.scalar(select(func.coalesce(func.sum(DiskReservation.bytes), 0)).where(
             DiskReservation.volume_uuid == volume_uuid,
             DiskReservation.expires_at > utcnow())) or 0)
+
+
+class Keeper:
+    """Renews a reservation while a long write runs (every ``every`` seconds), with the
+    bytes still to be written, so the lease cannot expire mid-copy. Raises
+    ``InsufficientStorage`` if the floor would be crossed (the caller aborts the write)."""
+
+    def __init__(self, db: Database, layout: Layout | None, res: Reservation | None,
+                 total: int, *, lease_seconds: int, free_fn: FreeFn = free_bytes,
+                 every: float = 60.0):
+        import time as _time
+
+        self._time = _time
+        self.db, self.layout, self.res, self.total = db, layout, res, total
+        self.lease_seconds, self.free_fn, self.every = lease_seconds, free_fn, every
+        self._last = _time.monotonic()
+
+    def tick(self, done: int) -> None:
+        if self.res is None:
+            return
+        now = self._time.monotonic()
+        if now - self._last < self.every:
+            return
+        self._last = now
+        renew(self.db, self.layout, self.res, max(0, self.total - done),
+              lease_seconds=self.lease_seconds, free_fn=self.free_fn)
+
+
+def volume_for_path(layout: Layout, path: Path) -> str:
+    """Reservation key for an arbitrary (internal) path: the volume UUID of a location on
+    the same device, else a stable per-device key."""
+    import os
+
+    dev = os.stat(path).st_dev
+    for loc in layout.locations.values():
+        try:
+            if os.stat(loc.path).st_dev == dev:
+                return loc.volume_uuid
+        except OSError:
+            continue
+    return f"device-{dev}"

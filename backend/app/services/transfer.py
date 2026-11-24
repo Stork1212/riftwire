@@ -115,10 +115,15 @@ def promote_no_overwrite(staged: Path, dst: Path,
 
 def transfer_file(src: Path, dst: Path, expected_sha256: str, staging_dir: Path,
                   token: str, *, progress: Callable[[int], None] | None = None,
-                  should_stop: Callable[[], bool] | None = None) -> str:
+                  should_stop: Callable[[], bool] | None = None,
+                  guard: Callable[[], None] | None = None) -> str:
     """Copy ``src`` to ``dst`` (another volume allowed). Returns ``"promoted"`` or
     ``"already_present"`` (``dst`` existed with the expected content). Raises
-    ``TransferError`` (permanent) if ``dst`` exists with different content."""
+    ``TransferError`` (permanent) if ``dst`` exists with different content.
+
+    ``guard`` is called after verification, immediately before promotion: callers
+    re-verify the destination location's identity there (narrows the window in which a
+    drive could be swapped) and raise to abort."""
 
     def check_existing() -> str:
         if sha256_file(dst, should_stop=should_stop) != expected_sha256:
@@ -146,6 +151,8 @@ def transfer_file(src: Path, dst: Path, expected_sha256: str, staging_dir: Path,
                                     permanent=False)
             ident = _ident(os.fstat(fd))
             crashpoint("transfer_verified")
+            if guard is not None:
+                guard()
             promoted = promote_no_overwrite(part, dst, ident)
         finally:
             os.close(fd)

@@ -221,7 +221,7 @@ Still not verified:
 |---|---|---|
 | Upload via the file picker **on the Mac** | browser automation cannot pick local files | Same endpoint verified on the Mac via the API (smoke test) and via the UI with a 111 MB file in headless Chrome (dev container) |
 | Recordings larger than ~120 MB on the Mac; multi-GB files | owner instruction: small synthetic files; ~8 GiB headroom | Streaming memory-bounded by test; test at scale on the SSD |
-| Copy fallback on a real filesystem **without** hard links (e.g. exFAT) | APFS has hard links | Forced/`EPERM`-injected tests + real hard-crash tests pass; keep data on APFS |
+| Copy fallback on a real filesystem **without** hard links (e.g. exFAT) | APFS has hard links | Forced/`EPERM`-injected tests + real hard-crash tests pass; keep data on APFS. *Superseded in M1: filesystems without hard links are now refused (APFS required); see ARCHITECTURE §19.* |
 
 ## 7. Known issues
 

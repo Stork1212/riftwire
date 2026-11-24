@@ -149,7 +149,7 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
   app (like `df`) counts only space that is guaranteed free.
 - Phase 1 **development and automated tests are unaffected** (synthetic clips are a few MB).
 - Options for the owner:
-  1. **External APFS SSD** for `RIFTWIRE_DATA_DIR` (recommended; the owner has ordered a SanDisk 1 TB Portable SSD; keeps the internal
+  1. **External APFS SSD** for the storage locations, moved with the M1 migration tool (the owner has ordered a SanDisk 1 TB Portable SSD; keeps the internal
      SSD free and makes the 60 GB floor easy).
   2. Free internal space (e.g. old recordings, caches) to raise headroom.
   3. Temporarily lower `RIFTWIRE_MIN_FREE_DISK_BYTES` (not recommended; macOS degrades badly
@@ -224,7 +224,7 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
     database journal, full re-hash, one-transaction switch, never deletes.
   - **Dashboard:** Storage page; `GET /api/v1/storage`.
   - **Verified in the cloud container:**
-    - `scripts/test.sh`: backend **210**, bench 48, frontend **17**, build;
+    - `scripts/test.sh`: backend **221** (after the final review), bench 48, frontend **17**, build;
     - acceptance **22/22** (new storage steps M1–M3, real processes);
     - smoke 28 passed, 1 macOS-only skip.
     - The real end-to-end migration of `exports` to a second filesystem was checked in a
@@ -250,7 +250,14 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
     - **Acceptance 22/22 at the 60 GiB floor** (FFmpeg 9.1, VideoToolbox), including
       storage steps M1–M3.
     - Evidence: `docs/acceptance/2026-11-24-macos-m1-9fc026f-*`.
+  - **Final engineering review** ([`M1_REVIEW.md`](M1_REVIEW.md)): 11 findings fixed with
+    tests. Two were high severity:
+    - thumbnails failed when temp is on another drive;
+    - a drive unplugged mid-migration could have its folders recreated on the internal
+      disk.
+    Documentation inconsistencies were corrected as well.
   - **Not yet verified:**
+    - Mac re-run of the review fixes (recommended before merge);
     - every physical-SSD check (checklist §11).
 
 ## Blockers

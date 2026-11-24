@@ -28,6 +28,7 @@ from app.models import (
     DiskReservation,
     Job,
     JobStatus,
+    Recording,
     StorageLocation,
     StorageMigration,
     StorageMigrationItem,
@@ -841,8 +842,216 @@ def test_probe_failure_never_crashes_startup(settings, tmp_path):
         assert len(events(d, "storage_registration_failed")) == 5
         with pytest.raises(StorageOffline):
             UploadSession(settings, "x.mp4", 10, d)
+        with pytest.raises(StorageOffline):           # never the internal default path
+            _ = settings.recordings_dir
+        rep = reconcile(d, settings, "test")           # startup cleanup must not crash
+        assert set(rep.skipped_offline) == {"temp", "recordings"}
     finally:
         volumes.set_probe(None)
     lay = load_layout(d, settings, "test")               # probe works again → registers
     assert all(st.online for st in lay.states())
     d.dispose()
+
+
+# =========================================================================== audit fixes
+
+@requires_ffmpeg
+def test_thumbnails_work_when_temp_is_on_another_drive(db, settings, media_dir, vol2):
+    """Audit: thumbnails used to be rendered in temp and renamed into the internal
+    thumbnails folder — EXDEV when temp is on another drive."""
+    _external(db, settings, "temp", vol2)
+    res = import_file(db, settings, media_dir / "basic.mp4")
+    drain(db, settings)
+    r = get_rec(db, res.recording.id)
+    assert (r.status, r.thumbnail_status) == ("READY", "READY")
+    assert (settings.thumbnails_dir / f"{r.id}.jpg").is_file()
+    assert not list(settings.thumbnails_dir.glob(".job-*"))
+    assert count(db, DiskReservation) == 0
+
+
+@requires_ffmpeg
+def test_thumbnail_does_not_need_temp_location(db, settings, media_dir):
+    import_file(db, settings, media_dir / "basic.mp4")
+    from app.models import JobType
+    from app.workers.handlers import REQUIRED_KINDS
+    assert REQUIRED_KINDS[JobType.THUMBNAIL] == ("recordings",)
+
+
+def test_reconcile_cleans_only_dead_thumbnail_temp_files(db, settings):
+    rid = str(uuid.uuid4())
+    with db.session() as s:
+        s.add(Recording(id=rid, original_filename="x.mp4", stored_filename=f"{rid}.mp4",
+                        file_path=f"recordings/{rid}.mp4", sha256="0" * 64, file_size_bytes=1,
+                        status="READY"))
+        s.flush()
+        s.add(Job(recording_id=rid, job_type="THUMBNAIL", status="RUNNING", max_attempts=3,
+                  lease_token="livetoken", lease_expires_at=utcnow() + timedelta(minutes=5)))
+    jid = str(uuid.uuid4())
+    live = settings.thumbnails_dir / f".job-{jid}-livetoken.tmp.jpg"
+    dead = settings.thumbnails_dir / f".job-{jid}-deadtoken.tmp.jpg"
+    live.write_bytes(b"x")
+    dead.write_bytes(b"x")
+    reconcile(db, settings, "test")
+    assert live.exists() and not dead.exists()
+
+
+def test_transfer_guard_runs_before_promotion(tmp_path):
+    src, sha = _src(tmp_path)
+    dst, staging = tmp_path / "f.bin", tmp_path / ".staging"
+
+    def guard():
+        raise StorageOffline("drive swapped")
+    with pytest.raises(StorageOffline):
+        transfer.transfer_file(src, dst, sha, staging, "tok", guard=guard)
+    assert not dst.exists() and list(staging.iterdir()) == []
+
+
+@requires_ffmpeg
+def test_finalize_rechecks_recordings_drive_before_promotion(db, settings, media_dir,
+                                                            monkeypatch):
+    """The recordings drive is swapped after the copy is verified: nothing is promoted and
+    the job is deferred (attempt not counted)."""
+    settings.test_force_copy_fallback = True   # take the cross-volume path
+    res = import_file(db, settings, media_dir / "basic.mp4")
+    marker = settings.recordings_dir / MARKER
+
+    def swap(name):
+        if name == "transfer_verified":
+            marker.rename(settings.recordings_dir / "elsewhere")
+    monkeypatch.setattr(transfer, "crashpoint", swap)
+    w = WorkerProcess(settings, db)
+    c = queue.claim_next(db, w.id, 30)
+    w._execute(c)
+    with db.session() as s:
+        job = s.get(Job, c.id)
+        assert job.status == "RETRY_WAIT" and job.attempt_count == 0
+    assert not (settings.recordings_dir / f"{res.recording.id}.mp4").exists()
+    assert not [p for p in (settings.recordings_dir / ".staging").iterdir()]
+
+
+def test_keeper_renews_reservation_during_long_writes(db, settings):
+    lay = get_layout(settings)
+    free = lambda _p: 100 * GIB  # noqa: E731
+    r = reservations.reserve(db, lay, "temp", "long-copy", 10 * GIB, lease_seconds=60,
+                             free_fn=free)
+    with db.session() as s:
+        before = s.get(DiskReservation, r.id).expires_at
+    k = reservations.Keeper(db, lay, r, 10 * GIB, lease_seconds=600, free_fn=free, every=0)
+    k.tick(4 * GIB)
+    with db.session() as s:
+        row = s.get(DiskReservation, r.id)
+        assert row.bytes == 6 * GIB and row.expires_at > before
+
+
+def test_api_startup_during_migration_never_cleans_up(db, settings):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    stale = settings.temp_dir / "being-migrated.part"
+    stale.write_bytes(b"x")
+    os.utime(stale, (0, 0))
+    lock = locations.MaintenanceLock(settings)
+    assert lock.acquire()
+    try:
+        with TestClient(create_app(settings)) as c:
+            assert c.get("/health").status_code == 200
+        assert stale.exists()
+        assert events(db, "api_started_during_maintenance")
+    finally:
+        lock.release()
+
+
+@requires_ffmpeg
+def test_migration_never_recreates_vanished_destination(db, mig_settings, media_dir,
+                                                        tmp_path, monkeypatch):
+    """The destination drive disappears after the first file: the run stops; nothing is
+    recreated where the drive was (it would otherwise land on the internal disk)."""
+    s = mig_settings
+    for n in ("basic.mp4", "basic.mkv"):
+        import_file(db, s, media_dir / n)
+    drain(db, s)
+    dest = tmp_path / "drive" / "recordings"
+    real = transfer.transfer_file
+    calls = {"n": 0}
+
+    def unplug_after_first(*a, **k):
+        calls["n"] += 1
+        out = real(*a, **k)
+        if calls["n"] == 1:
+            shutil.rmtree(tmp_path / "drive")     # the drive vanished
+        return out
+    monkeypatch.setattr(migration.transfer, "transfer_file", unplug_after_first)
+    with pytest.raises(migration.MigrationRefused, match="no longer available"):
+        migration.execute(db, s, "recordings", dest)
+    assert not (tmp_path / "drive").exists()
+    assert get_layout(s).path("recordings") == s.data_dir / "recordings"
+
+
+@requires_ffmpeg
+def test_migration_resumes_after_hard_crash_mid_copy(db, mig_settings, media_dir, tmp_path):
+    """A hard crash leaves our own .partial behind (no finally runs); resume must not trip
+    over it."""
+    s = mig_settings
+    rec = import_file(db, s, media_dir / "basic.mp4").recording
+    drain(db, s)
+    dest = tmp_path / "dest"
+    real_create = migration.create_destination
+    # First run: journal + destination created, then the process "dies".
+    def die(p):
+        real_create(p)
+        raise KeyboardInterrupt
+    migration.create_destination = die
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            migration.execute(db, s, "recordings", dest)
+    finally:
+        migration.create_destination = real_create
+    m = migration.open_migration(db, "recordings")
+    assert m is not None and dest.is_dir() and not (dest / MARKER).exists()
+    (dest / ".staging").mkdir()
+    (dest / ".staging" / transfer.staged_name(f"{rec.id}.mp4",
+                                              f"migration-{m.id[:8]}")).write_bytes(b"junk")
+    r = migration.execute(db, s, "recordings", dest)   # resumes: marker written, copy done
+    assert r.copied == 1 and load_layout(db, s, "test").path("recordings") == dest
+    assert sha_file(dest / f"{rec.id}.mp4") == rec.sha256
+
+
+def test_create_destination_refuses_if_anchor_changed(tmp_path):
+    anchor = tmp_path / "a"
+    anchor.mkdir()
+    p = migration.Plan("exports", tmp_path, anchor / "x" / "y", [], 0, None, 0,
+                       anchor=anchor, anchor_dev=os.stat(anchor).st_dev + 1)
+    with pytest.raises(migration.MigrationRefused, match="changed since planning"):
+        migration.create_destination(p)
+    assert not (anchor / "x").exists()
+    with pytest.raises(migration.MigrationRefused, match="no longer available"):
+        migration.make_dirs_below(tmp_path / "gone", Path("a/b"))
+    assert not (tmp_path / "gone").exists()
+
+
+@requires_ffmpeg
+def test_resume_recopies_verified_files_missing_at_destination(db, mig_settings, media_dir,
+                                                               tmp_path, monkeypatch):
+    s = mig_settings
+    for n in ("basic.mp4", "basic.mkv"):
+        import_file(db, s, media_dir / n)
+    drain(db, s)
+    dest = tmp_path / "dest"
+    real = transfer.transfer_file
+    calls = {"n": 0}
+
+    def stop_after_first(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise KeyboardInterrupt
+        return real(*a, **k)
+    monkeypatch.setattr(migration.transfer, "transfer_file", stop_after_first)
+    with pytest.raises(KeyboardInterrupt):
+        migration.execute(db, s, "recordings", dest)
+    monkeypatch.setattr(migration.transfer, "transfer_file", real)
+    copied = [p for p in dest.iterdir() if p.is_file() and p.name != MARKER]
+    assert len(copied) == 1
+    copied[0].unlink()                                   # the verified copy disappears
+    r = migration.execute(db, s, "recordings", dest)
+    assert r.copied == 2 and r.already_verified == 0     # both copied (one re-copied)
+    assert load_layout(db, s, "test").path("recordings") == dest

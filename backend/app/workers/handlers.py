@@ -16,7 +16,7 @@ from app.core.errors import PermanentJobError, StorageOffline, StorageOfflineJob
 from app.core.logging import get_logger
 from app.db.session import Database
 from app.models import JobType, Recording, RecordingStatus, Severity
-from app.services import media, queue
+from app.services import media, queue, reservations
 from app.services.events import record_event
 from app.services.ingest import FinalizeError, finalize_recording
 from app.services.locations import get_layout
@@ -29,8 +29,13 @@ log = get_logger("handlers")
 REQUIRED_KINDS: dict[JobType, tuple[str, ...]] = {
     JobType.INGEST: ("temp", "recordings"),
     JobType.METADATA: ("recordings",),
-    JobType.THUMBNAIL: ("recordings", "temp"),
+    # Thumbnails are written next to their final (internal) location, never via temp, so a
+    # temp location on another drive can never make the final rename cross devices.
+    JobType.THUMBNAIL: ("recordings",),
 }
+
+THUMB_TMP_PREFIX = ".job-"           # thumbnails/.job-<job>-<token>.tmp.jpg
+THUMB_RESERVE_BYTES = 4 * 1024 * 1024
 
 
 def require_storage(ctx: JobContext) -> None:
@@ -200,9 +205,16 @@ def handle_thumbnail(ctx: JobContext) -> None:
         ctx.check()
 
     src = s.managed_path(rec.file_path)
-    tmp = safe_join(s.temp_dir, f"job-{ctx.job_id}-{ctx.claimed.token}.tmp.jpg")
+    tmp = safe_join(s.thumbnails_dir,
+                    f"{THUMB_TMP_PREFIX}{ctx.job_id}-{ctx.claimed.token}.tmp.jpg")
     kw: dict = {"on_spawn": ctx._on_spawn, "should_cancel": ctx.should_stop}
     errors = []
+    # Floor check for the (internal) thumbnails volume, like every other write.
+    layout = get_layout(s)
+    res = reservations.reserve_on_volume(
+        ctx.db, reservations.volume_for_path(layout, s.thumbnails_dir), s.thumbnails_dir,
+        s.min_free_disk_bytes, "thumbnails", f"job:{ctx.job_id}:{ctx.claimed.token}",
+        THUMB_RESERVE_BYTES, lease_seconds=s.reservation_lease_seconds)
     try:
         for seek in dict.fromkeys([media.thumbnail_seek_seconds(rec.duration_ms), 0.0]):
             try:
@@ -225,6 +237,7 @@ def handle_thumbnail(ctx: JobContext) -> None:
         queue.complete(ctx.db, ctx.claimed, publish)
     finally:
         tmp.unlink(missing_ok=True)
+        reservations.release(ctx.db, res)
 
 
 HANDLERS: dict[JobType, Callable[[JobContext], None]] = {

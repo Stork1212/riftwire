@@ -31,12 +31,13 @@ Explicitly out of scope: AI highlight detection, editing/rendering, publishing, 
 |---|---|---|
 | CPU/GPU | Apple Silicon (arm64) | FFmpeg uses all cores per job; VideoToolbox HW encode for Phase 3 |
 | Memory | 18 GB unified | Stream all media I/O; one heavy job at a time; Phase 2 ML models run sequentially and quantized |
-| Storage | 512 GB SSD, **~70 GiB free** at inspection | ≥ 60 GB free floor enforced → only ~9 GB usable internally; external APFS SSD for `RIFTWIRE_DATA_DIR` recommended |
+| Storage | 512 GB SSD, **~70 GiB free** at inspection | ≥ 60 GiB free floor enforced per volume → only ~9 GB usable internally; storage locations move to an external APFS SSD with the verified migration tool (§19) |
 | OS | macOS 26.5, M3 Pro | No Docker; native processes; Homebrew at `/opt/homebrew` (no sudo); project venv on Python 3.13 |
 
 Storage reality check: 1 h of 1080p60 capture ≈ 10–25 GB, 4K60 HEVC ≈ 25–50 GB. With the
-60 GB floor, the internal SSD realistically holds ~10–25 hours of 1080p footage. Plan an
-external SSD for `RIFTWIRE_DATA_DIR` as volume grows.
+60 GB floor, the internal SSD realistically holds ~10–25 hours of 1080p footage. Storage
+locations move to the external SSD with the migration tool (§19); the database, logs and
+thumbnails stay internal.
 
 ## 3. System overview
 
@@ -521,6 +522,11 @@ Owner decisions (2026-11-24):
 - **Startup directories:** `ensure_internal_dirs` creates internal directories only. A
   deleted internal default folder is recreated with its recorded identity. An external
   folder is **never** created or recreated.
+- **No fallback path:** once a layout is loaded, `Settings.location(kind)` for an
+  unregistered kind raises `StorageOffline`; it never returns the internal default path.
+  Every write path calls `get_layout()`, which raises if no layout is loaded.
+- **Drive probe failures** (for example `diskutil` errors) never crash startup. The kind
+  stays unregistered/offline, and an event is recorded.
 
 ### 19.2 Volume identity and offline safety
 - Each location root holds `.riftwire-location.json`: kind, location UUID, volume UUID and
@@ -531,15 +537,17 @@ Owner decisions (2026-11-24):
   1. the drive is mounted (`/Volumes/<name>` must be a mount point);
   2. the root exists;
   3. the marker exists, is readable and matches the row;
-  4. the OS volume UUID matches (macOS `diskutil info -plist`; catches a different drive with
-     a copied folder);
+  4. the OS volume UUID matches (catches a different drive with a copied folder). On macOS:
+     mount point from `df -P`, filesystem from `mount`, VolumeUUID from
+     `diskutil info -plist <mount point>` (diskutil rejects plain folders). All read-only.
   5. the filesystem is allowed (`apfs` on macOS);
   6. the root is writable.
 - **Nothing falls back.** An offline location raises `StorageOffline` (HTTP 503
   `storage_offline`) for writes. Readiness reports `storage_offline:<kind>`. The dashboard
   shows the reason. Nothing is redirected to another location, and no folder is created.
 - **Worker:** each job type declares the locations it needs (INGEST: temp + recordings;
-  METADATA: recordings; THUMBNAIL: recordings + temp).
+  METADATA: recordings; THUMBNAIL: recordings only, because thumbnails are rendered next to
+  their internal final location and never via temp).
   - The claim loop skips job types whose locations are offline (cached check, 2 s). Those
     jobs stay queued with their attempts intact. Events `storage_offline` / `storage_online`
     are recorded, and a reconcile runs on remount.
@@ -560,8 +568,11 @@ Owner decisions (2026-11-24):
   re-admits under the same id.
 - **Holders:**
   - uploads (`upload:<id>`, temp volume);
-  - cross-volume finalize (`job:<id>:<token>`, recordings volume);
-  - migrations (`migration:<id>`, destination volume).
+  - cross-volume finalize (`job:<id>:<token>`, recordings volume; renewed during the copy
+    by `reservations.Keeper`);
+  - thumbnails (`job:<id>:<token>`, 4 MiB on the internal volume);
+  - migrations (`migration:<id>`, destination volume; renewed during each copy and after
+    each file).
 - **Floor:** below 60 GiB is refused at settings validation unless `RIFTWIRE_ENV=test`.
 
 ### 19.4 Crash-safe cross-volume transfer (`services/transfer.py`)
@@ -571,6 +582,9 @@ src ─copy─► <dest>/.staging/<name>.<token>.partial   (O_EXCL, fsync, fsync
     ─promote─► link(staged, dst)  — atomic; EEXIST if dst exists; never overwrites
     ─► fsync dst dir; unlink staged; fsync staging dir
 ```
+- **Guard:** callers pass a `guard` that re-verifies the destination's identity immediately
+  before promotion: the recordings location for finalize, the destination marker for
+  migrations. This narrows the window in which a swapped drive could receive the file.
 - **Concurrency:** `link(2)` refuses an existing target in the kernel. With concurrent
   attempts (threads or processes), exactly one promotes; the others verify the winner's file
   (`already_present`) or fail permanently on different content.
@@ -586,8 +600,11 @@ src ─copy─► <dest>/.staging/<name>.<token>.partial   (O_EXCL, fsync, fsync
 
 ### 19.5 Maintenance lock
 `storage-maintenance.lock` (OS lock, released if the holder dies) is held by the migration
-tool for its whole run. While it is held, the worker refuses to start and uploads are
-refused (503).
+tool for its whole run. While it is held:
+- the worker refuses to start;
+- uploads are refused (503);
+- an API started meanwhile skips lease recovery and the reconciler, so it can never delete a
+  file being migrated.
 
 ### 19.6 Verified migration (`scripts/migrate_storage.py`, `services/migration.py`)
 - **Dry run by default:** `plan` is strictly read-only. It loads the layout without
@@ -602,15 +619,23 @@ refused (503).
 - **`--execute`:**
   1. Refuses if the API answers on its port or the worker lock is held. Holds the worker lock
      and the maintenance lock.
-  2. Creates the destination and its marker.
+  2. Writes the journal row **first**, so every later crash point is resumable. Then it
+     creates the destination one level at a time below the planned anchor, which must
+     still be the same device as at planning, and writes the marker.
   3. Journals every file in `storage_migration_items` (PENDING → VERIFIED, committed per
      file).
   4. Transfers each file under a destination reservation (§19.4). Recordings are verified
      against the SHA-256 recorded at import.
   5. Re-hashes every destination file.
   6. Switches the `storage_locations` row in **one transaction**.
-- **Resumable:** re-running continues and never re-copies verified files. `--abort` gives up
+- **Resumable:** re-running continues and never re-copies verified files, unless a
+  verified file is missing or changed at the destination, in which case it is copied again.
+  A stale `.partial` left by a hard crash (own token) is removed first. `--abort` gives up
   and leaves the location unchanged.
+- **Drive vanishes mid-run:** subfolders are created one level at a time below the verified
+  destination root, never with `parents=True`. The destination identity is re-checked
+  before each file, before each promotion and before the final re-hash. A vanished drive
+  stops the run and nothing is recreated.
 - **Never deletes originals:** they are listed for the owner. Migrating real user data needs
   separate owner approval.
 - **Journal choice:** the journal lives in the database rather than a JSONL file, so each
@@ -623,4 +648,32 @@ Storage page, read-only:
 - an offline banner.
 
 `GET /api/v1/storage` returns the same data, and `/api/v1/system/status` includes it.
+
+### 19.8 Write inventory: floor and no-fallback guarantees
+
+| Write | Volume | Online check | Floor / reservation |
+|---|---|---|---|
+| Upload `.part` (`temp`) | temp | before open; every 256 MB / 60 s | `upload:<id>`, renewed with remaining bytes |
+| Stage rename `.part` → `.staged` | temp | before rename | none needed (no new data) |
+| Finalize, same volume (`link`) | recordings | job start | none needed (no new data) |
+| Finalize, cross-volume (`transfer`) | recordings | job start + guard before promote | `job:<id>:<token>`, full size, renewed during copy |
+| Thumbnail (`.job-*.tmp.jpg` → `<id>.jpg`) | internal | recordings at job start | `job:<id>:<token>`, 4 MiB |
+| Migration copies | destination | before each file and promotion | `migration:<id>`, remaining bytes, renewed |
+| Identity markers, `.staging` folders, lock and pid files | various | root verified first | tiny; not gated |
+| SQLite database (WAL) and rotating logs (≤ 60 MB) | internal | n/a | **explicit exception:** not gated, so the app can always record state and errors; both are small |
+
+Folders are never created with `parents=True` below a location root, and never under an
+absent `/Volumes/<name>`. Every path is resolved through the loaded layout.
+
+### 19.9 Residual risks (documented, accepted)
+- **Swap window:** a drive could be swapped in the milliseconds between a verification and
+  the write or promotion that follows it. Two mitigations apply:
+  - writes go through file descriptors opened on the verified drive;
+  - promotion is re-verified immediately before `link`.
+- **Byte-identical clones:** a block-level clone of an APFS volume can carry the same
+  VolumeUUID *and* the copied marker. It would be accepted as the same drive; its content is
+  identical by construction.
+- **Physical behaviour is not yet exercised:** real I/O errors on unplug, sleep/wake
+  unmounts and multi-GB throughput are pending the physical-SSD acceptance gate (checklist
+  §11).
 

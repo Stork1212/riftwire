@@ -11,7 +11,7 @@ M0 is complete (v0.2.0-m0). **Next gate:** owner approval of the
 | Phase | Name | Outcome | Status |
 |---|---|---|---|
 | 1 | **Foundation** | Crash-safe local ingestion, metadata, thumbnails, persistent queue, dashboard | **Complete** (v0.1.0) |
-| 2 | **Sources & Signals** | Rights confirmation + provenance; permitted acquisition (local, authorized YouTube/Twitch, selective sections); configurable storage locations; small local Whisper with word timestamps + benchmark; audio/scene signals | **In progress:** M0 complete (v0.2.0-m0); next M1 |
+| 2 | **Sources & Signals** | Rights confirmation + provenance; permitted acquisition (local, authorized YouTube/Twitch, selective sections); configurable storage locations; small local Whisper with word timestamps + benchmark; audio/scene signals | **In progress:** M0 complete (v0.2.0-m0); M1 implemented, in review (PR #9; SSD acceptance pending) |
 | 3 | **Highlight Detection & Review** | Interchangeable AI provider interface (Ollama default; OpenAI/Anthropic optional at $0 budget), usage ledger + spending limits; per-game highlight prompts; validated, ranked records; review table; exports; auto-submit | Approved; delivered as M5–M7 |
 | 4 | **Editing Preset Studio & Rendering** | Per-channel brand kits (uploaded logos/fonts/outros); 1080×1920 35/65 presets, hooks, word-level subtitles, 2 s outro, live preview, VideoToolbox renders + QC; per-game editing prompts; **artifact registry for generated files (retention foundations)** | Approved in principle |
 | 5 | **Publishing** | **YouTube Shorts first**; multi-account channels, scheduling, generated metadata + thumbnails, mandatory human approval; then Instagram Reels, TikTok, Facebook Reels, X via official APIs; **storage lifecycle & retention manager (72 h after verified publication)** | Approved in principle |
@@ -31,7 +31,7 @@ independently reviewed, and needs the owner's approval before it starts.
 | Milestone | Phase | Scope | Status |
 |---|---|---|---|
 | M0 | 2 | Benchmark spike (transcription engine/model, signal throughput) | **Complete**: [`BENCHMARKS.md`](BENCHMARKS.md), tag `v0.2.0-m0` |
-| M1 | 2 | Storage architecture: locations, volume identity, offline handling, persistent per-volume reservations, cross-volume transfers, verified migration | **Next**: [checklist](M1_STORAGE_CHECKLIST.md) awaiting approval |
+| M1 | 2 | Storage architecture: locations, volume identity, offline handling, persistent per-volume reservations, cross-volume transfers, verified migration | **Implemented, in review**: PR #9; verified on the Mac (internal disk); [physical-SSD acceptance pending](M1_STORAGE_CHECKLIST.md#11-acceptance-checks-that-depend-on-the-external-ssd-deferred) |
 | M2 | 2 | Rights & sources | Not started |
 | M3 | 2 | Permitted acquisition | Not started |
 | M4 | 2 | Transcription & signals (MLX Whisper `base` default; `small` optional after chunked memory testing; raw timestamps preserved) | Not started |

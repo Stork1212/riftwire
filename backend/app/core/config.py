@@ -129,7 +129,16 @@ class Settings(BaseSettings):
     def location(self, kind: str) -> Path:
         if kind not in LOCATION_KINDS:
             raise KeyError(kind)
-        return self._locations.get(kind, self.default_location(kind))
+        if kind in self._locations:
+            return self._locations[kind]
+        if self._layout is not None:
+            # A layout is loaded but this kind is not registered (e.g. its drive could not
+            # be identified): never fall back to the internal default path.
+            from app.core.errors import StorageOffline
+
+            raise StorageOffline(f"Storage location '{kind}' is not registered",
+                                 details={"kind": kind, "reason": "not_registered"})
+        return self.default_location(kind)  # no layout yet (tests/tools before startup)
 
     def apply_layout(self, roots: dict[str, Path], layout: object | None = None) -> None:
         self._locations = dict(roots)
@@ -186,7 +195,8 @@ class Settings(BaseSettings):
         for d in self.internal_dirs():
             d.mkdir(parents=True, exist_ok=True)
         for kind in LOCATION_KINDS:
-            if self.location(kind) == self.default_location(kind):
+            if self._locations.get(kind, self.default_location(kind)) \
+                    == self.default_location(kind):
                 self.default_location(kind).mkdir(parents=True, exist_ok=True)
 
     def managed_path(self, rel: str) -> Path:
