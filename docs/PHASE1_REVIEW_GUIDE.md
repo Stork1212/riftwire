@@ -27,6 +27,11 @@ details and test names. To focus a second review:
   added) and **fail** there: the owner is killed and taken over, and the owner can still
   renew at kill time. They pass on the fix.
 
+- A macOS run of `599f910` exposed a zombie-process edge case in the new `kill_failed`
+  check (macOS `killpg` treats zombie-only groups as gone). It is fixed in `media.py`
+  (`pid_running`, reaping in `kill_process_group`) and covered by a BSD-semantics
+  emulation test. See PHASE1_REPORT, "macOS re-run after the review fixes".
+
 ## 2. Reproduce
 
 ```bash
@@ -65,7 +70,7 @@ backend/.venv/bin/python scripts/acceptance.py         # 19-step real-process E2
 4. The app never creates tables: no `create_all` in `backend/app`.
 5. The 60 GiB default: `app/core/config.py` → `min_free_disk_bytes = 60 * GIB`.
 
-## 5. Test map (166 backend + 13 frontend tests)
+## 5. Test map (169 backend + 13 frontend tests)
 
 `docs/TESTING.md` maps every requirement to its tests. The real-process crash tests are in
 `backend/tests/test_worker_process.py`, and the full scenario is in `scripts/acceptance.py`.

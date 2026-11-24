@@ -232,6 +232,62 @@ def test_pid_reuse_guard(tmp_path):
     assert media.kill_orphan_if_matches(p.pid, None) == "not_running"
 
 
+def test_zombie_process_counts_as_dead(tmp_path):
+    """Regression (macOS run of 599f910): an exited-but-unreaped child is a zombie; it must
+    be reported as killed/not running, never as "kill_failed"."""
+    p = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    try:
+        sig = media.process_start_signature(p.pid)
+        os.kill(p.pid, signal.SIGKILL)
+        deadline = time.monotonic() + 5
+        while not media.process_is_zombie(p.pid) and time.monotonic() < deadline:
+            time.sleep(0.02)  # wait until it is a zombie (exited, not yet reaped)
+        assert media.process_is_zombie(p.pid)
+        assert media.pid_alive(p.pid)            # kill(pid, 0) still succeeds on a zombie
+        assert not media.pid_running(p.pid)      # ...but it is not running
+        assert media.kill_orphan_if_matches(p.pid, sig, allowed_names=("sleep",)) \
+            in ("not_running", "killed")
+    finally:
+        if p.poll() is None:
+            p.kill()
+        p.wait(5)
+
+
+def test_kill_with_bsd_killpg_semantics(monkeypatch):
+    """Emulates macOS/BSD: killpg() on a group whose only member is a zombie raises ESRCH.
+    This is what made test_pid_reuse_guard fail on the Mac with the previous code."""
+    real_killpg = os.killpg
+
+    def bsd_killpg(pgid, sig):
+        if media.process_is_zombie(pgid):
+            raise ProcessLookupError(3, "No such process")
+        return real_killpg(pgid, sig)
+
+    monkeypatch.setattr(media.os, "killpg", bsd_killpg)
+    p = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    try:
+        sig = media.process_start_signature(p.pid)
+        assert media.kill_orphan_if_matches(p.pid, sig, allowed_names=("sleep",)) == "killed"
+    finally:
+        if p.poll() is None:
+            p.kill()
+        p.wait(5)
+
+
+def test_unkillable_detection_still_reports_live_process(monkeypatch):
+    """kill_failed is still reported when the process genuinely survives SIGKILL."""
+    p = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    try:
+        sig = media.process_start_signature(p.pid)
+        monkeypatch.setattr(media, "kill_process_group", lambda pid, grace=0: None)
+        monkeypatch.setattr(media, "KILL_GRACE_SECONDS", 0.2)
+        assert media.kill_orphan_if_matches(p.pid, sig, allowed_names=("sleep",)) \
+            == "kill_failed"
+    finally:
+        p.kill()
+        p.wait(5)
+
+
 def test_graceful_shutdown_releases_running_job(db, settings, media_dir, monkeypatch):
     rid = import_file(db, settings, media_dir / "basic.mp4").recording.id
     w = start_worker(RIFTWIRE_TEST_SLOW_FFMPEG_SECONDS=60,

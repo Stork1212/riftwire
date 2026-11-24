@@ -101,7 +101,10 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
 - [x] Fixed: recovery race (fence → terminate → transition) and crash-safe copy fallback
       (staging + verify + no-overwrite promote), plus 3 related cleanup/ordering issues.
       18 new deterministic tests; 166 + 13 tests pass; build OK; acceptance 19/19 (dev).
-- [ ] **macOS acceptance re-run at the 60 GiB floor** on the fixed commit (owner runs; agent records).
+- [x] macOS run of `599f910`: acceptance 19/19 at 60 GiB, but pytest 165/166. A macOS-only
+      zombie-process bug in the new `kill_failed` check. Fixed, with 3 tests including a
+      BSD-semantics emulation that reproduces the Mac failure on any OS; 169 + 13 pass (dev).
+- [ ] **macOS re-run** (tests + acceptance at 60 GiB) on the zombie-fix commit (owner runs).
 - [ ] Reply to the review on PR #1; second independent review (ChatGPT).
 - [ ] Owner authorization and squash-merge of PR #1 `phase1/foundation` → `main`.
 

@@ -39,7 +39,7 @@ during a follow-up audit were fixed too:
 | 2 | Copy fallback wrote directly to the final path; an interrupted copy left a partial file that made the retry fail permanently | **Crash-safe staged copy:** attempt-unique `recordings/.staging/<rec>.<token>.partial` → fsync → SHA-256 verify → no-overwrite promote (`flock` + existence check + atomic rename) → unlink the temp source. Stale staging files are removed by token | 9 in `test_ingest.py` + 3 real-process hard-crash tests (`finalize_copy_midway`, `finalize_copy_verified`, `finalize_after_promote`) |
 | A | Attempt-scoped temp outputs were swept by **age** (1 h), so a long-running active attempt could lose its file | Swept by **lease token** (only if no RUNNING job holds it) | `test_job_temp_outputs_cleaned_by_token_not_age` |
 | B | The reconciler could read tokens before listing files, so a just-claimed attempt's file could look stale | Files are listed first, then tokens are read | `test_reconcile_lists_files_before_reading_tokens` |
-| C | Startup ran the reconciler before recovery, so dead attempts' files survived until the next restart; `kill_orphan_if_matches` reported "killed" even if the process survived | Recovery runs before the reconciler; new `kill_failed` result | covered by the crash tests above |
+| C | Startup ran the reconciler before recovery, so dead attempts' files survived until the next restart; `kill_orphan_if_matches` reported "killed" even if the process survived | Recovery runs before the reconciler; new `kill_failed` result, with zombies counted as dead (see the macOS re-run below) | crash tests above + 3 zombie/BSD-semantics tests |
 
 Verification after the fixes (dev container, Python 3.13, FFmpeg 6.1):
 - ruff clean; **166 passed** pytest (148 + 18 new), also 166 on Python 3.11;
@@ -47,7 +47,34 @@ Verification after the fixes (dev container, Python 3.13, FFmpeg 6.1):
 - **13 passed** Vitest; ESLint and tsc clean; production build OK;
 - acceptance **19/19** (`--min-free-gib 1`).
 
-macOS re-run at the 60 GiB floor: see the "macOS re-run after review fixes" section below.
+#### macOS re-run after the review fixes
+
+| Commit | Run (owner, M3 Pro, macOS 26.5.2, FFmpeg 9.1, 60 GiB floor) | Result |
+|---|---|---|
+| `599f910` | `scripts/test.sh`, `acceptance.py` | Acceptance **19/19** ✅; pytest **165 passed, 1 failed** ❌ (`test_pid_reuse_guard`: `'kill_failed' == 'killed'`). Evidence: `acceptance/2026-11-24-macos-m3pro-599f910*` |
+| _fixed commit_ | re-run requested | _pending_ |
+
+**Cause of the macOS-only failure (a regression from the new `kill_failed` check):** on
+macOS/BSD, `killpg(pgid, 0)` reports a process group whose only member is a **zombie**
+(exited, not yet reaped) as gone. `kill_process_group` therefore returned without reaping
+its own child, and `kill(pid, 0)` still succeeds on a zombie, so the dead process looked
+alive and was reported as `kill_failed`. Linux sends signals to zombie groups, so it
+reaped the child and never hit this. In production a real orphan's parent is dead and
+launchd reaps it at once, which is why acceptance X2 still passed. The check was wrong,
+though.
+
+**Fix:** a process counts as running only if it is alive **and not a zombie**
+(`pid_running`, via `ps -o stat=`). `kill_process_group` reaps its own child when the
+group is reported gone.
+
+**Tests (3 new):**
+- a zombie counts as dead;
+- `kill_failed` is still reported for a process that genuinely survives;
+- `test_kill_with_bsd_killpg_semantics` **emulates the macOS behaviour on any OS**. It fails
+  on `599f910` with exactly the Mac's assertion and passes on the fix.
+
+Dev container after the fix: **169 passed** (pytest), 13 passed (Vitest), build OK,
+acceptance 19/19.
 
 ### Re-verification from a fresh GitHub clone (2026-11-23, 23:40 UTC)
 

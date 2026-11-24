@@ -100,17 +100,44 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
+def _reap(pid: int) -> None:
+    """Collect ``pid`` if it is an exited child of this process (no-op otherwise)."""
+    try:
+        os.waitpid(pid, os.WNOHANG)
+    except (ChildProcessError, OSError):
+        pass
+
+
+def process_is_zombie(pid: int) -> bool:
+    try:
+        out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True,
+                             text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return out.stdout.strip().startswith("Z")
+
+
+def pid_running(pid: int) -> bool:
+    """True only for a live process. An exited-but-unreaped (zombie) process is dead: it
+    cannot run or write, and BSD/macOS ``killpg`` already reports its group as gone."""
+    _reap(pid)
+    return pid_alive(pid) and not process_is_zombie(pid)
+
+
 def kill_process_group(pid: int, grace: float = KILL_GRACE_SECONDS) -> None:
     """SIGTERM the process group led by ``pid``; SIGKILL it after ``grace`` seconds."""
     try:
         os.killpg(pid, signal.SIGTERM)
     except (ProcessLookupError, PermissionError):
+        _reap(pid)
         return
     deadline = time.monotonic() + grace
     while time.monotonic() < deadline:
         try:
             os.killpg(pid, 0)
         except (ProcessLookupError, PermissionError):
+            # macOS/BSD report a group with only zombies as gone; collect our own child.
+            _reap(pid)
             return
         # Reap if it is our own child (avoids a zombie keeping the group "alive").
         try:
@@ -131,7 +158,7 @@ def kill_orphan_if_matches(pid: int, started_at: str | None,
     Returns one of: "not_running", "killed", "pid_reused", "kill_failed" (still alive after
     SIGKILL and the grace period — the caller must not treat the job as free).
     """
-    if not pid_alive(pid):
+    if not pid_running(pid):
         return "not_running"
     sig = process_start_signature(pid)
     name = process_command_name(pid)
@@ -139,9 +166,9 @@ def kill_orphan_if_matches(pid: int, started_at: str | None,
         return "pid_reused"
     kill_process_group(pid)
     deadline = time.monotonic() + KILL_GRACE_SECONDS + 2
-    while pid_alive(pid) and time.monotonic() < deadline:
+    while pid_running(pid) and time.monotonic() < deadline:
         time.sleep(0.05)
-    if pid_alive(pid) and process_start_signature(pid) == started_at:
+    if pid_running(pid) and process_start_signature(pid) == started_at:
         return "kill_failed"
     return "killed"
 
