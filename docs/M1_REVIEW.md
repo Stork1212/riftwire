@@ -181,7 +181,15 @@ No finding was disputed.
     previous run had left running for its dashboard check. This was environmental, not a
     test result.
 
+**Mac run of `53bece7`** (cache fix; evidence: `docs/acceptance/2026-11-24-macos-m1-53bece7/`):
+- **All stages exit 0.**
+- **Tests:** backend **239 passed, 3 skipped** (second filesystem), including the macOS
+  identity test, in 48.5 s (the regression is fixed). Bench 47 + 1 skip, frontend 17/17,
+  build OK.
+- **Acceptance:** **22/22** at the 60 GiB floor.
+- **Smoke:** **30 PASS, 0 FAIL, 0 SKIP**.
+- **Warnings:** only the third-party Starlette deprecation warning.
+
 **Not yet verified:**
-- a **Mac re-run of the commit that contains the cache fix**;
 - the macOS-only identity test;
 - the physical-SSD gate (§5).

@@ -264,9 +264,11 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
     medium) and one lock-ordering gap, all confirmed in source, fixed, and covered by 18
     regression tests that fail on `4703e22`. Details: [`M1_REVIEW.md`](M1_REVIEW.md) §6.
     Container: backend 239 + 1 macOS-only skip, acceptance 22/22, smoke 28/28.
+  - **Mac verification of the corrected code `53bece7`** (2026-11-24): all stages exit 0.
+    Backend 239 passed + 3 skipped, bench 47 + 1, frontend 17, acceptance 22/22 at the
+    60 GiB floor, smoke 30/30. Evidence: `docs/acceptance/2026-11-24-macos-m1-53bece7/`.
   - **Next:**
-    - Mac re-run of the corrected commit;
-    - re-review;
+    - re-review of `53bece7`;
     - merge (owner).
     M2 starts after that.
   - **Not yet verified:**
