@@ -28,7 +28,7 @@ export function SourceDownload({ sourceId }: { sourceId?: string }) {
         <button type="button" className="btn" disabled={!sourceId || busy} onClick={download}>
           {busy ? "Preparing MP4…" : "Download MP4"}
         </button>
-        {!sourceId && <span className="muted">Save the source to check download permission.</span>}
+        {!sourceId && <span className="muted">Choose or set up the creator, then save the source to enable this button.</span>}
         {saved && <span role="status">MP4 sent to your browser downloads.</span>}
       </div>
       {error !== undefined && <ActionableError title="Download unavailable" error={error} />}

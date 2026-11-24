@@ -34,6 +34,8 @@ def prepare(db: Database, settings: Settings, source_id: str) -> tuple[Path, Cal
     ffmpeg = shutil.which(settings.ffmpeg_path)
     if ffmpeg is None:
         raise ServiceUnavailable("FFmpeg is required to combine video and audio into an MP4.")
+    node = shutil.which("node")
+    js_runtime = ["--js-runtimes", f"node:{node}"] if node else []
     require_no_maintenance(settings)
     layout = get_layout(settings)
     layout.require_online("temp")
@@ -68,7 +70,7 @@ def prepare(db: Database, settings: Settings, source_id: str) -> tuple[Path, Cal
 
         try:
             result = media.run_command([
-                downloader, "--ignore-config", "--no-playlist", "--no-progress",
+                downloader, "--ignore-config", "--no-playlist", "--no-progress", *js_runtime,
                 "--match-filter", "!is_live", "--socket-timeout", "15", "--retries", "1",
                 "--max-filesize", str(_MAX_FILE), "--ffmpeg-location", ffmpeg,
                 "-f", "bv[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]",
