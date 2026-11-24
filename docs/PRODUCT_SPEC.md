@@ -385,8 +385,14 @@ dry run), for example `upload_pending:youtube`, `unverified:tiktok`, `locked`, `
      only if it is fresher than a short window (default 15 min); otherwise it is redone first,
      outside the transaction;
   2. re-checks volume identity and that the trash file still matches the recorded fingerprint;
-  3. only if everything passes, commits state `unlinking` (a commit point). Then it unlinks,
-     fsyncs the directory and marks `deleted`.
+  3. only if everything passes, commits state `unlinking` (a commit point) together with an
+     **unlink fingerprint**: the volume marker UUID, the trash path, and the file's device,
+     inode, size and `mtime_ns`, taken with `lstat` (never following a symlink).
+  4. **Identity check before the unlink.** It re-reads the volume marker and `lstat`s the
+     trash path. It unlinks only if the volume UUID matches, the path is still inside that
+     volume's `.riftwire-trash` (`safe_join`), it is a regular file, and device, inode, size
+     and `mtime_ns` all equal the fingerprint. Then it fsyncs the directory and marks
+     `deleted`.
 - **Restore when blocked.** If any check fails, or cannot be completed (for example, the API
   is unreachable), the file is **restored**, not deleted. It is renamed from the trash back
   to its recorded path on the same volume with the Phase 1 no-replace promotion, and the
@@ -404,8 +410,18 @@ dry run), for example `upload_pending:youtube`, `unverified:tiktok`, `locked`, `
   - `deleting`, file still at its original path → full re-check, then proceed or return to
     `active`;
   - `deleting`, file in the trash → **final gate**, then unlink or restore as above;
-  - `unlinking`, file in the trash → finish the unlink (the decision was committed);
-  - file gone in either state → mark `deleted`.
+  - `unlinking` → the eligibility decision stands (it was committed), but **identity is
+    verified again before anything is touched**, exactly as in step 4:
+    - volume mounted, marker UUID matches, and the trash file matches the unlink
+      fingerprint → unlink, fsync, mark `deleted`;
+    - volume not mounted, or the marker is unreadable or different → **touch nothing**; the
+      job waits and retries;
+    - volume verified but the file differs from the fingerprint (another inode, size,
+      `mtime_ns`, a symlink or a non-regular file) → **touch nothing**; state
+      `unlink_mismatch`, shown to the owner, never unlinked or restored automatically;
+  - file absent → mark `deleted` **only if the volume is mounted and its identity is
+    verified** (an unmounted or different volume must never look like a deleted file);
+    otherwise wait.
 
   Re-running never deletes anything twice or anything else.
 - Uses the Phase 1 queue guarantees (leases, fencing, orphan cleanup) and per-volume floor

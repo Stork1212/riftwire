@@ -140,6 +140,11 @@ downloads (sizes listed in the proposal); SSD timing.
   - **Final gate:** a lock, new target, active job or disabled cleanup introduced while the
     file sits in the internal trash (including across a crash) restores the file instead of
     unlinking it; restore never overwrites, and a conflict is held, never unlinked.
+  - **Recovery from `unlinking`:** the volume marker UUID and the trash file's fingerprint
+    (device, inode, size, `mtime_ns` via `lstat`) are verified before any unlink. An offline
+    or wrong volume means nothing is touched. A swapped file, symlink or other mismatch
+    means `unlink_mismatch`, held for the owner. A missing file is marked deleted only on a
+    verified volume.
 
 ## Phase 6 — Analytics & Optimization
 
