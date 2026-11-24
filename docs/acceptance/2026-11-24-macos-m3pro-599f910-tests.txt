@@ -7,7 +7,7 @@ All checks passed!
 =================================== FAILURES ===================================
 _____________________________ test_pid_reuse_guard _____________________________
 
-tmp_path = PosixPath('/private/var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/pytest-of-gregstork/pytest-52/test_pid_reuse_guard0')
+tmp_path = PosixPath('/private/var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/pytest-of-<user>/pytest-52/test_pid_reuse_guard0')
 
     def test_pid_reuse_guard(tmp_path):
         p = subprocess.Popen(["sleep", "30"], start_new_session=True)
