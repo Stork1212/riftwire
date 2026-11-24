@@ -213,8 +213,10 @@ def suggest_clips(recording_id: str, db: DB, cfg: CFG):
 
 @api.post("/recordings/{recording_id}/clip", dependencies=[Depends(require_schema)])
 def cut_clip(recording_id: str, start_ms: int, end_ms: int, db: DB, cfg: CFG,
-             subtitles: bool = False):
-    result = clips.cut(db, cfg, recording_id, start_ms, end_ms, subtitles=subtitles)
+             subtitles: bool = False, layout: clips.ClipLayout = "original",
+             title: Annotated[str, Query(max_length=80)] = ""):
+    result = clips.cut(db, cfg, recording_id, start_ms, end_ms, subtitles=subtitles,
+                       layout=layout, title=title)
     return Response(result, media_type="video/mp4", headers={
         "Content-Disposition": f'attachment; filename="clip-{start_ms}-{end_ms}.mp4"',
         "Cache-Control": "no-store",

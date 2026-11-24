@@ -83,6 +83,7 @@ class Settings(BaseSettings):
 
     clip_whisper_python: Path | None = None
     clip_whisper_model: Path | None = None
+    clip_outro_path: Path | None = None
 
     thumbnail_width: int = Field(default=480, ge=16, le=3840)
     thumbnail_height: int = Field(default=270, ge=16, le=2160)

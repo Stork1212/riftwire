@@ -36,6 +36,7 @@ from app.services import (
     clips,
     evidence,
     matching,
+    media,
     queue,
     rights,
     sources,
@@ -686,6 +687,16 @@ def test_clip_cut_checks_edit_rights_and_length(w, client, db, settings, media_d
     assert result.status_code == 200, result.text
     assert b"tx3g" in result.content
     assert b"Clutch!" in result.content
+
+    settings.clip_outro_path = media_dir / "basic.mp4"
+    result = client.post(path, params={**params, "layout": "split_facecam", "title": "Clutch!"})
+    assert result.status_code == 200, result.text
+    assert b"tx3g" not in result.content
+    rendered = settings.temp_dir / "verified-short.mp4"
+    rendered.write_bytes(result.content)
+    info = media.probe(settings.ffprobe_path, rendered, settings.ffprobe_timeout_seconds)
+    assert (info.width, info.height) == (1080, 1920)
+    assert 2950 <= info.duration_ms <= 3100
 
     with db.session() as session:
         rights.revoke(session, licence, "rights withdrawn")

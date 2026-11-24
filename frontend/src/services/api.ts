@@ -69,9 +69,15 @@ export function suggestClips(id: string): Promise<{ items: ClipSuggestion[] }> {
   return request(`/api/v1/recordings/${encodeURIComponent(id)}/clip-suggestions`, { method: "POST" });
 }
 
-export async function downloadClip(id: string, start: number, end: number, subtitles = false): Promise<void> {
-  const path = `/api/v1/recordings/${encodeURIComponent(id)}/clip${qs({ start_ms: start, end_ms: end, subtitles: subtitles ? "true" : undefined })}`;
-  return downloadMp4(path, `clip-${start}-${end}${subtitles ? "-captioned" : ""}.mp4`);
+export type ClipLayout = "original" | "split" | "split_facecam";
+
+export async function downloadClip(id: string, start: number, end: number, subtitles = false,
+  layout: ClipLayout = "original", title?: string): Promise<void> {
+  const query = qs({ start_ms: start, end_ms: end, subtitles: subtitles ? "true" : undefined,
+    layout: layout === "original" ? undefined : layout, title });
+  const path = `/api/v1/recordings/${encodeURIComponent(id)}/clip${query}`;
+  const suffix = layout !== "original" ? "-short" : subtitles ? "-captioned" : "";
+  return downloadMp4(path, `clip-${start}-${end}${suffix}.mp4`);
 }
 
 async function downloadMp4(path: string, filename: string): Promise<void> {
