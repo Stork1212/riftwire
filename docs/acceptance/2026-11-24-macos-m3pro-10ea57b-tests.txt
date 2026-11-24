@@ -1,0 +1,39 @@
+▸ Backend: ruff
+All checks passed!
+▸ Backend: pytest
+........................................................................ [ 42%]
+........................................................................ [ 85%]
+.........................                                                [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastapi/testclient.py:1
+  ~/Claude/riftwire/backend/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+169 passed, 1 warning in 25.08s
+▸ Frontend: lint + typecheck
+▸ Frontend: tests
+
+ RUN  v5.1.1 ~/Claude/riftwire/frontend
+
+ ✓ src/test/dashboard.test.tsx (13 tests) 575ms
+   ✓ Recordings (4)
+     ✓ searches by filename 337ms
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  21:22:26
+   Duration  1.10s (tests 55%, environment 30%, import 6%, setup 5%, transform 3%)
+
+▸ Frontend: production build
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 36 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.68 kB │ gzip:  0.43 kB
+dist/assets/index-CE2zkYty.css    7.75 kB │ gzip:  2.45 kB
+dist/assets/index-BmmTx3Ea.js   283.92 kB │ gzip: 89.37 kB │ map: 1,566.84 kB
+
+✓ built in 84ms
+✓ All checks passed

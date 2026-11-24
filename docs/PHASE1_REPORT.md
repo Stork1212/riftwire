@@ -4,22 +4,30 @@ _Date: 2026-11-23 (macOS results added 2026-11-24) · Branch: `phase1/foundation
 
 ## 0. Bottom line
 
-**Phase 1 is implemented and verified on the target Mac.** The owner ran the verification on
-the development MacBook Pro (Apple M3 Pro, macOS 26.5.2, Python 3.13.2, FFmpeg 9.1 with
-VideoToolbox) against commit `9d1e8c5`:
+**Phase 1 is implemented and verified on the target Mac, including the fixes from review
+round 1.** The latest macOS run (owner, 2026-11-24 02:22 UTC) on commit `10ea57b`: Apple M3 Pro,
+macOS 26.5.2, Python 3.13.2, FFmpeg 9.1 with VideoToolbox:
 
-| Check (macOS, owner-run 2026-11-24 01:46 UTC) | Result |
+| Check | Result |
 |---|---|
-| `scripts/bootstrap.sh` from a fresh clone | ✅ completed |
 | Ruff | ✅ clean |
-| pytest | ✅ **148 passed**, 0 failed (26.5 s) |
+| pytest | ✅ **169 passed**, 0 failed (25.1 s) |
 | ESLint + `tsc --noEmit` | ✅ clean |
 | Vitest | ✅ **13 passed**, 0 failed |
-| `vite build` | ✅ 283.9 kB JS (89.4 kB gzip) |
-| `scripts/acceptance.py` at the **production 60 GiB floor** | ✅ **19/19 steps**, including SIGKILLed worker → orphaned FFmpeg killed via macOS `ps` → job completed on attempt 2 |
+| `vite build` | ✅ |
+| `scripts/acceptance.py` at the **production 60 GiB floor** | ✅ **19/19 steps** |
 
+Evidence: [`acceptance/2026-11-24-macos-m3pro-10ea57b.json`](acceptance/2026-11-24-macos-m3pro-10ea57b.json),
+[`acceptance/2026-11-24-macos-m3pro-10ea57b-tests.txt`](acceptance/2026-11-24-macos-m3pro-10ea57b-tests.txt).
+Later commits change documentation and evidence files only.
+
+<details><summary>Earlier macOS run (before review fixes) at 9d1e8c5</summary>
+
+148/148 pytest, 13/13 Vitest, build OK, 19/19 acceptance at 60 GiB.
 Evidence: [`acceptance/2026-11-23-macos-m3pro-9d1e8c5.json`](acceptance/2026-11-23-macos-m3pro-9d1e8c5.json),
 [`acceptance/2026-11-23-macos-m3pro-9d1e8c5-tests.txt`](acceptance/2026-11-23-macos-m3pro-9d1e8c5-tests.txt).
+
+</details>
 
 The same checks also pass in the Linux dev container (FFmpeg 6.1) and from a fresh GitHub clone.
 
@@ -52,7 +60,7 @@ Verification after the fixes (dev container, Python 3.13, FFmpeg 6.1):
 | Commit | Run (owner, M3 Pro, macOS 26.5.2, FFmpeg 9.1, 60 GiB floor) | Result |
 |---|---|---|
 | `599f910` | `scripts/test.sh`, `acceptance.py` | Acceptance **19/19** ✅; pytest **165 passed, 1 failed** ❌ (`test_pid_reuse_guard`: `'kill_failed' == 'killed'`). Evidence: `acceptance/2026-11-24-macos-m3pro-599f910*` |
-| _fixed commit_ | re-run requested | _pending_ |
+| `10ea57b` | `scripts/test.sh`, `acceptance.py` | ✅ ruff clean; pytest **169 passed**, 0 failed; Vitest **13 passed**; build OK; acceptance **19/19** at 60 GiB. Evidence: `acceptance/2026-11-24-macos-m3pro-10ea57b*` |
 
 **Cause of the macOS-only failure (a regression from the new `kill_failed` check):** on
 macOS/BSD, `killpg(pgid, 0)` reports a process group whose only member is a **zombie**

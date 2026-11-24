@@ -9,11 +9,11 @@ For reviewers (human or AI) of PR #1 (`phase1/foundation` → `main`). Read with
 - Phase 1 only: local ingestion, metadata, thumbnails, persistent queue, dashboard, scripts, docs.
   No Phase 2 features, AI models, cloud services or real footage.
 - **Verified on the target Mac** (M3 Pro, macOS 26.5.2, Python 3.13.2, FFmpeg 9.1) at commit
-  `9d1e8c5`: 148/148 pytest, 13/13 Vitest, build OK, 19/19 acceptance steps at the 60 GiB floor.
-  Evidence: `docs/acceptance/2026-11-23-macos-m3pro-9d1e8c5*`.
-- Changes **after** the Mac-verified commit: docs and evidence files, plus one test-only edit
-  (`frontend/src/test/dashboard.test.tsx`, wrapping two callbacks in `act()`). No application
-  code changed. Check with `git diff --stat 9d1e8c5 HEAD`.
+  `10ea57b` (includes the review-round-1 fixes): 169/169 pytest, 13/13 Vitest, build OK,
+  19/19 acceptance steps at the 60 GiB floor. Evidence:
+  `docs/acceptance/2026-11-24-macos-m3pro-10ea57b*`. Earlier run at `9d1e8c5`: 148/148 and 19/19.
+- Changes **after** the Mac-verified commit `10ea57b`: docs and evidence files only. Check
+  with `git diff --stat 10ea57b HEAD -- backend frontend scripts` (expected to be empty).
 
 ## 1a. Review round 1 (2026-11-24)
 

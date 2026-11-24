@@ -3,8 +3,8 @@
 _Last updated: 2026-11-24_
 
 ## Current phase
-**Phase 1 — Foundation: review-round-1 fixes implemented and verified in the dev container;
-macOS re-run pending; then second independent review.** Code is on branch `phase1/foundation`, pull request #1 to `main`. Details:
+**Phase 1 — Foundation: review-round-1 fixes implemented and verified on the target Mac
+(169 + 13 tests, 19/19 acceptance at 60 GiB); awaiting the second independent review.** Code is on branch `phase1/foundation`, pull request #1 to `main`. Details:
 `docs/PHASE1_REPORT.md`. Phase 2 has **not** started and needs approval.
 
 ## Completed
@@ -104,8 +104,9 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
 - [x] macOS run of `599f910`: acceptance 19/19 at 60 GiB, but pytest 165/166. A macOS-only
       zombie-process bug in the new `kill_failed` check. Fixed, with 3 tests including a
       BSD-semantics emulation that reproduces the Mac failure on any OS; 169 + 13 pass (dev).
-- [ ] **macOS re-run** (tests + acceptance at 60 GiB) on the zombie-fix commit (owner runs).
-- [ ] Reply to the review on PR #1; second independent review (ChatGPT).
+- [x] **macOS re-run on `10ea57b`** (owner, 02:22 UTC): ruff clean, **169/169** pytest, **13/13** Vitest, build OK, **19/19 acceptance at 60 GiB**.
+- [x] Replied to the review on PR #1 (implementation, tests, macOS evidence).
+- [ ] **Second independent review** (ChatGPT).
 - [ ] Owner authorization and squash-merge of PR #1 `phase1/foundation` → `main`.
 
 ## Blockers
