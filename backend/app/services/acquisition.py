@@ -1,0 +1,104 @@
+"""Provider-independent acquisition contract (M2, owner decision R1, plan §12.2).
+
+Every way media can reach RIFTWIRE is an ``AcquisitionProvider`` keyed by its method.
+Nothing in the source, rights or job model assumes a person uploads: an upload, a
+watch-folder scanner or an official-API fetcher all end in the same ``attach_media`` call.
+
+Two independent checks gate every acquisition:
+1. content rights: the source's current rights allow the ``acquire`` use;
+2. method permission: those rights list this acquisition method (``url_fetch``
+   additionally needs written platform permission on record and the global switch).
+
+M2 implements only the providers fed by the existing upload path (no network). The others
+are declared and refuse cleanly with ``acquisition_unavailable`` until a later, separately
+approved milestone implements them.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from sqlalchemy.orm import Session
+
+from app.core.config import Settings
+from app.core.errors import AppError, ConflictError, NotFoundError, ValidationFailed
+from app.models import AcquisitionMethod, Recording, Source
+from app.services import rights
+
+
+class AcquisitionUnavailable(AppError):
+    status_code = 501
+    code = "acquisition_unavailable"
+
+
+@dataclass(frozen=True)
+class AcquisitionProvider:
+    method: str
+    available: bool
+    description: str
+
+
+PROVIDERS: dict[str, AcquisitionProvider] = {p.method: p for p in (
+    AcquisitionProvider(AcquisitionMethod.LOCAL_RECORDING.value, True,
+                        "The owner's own recordings, imported through the dashboard."),
+    AcquisitionProvider(AcquisitionMethod.CREATOR_FILE.value, True,
+                        "Original files supplied by the creator, imported through the "
+                        "dashboard."),
+    AcquisitionProvider(AcquisitionMethod.PLATFORM_EXPORT.value, True,
+                        "The channel owner's own YouTube Studio / Twitch download, imported "
+                        "through the dashboard."),
+    AcquisitionProvider(AcquisitionMethod.DIRECT_LINK.value, False,
+                        "Creator-provided media link (not implemented in M2)."),
+    AcquisitionProvider(AcquisitionMethod.PLATFORM_API.value, False,
+                        "Platform-authorized acquisition (not implemented in M2)."),
+    AcquisitionProvider(AcquisitionMethod.WATCH_FOLDER.value, False,
+                        "Watch-folder automation (not implemented in M2)."),
+    AcquisitionProvider(AcquisitionMethod.URL_FETCH.value, False,
+                        "Generic URL fetching (needs written platform permission; off; not "
+                        "implemented in M2)."),
+)}
+
+
+def provider(method: str) -> AcquisitionProvider:
+    p = PROVIDERS.get(method)
+    if p is None:
+        raise ValidationFailed(f"unknown acquisition method '{method}'")
+    return p
+
+
+def check_acquire(s: Session, settings: Settings, source_id: str,
+                  method: str) -> rights.Decision:
+    """Both checks, before a single byte is accepted. Raises on refusal."""
+    p = provider(method)
+    if not p.available:
+        raise AcquisitionUnavailable(f"Acquisition method '{method}' is not available: "
+                                     f"{p.description}", details={"method": method})
+    return rights.require(s, source_id, "acquire", method=method,
+                          url_acquisition_enabled=settings.url_acquisition_enabled)
+
+
+def attach_media(s: Session, settings: Settings, source_id: str, recording_id: str,
+                 method: str | None = None, *, actor: str = "owner") -> rights.Decision:
+    """Link an imported recording to its source after re-checking both permissions.
+    Idempotent for the same source; never moves media to a different source."""
+    src = s.get(Source, source_id)
+    if src is None:
+        raise NotFoundError("Source not found")
+    rec = s.get(Recording, recording_id)
+    if rec is None:
+        raise NotFoundError("Recording not found")
+    m = method or src.acquisition_method
+    d = check_acquire(s, settings, source_id, m)
+    if rec.source_id == source_id:
+        return d
+    if rec.source_id is not None:
+        raise ConflictError("This recording already belongs to another source",
+                            details={"source_id": rec.source_id})
+    rec.source_id = source_id
+    s.flush()
+    rights.provenance(s, "recording", rec.id, "attached_to_source", actor=actor,
+                      source_id=source_id, method=m, sha256=rec.sha256,
+                      rights_record_id=d.record_id, rights_version=d.version)
+    rights.provenance(s, "source", source_id, "media_attached", actor=actor,
+                      recording_id=rec.id, method=m, rights_record_id=d.record_id)
+    return d

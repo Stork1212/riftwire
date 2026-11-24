@@ -4,6 +4,7 @@ import { JobStages } from "../components/JobStages";
 import { ErrorBanner, Panel, ProgressBar, StatusBadge } from "../components/ui";
 import { ApiError, api, uploadRecording, type UploadHandle } from "../services/api";
 import { formatBytes } from "../services/format";
+import { rightsApi } from "../services/rightsApi";
 import { usePolling } from "../services/usePolling";
 import type { Recording } from "../types/api";
 
@@ -21,6 +22,12 @@ export function ImportPage() {
   const [drag, setDrag] = useState(false);
   const inFlight = useRef<UploadHandle | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [linkTo, setLinkTo] = useState("");
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const creators = usePolling(() => rightsApi.listCreators(), 60_000);
+  const sourcesList = usePolling(() => rightsApi.listSources({ status: "active", limit: 200 }), 60_000);
+  const localChannels = (creators.data?.items ?? []).flatMap((c) =>
+    c.channels.filter((ch) => ch.platform === "local").map((ch) => ({ id: ch.id, label: c.display_name })));
 
   useEffect(() => () => inFlight.current?.abort(), []);
 
@@ -33,11 +40,15 @@ export function ImportPage() {
   const start = useCallback(async () => {
     if (!file || inFlight.current) return; // guard against repeated submissions
     setPhase({ kind: "uploading", loaded: 0, total: file.size });
+    setLinkError(null);
+    const link = linkTo.startsWith("ch:") ? { creator_channel_id: linkTo.slice(3) }
+      : linkTo.startsWith("src:") ? { source_id: linkTo.slice(4) } : {};
     const handle = uploadRecording(file, (loaded, total) =>
-      setPhase({ kind: "uploading", loaded, total }));
+      setPhase({ kind: "uploading", loaded, total }), link);
     inFlight.current = handle;
     try {
       const res = await handle.promise;
+      setLinkError(res.source_error ?? null);
       setPhase({ kind: "done", recording: res.recording });
       setFile(null);
     } catch (e) {
@@ -46,7 +57,7 @@ export function ImportPage() {
       inFlight.current = null;
       if (inputRef.current) inputRef.current.value = "";
     }
-  }, [file]);
+  }, [file, linkTo]);
 
   const uploading = phase.kind === "uploading";
 
@@ -73,6 +84,22 @@ export function ImportPage() {
           <small>{file ? formatBytes(file.size) : "Large files are streamed to disk — they are never loaded into memory."}</small>
         </label>
         <div className="toolbar" style={{ marginTop: 14 }}>
+          <select aria-label="Rights link" value={linkTo} disabled={uploading}
+            onChange={(e) => setLinkTo(e.target.value)}>
+            <option value="">No rights link (housekeeping only: cannot be analysed or published)</option>
+            {localChannels.length > 0 && (
+              <optgroup label="Own / creator files (standing licence)">
+                {localChannels.map((c) => <option key={c.id} value={`ch:${c.id}`}>{c.label} — local files</option>)}
+              </optgroup>
+            )}
+            {(sourcesList.data?.items.length ?? 0) > 0 && (
+              <optgroup label="Footage for an existing source">
+                {sourcesList.data?.items.map((src) => (
+                  <option key={src.id} value={`src:${src.id}`}>{src.title_user || src.url_canonical || src.id}</option>
+                ))}
+              </optgroup>
+            )}
+          </select>
           <button className="btn btn-primary" onClick={start} disabled={!file || uploading}>
             {uploading ? "Uploading…" : "Upload"}
           </button>
@@ -95,6 +122,13 @@ export function ImportPage() {
         {phase.kind === "done" && (
           <div className="alert alert-ok" role="status">
             Uploaded <strong>{phase.recording.original_filename}</strong>. Background processing has started.
+            {phase.recording.source_id && <> Linked to its <Link to={`/sources/${phase.recording.source_id}`}>source</Link>.</>}
+          </div>
+        )}
+        {phase.kind === "done" && linkError && (
+          <div className="alert alert-warn" role="alert">
+            Imported, but not linked to a source: {linkError}. It cannot be analysed or published
+            until its rights are in place.
           </div>
         )}
       </Panel>

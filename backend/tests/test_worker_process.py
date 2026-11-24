@@ -307,3 +307,30 @@ def test_graceful_shutdown_releases_running_job(db, settings, media_dir, monkeyp
     with db.session() as s:
         j = s.scalar(select(Job).where(Job.recording_id == rid, Job.job_type == "THUMBNAIL"))
         assert j.status == "RETRY_WAIT" and j.lease_token is None
+
+
+def test_final_heartbeat_never_overwrites_stopped(db, settings, monkeypatch):
+    """Regression (smoke test, 2026-11-24): the heartbeat thread's last beat (STOPPING) could
+    land after the shutdown's STOPPED write. Made deterministic by slowing that last beat."""
+    import threading
+
+    from app.workers.worker import WorkerProcess
+    settings.worker_poll_seconds = 0.05
+    settings.worker_heartbeat_seconds = 0.05
+    w = WorkerProcess(settings, db)
+    w.startup()
+    real_beat = w._beat
+
+    def slow_final_beat():
+        if w.stop_event.is_set():
+            time.sleep(0.5)
+        real_beat()
+    monkeypatch.setattr(w, "_beat", slow_final_beat)
+    t = threading.Thread(target=w.run)
+    t.start()
+    time.sleep(0.3)
+    w.request_stop()
+    t.join(30)
+    time.sleep(0.6)                      # any stray beat would have written by now
+    with db.session() as s:
+        assert s.get(Worker, w.id).status == "STOPPED"

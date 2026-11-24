@@ -1,8 +1,8 @@
 # M2 — Rights & Source Management: implementation plan
 
 _Status: **approved with changes** (owner decisions R1–R6, 2026-11-24, recorded in §12, which
-takes precedence over earlier sections). Implementation starts on `phase2/m2-rights-sources`
-only after M1 passes Mac verification and independent review. No M2 code exists yet._
+takes precedence over earlier sections). **Implemented** on `phase2/m2-rights-sources`
+(PR #12); see [`M2_REVIEW.md`](M2_REVIEW.md) for what was built, deviations and verification._
 
 ## 0. Ground rules for M2
 

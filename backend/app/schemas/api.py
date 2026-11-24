@@ -61,6 +61,7 @@ class RecordingOut(BaseModel):
     thumbnail_status: str
     error_message: str | None
     thumbnail_url: str
+    source_id: str | None = None          # M2: NULL = rights not attested yet
 
 
 class RecordingDetail(RecordingOut):
@@ -83,3 +84,7 @@ class EventOut(BaseModel):
 class ImportResponse(BaseModel):
     recording: RecordingOut
     job_id: str
+    # M2: set when the import was linked to a source; ``source_error`` explains a refusal
+    # that happened after the bytes were received (the recording is kept, unlinked).
+    source_id: str | None = None
+    source_error: str | None = None

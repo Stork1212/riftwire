@@ -23,6 +23,13 @@ vi.mock("../services/api", async (orig) => {
   };
 });
 
+vi.mock("../services/rightsApi", () => ({
+  rightsApi: {
+    listCreators: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 200, offset: 0 }),
+    listSources: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 200, offset: 0 }),
+  },
+}));
+
 const m = vi.mocked(api);
 const page = <T,>(items: T[]) => ({ items, total: items.length, limit: 50, offset: 0 });
 

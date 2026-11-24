@@ -58,6 +58,7 @@ export interface Recording {
   thumbnail_status: ThumbnailStatus;
   error_message: string | null;
   thumbnail_url: string;
+  source_id?: string | null;
 }
 
 export interface RecordingDetail extends Recording {
@@ -78,6 +79,8 @@ export interface SystemEvent {
 export interface ImportResponse {
   recording: Recording;
   job_id: string;
+  source_id?: string | null;
+  source_error?: string | null;
 }
 
 export type WorkerState =

@@ -21,16 +21,23 @@ _Last updated: 2026-11-24_
 - **M2, Rights & Source Management: approved** (owner decisions R1–R6,
   [`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12). In progress on branch
   `phase2/m2-rights-sources`.
-  - **Step 1 done (2026-11-24):**
-    - Schema: migration `0004` adds games, brand channels, creators, creator channels,
-      versioned rights records with coverage links and evidence, sources, source
-      assignments, an append-only provenance log, and `recordings.source_id`/`source_offset_ms`.
-    - Twelve SQLite triggers make attested rights immutable and evidence and provenance
-      append-only. Nothing is seeded.
-    - Offline URL parser (`services/source_urls.py`) for YouTube and Twitch.
-    - Tests: 75 URL cases, 15 schema/trigger tests.
-  - **Not started yet:** the rights evaluation service, enforcement in the queue and worker,
-    the API, evidence upload, the dashboard, acceptance steps.
+  - **Implemented (2026-11-24), draft PR #12, ready for independent review.** Review
+    package: [`M2_REVIEW.md`](M2_REVIEW.md); design: ARCHITECTURE §20.
+    - Schema `0004` with 12 database triggers for immutable rights and provenance.
+    - Fail-closed rights evaluation; revocation and supersession; enforcement at the API,
+      enqueue, worker start and the output fence.
+    - Acquisition contract: upload-fed providers only; no network.
+    - Offline matching; evidence storage with limits.
+    - API, dashboard pages, acceptance steps M2-1 to M2-6.
+    - Container: backend 367 + 1 macOS-only skip, bench 48, frontend 28, build,
+      acceptance 28/28, smoke 28 + 1 macOS-only skip.
+    - Also fixed a pre-existing Phase 1 shutdown race: the final heartbeat could overwrite
+      STOPPED.
+  - **Pending:**
+    - Mac run of the PR head (also covers the merged M1 cache and marker changes);
+    - independent review;
+    - merge (owner).
+    M3 is not started.
 
 ### Merged state of `main` (2026-11-24)
 | PR | Content | Reviewed head | Squash commit on `main` |
@@ -298,8 +305,7 @@ None for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB 
   un-deferred, Higgsfield use cases, brand assets).
 
 ## Next steps
-1. M2 implementation on `phase2/m2-rights-sources` (draft PR), following the plan's §9
-   sequence and §12 decisions.
+1. Mac verification and independent review of M2 (PR #12); merge after approval.
 2. When the SSD arrives: physical-SSD acceptance (checklist §11), then tag `v0.3.0-m1`
    (owner).
 

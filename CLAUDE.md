@@ -191,7 +191,7 @@ scripts/stop.sh
 cd backend && .venv/bin/pytest    # backend tests
 cd frontend && npm test && npm run build
 scripts/test.sh                   # everything: lint, tests, build
-backend/.venv/bin/python scripts/acceptance.py   # 22-step E2E (isolated data dir)
+backend/.venv/bin/python scripts/acceptance.py   # 28-step E2E (isolated data dir)
 scripts/smoke_test.sh             # launch scripts + dashboard smoke test (isolated data dir)
 bench/run_m0.sh                   # M0 benchmark on the Mac (isolated bench/.venv; see bench/README.md)
 ```
