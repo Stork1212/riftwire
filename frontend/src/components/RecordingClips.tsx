@@ -23,11 +23,11 @@ export function RecordingClips({ recording }: { recording: Recording }) {
     }
   };
 
-  const cut = async ({ start_ms, end_ms }: ClipSuggestion) => {
+  const cut = async ({ start_ms, end_ms }: ClipSuggestion, subtitles = false) => {
     setBusy("cut");
     setError(undefined);
     try {
-      await downloadClip(recording.id, start_ms, end_ms);
+      await downloadClip(recording.id, start_ms, end_ms, subtitles);
     } catch (e) {
       setError(e);
     } finally {
@@ -54,9 +54,16 @@ export function RecordingClips({ recording }: { recording: Recording }) {
             <div className="subsection" key={item.start_ms}>
               <strong>{formatDuration(item.start_ms)} – {formatDuration(item.end_ms)}</strong>
               <p>{item.transcript}</p>
-              <button type="button" className="btn" disabled={Boolean(busy)} onClick={() => cut(item)}>
-                {busy === "cut" ? "Cutting…" : "Cut and download MP4"}
-              </button>
+              <div className="toolbar">
+                <button type="button" className="btn" disabled={Boolean(busy)} onClick={() => cut(item)}>
+                  {busy === "cut" ? "Cutting…" : "Download MP4"}
+                </button>
+                {recording.has_audio !== false && (
+                  <button type="button" className="btn" disabled={Boolean(busy)} onClick={() => cut(item, true)}>
+                    Download MP4 with subtitles
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

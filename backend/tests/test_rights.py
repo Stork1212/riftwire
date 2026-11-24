@@ -31,7 +31,7 @@ from app.models import (
     Source,
     SystemEvent,
 )
-from app.services import acquisition, evidence, matching, queue, rights, sources
+from app.services import acquisition, clips, evidence, matching, queue, rights, sources
 from app.services.source_urls import parse_source_url
 from tests.conftest import requires_ffmpeg
 from tests.helpers import import_file
@@ -651,7 +651,7 @@ def test_api_import_refused_before_any_byte_without_rights(client, w, media_dir,
 
 
 @requires_ffmpeg
-def test_clip_cut_checks_edit_rights_and_length(w, client, db, settings, media_dir):
+def test_clip_cut_checks_edit_rights_and_length(w, client, db, settings, media_dir, monkeypatch):
     scope = {**FULL_SCOPE, "max_clip_seconds": 1}
     licence = w.licence(scope=scope)
     source_id = w.source(url=None, kind="local", creator_channel_id=w.local)
@@ -670,6 +670,14 @@ def test_clip_cut_checks_edit_rights_and_length(w, client, db, settings, media_d
     assert result.status_code == 200, result.text
     assert result.headers["content-type"] == "video/mp4"
     assert result.content[4:8] == b"ftyp"
+
+    monkeypatch.setattr(clips, "_transcribe", lambda *_: [
+        {"w": "Clutch!", "start_ms": 100, "end_ms": 800},
+    ])
+    result = client.post(path, params={**params, "subtitles": "true"})
+    assert result.status_code == 200, result.text
+    assert b"tx3g" in result.content
+    assert b"Clutch!" in result.content
 
     with db.session() as session:
         rights.revoke(session, licence, "rights withdrawn")
