@@ -21,6 +21,16 @@ _Last updated: 2026-11-24_
 - **M2, Rights & Source Management: approved** (owner decisions R1–R6,
   [`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12). In progress on branch
   `phase2/m2-rights-sources`.
+  - **Step 1 done (2026-11-24):**
+    - Schema: migration `0004` adds games, brand channels, creators, creator channels,
+      versioned rights records with coverage links and evidence, sources, source
+      assignments, an append-only provenance log, and `recordings.source_id`/`source_offset_ms`.
+    - Twelve SQLite triggers make attested rights immutable and evidence and provenance
+      append-only. Nothing is seeded.
+    - Offline URL parser (`services/source_urls.py`) for YouTube and Twitch.
+    - Tests: 75 URL cases, 15 schema/trigger tests.
+  - **Not started yet:** the rights evaluation service, enforcement in the queue and worker,
+    the API, evidence upload, the dashboard, acceptance steps.
 
 ### Merged state of `main` (2026-11-24)
 | PR | Content | Reviewed head | Squash commit on `main` |
@@ -30,7 +40,7 @@ _Last updated: 2026-11-24_
 | #4 | Storage lifecycle & retention manager (D10), docs only | `f6c1219` | `1b84d80` |
 | #3 | Phase 2 technical proposal (M0–M7) | `c53a9cb` | `6502a52` |
 | #5 | M0 benchmark harness + results | `20184ca` | `a7554b3` |
-| #9 | M1 Storage Architecture (SSD acceptance pending) | `53bece7` code (evidence head below) | squash on `main` |
+| #9 | M1 Storage Architecture (SSD acceptance pending) | `c47d1de` (code verified on the Mac at `53bece7`) | `8e5b5e3` |
 
 Tags (both annotated, pushed by the owner): `v0.1.0` → `7ed5be7`; `v0.2.0-m0` → `0399a5a`.
 
