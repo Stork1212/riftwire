@@ -288,3 +288,13 @@ frontend **36/36**, build OK; acceptance **28/28** at the 60 GiB floor; smoke **
 earlier, overlapping runs of the script interfered with each other through shared ports
 and were discarded (see that folder's README); the script now refuses concurrent runs.
 
+
+### Acquisition-method confirmation after a migration round trip
+
+Migration 0005 now restores explicit owner confirmation from the recording's provenance
+for the same source. The confirmation survives a downgrade to 0004 and upgrade to head.
+The regression covers missing, ambiguous, and unknown legacy attachment histories and
+checks the resulting analysis decision.
+
+[Mac verification for `8faeb32`](acceptance/2026-11-24-macos-m2-8faeb32/) passed the full test
+suite, acceptance at the 60 GiB floor (28/28), and smoke (30/30).
