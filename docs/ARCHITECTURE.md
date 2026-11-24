@@ -554,7 +554,8 @@ Owner decisions (2026-11-24):
        cached for up to 10 s. The key is the volume root's identity: device, root path,
        root inode and root creation time, never the device number alone.
      - A different drive mounted at the same path with a reused device number has a
-       different root creation time. It misses the cache and is probed afresh.
+       different root creation time. It misses the cache and is probed afresh. A result
+       is stored only if the volume root is unchanged after the probe.
      - On Linux, which has no creation time, nothing is cached.
      - The first fix for the review removed caching altogether. That made a full Mac test
        run 7× slower, so the cache came back with this key.
@@ -653,7 +654,9 @@ between the check and the lock). While it is held:
      still be the same device as at planning, and writes the marker.
      - The destination drive's OS volume UUID is recorded in the journal
        (`dest_hw_volume_uuid`) the first time it is identified.
-     - Every later check compares a fresh probe against it: on resume, before each file,
+     - Every later check compares the drive's current identity against it (on macOS
+       possibly served from the same-volume-root cache, which a replacement drive never
+       hits): on resume, before each file,
        before each promotion, before cleanup, before the final re-hash and before the
        switch. A marker copied to another drive never authorizes that drive (review fix 1).
      - The switch records the approved UUID, never whatever happens to be mounted.

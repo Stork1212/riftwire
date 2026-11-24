@@ -210,7 +210,7 @@ def test_f2_registered_without_identity_fails_closed(db, settings, tmp_path, pro
     assert lay.state("temp").reason == locations.PROBE_FAILED
 
 
-def test_f2_identity_is_never_served_from_a_cache(tmp_path):
+def test_f2_probe_without_cache_permission_is_always_asked(tmp_path):
     strict = StrictProbe(default_hw=SSD_ONE)
     volumes.set_probe(strict)
     try:
@@ -263,6 +263,23 @@ def test_f2_cache_is_keyed_by_volume_root_identity(tmp_path, monkeypatch):
         volumes.volume_info(tmp_path)
         volumes.volume_info(tmp_path)
         assert cp.calls == 6
+    finally:
+        volumes.set_probe(None)
+
+
+def test_f2_swap_during_probe_is_never_cached_under_the_old_key(tmp_path, monkeypatch):
+    """Drive A's root key is computed, then drive B is mounted before the probe answers:
+    B's identity must not be filed under A's key."""
+    keys = iter([("A",), ("B",), ("A",), ("A",)])   # before probe, after probe, ...
+    monkeypatch.setattr(volumes, "volume_root_key", lambda _p: next(keys))
+    cp = CachingProbe(SSD_TWO)                       # the probe sees drive B
+    volumes.set_probe(cp)
+    try:
+        assert volumes.volume_info(tmp_path).hw_volume_uuid == SSD_TWO
+        assert volumes._cache == {}                  # not stored under A
+        cp.hw = SSD_ONE                              # drive A is back
+        assert volumes.volume_info(tmp_path).hw_volume_uuid == SSD_ONE
+        assert cp.calls == 2
     finally:
         volumes.set_probe(None)
 
@@ -424,6 +441,9 @@ def _bad_marker_variants(valid: dict) -> list[bytes]:
     out = list(BAD_MARKERS)
     for k, v in [("format", 2), ("format", "1"), ("format", True), ("kind", "nope"),
                  ("location_uuid", 5), ("location_uuid", "not-a-uuid"),
+                 ("location_uuid", valid["location_uuid"].upper()),
+                 ("location_uuid", valid["location_uuid"].replace("-", "")),
+                 ("volume_uuid", "{" + valid["volume_uuid"] + "}"),
                  ("volume_uuid", None), ("hw_volume_uuid", "bad"), ("created_at", 0)]:
         out.append(json.dumps({**valid, k: v}).encode())
     out.append(json.dumps({**valid, "extra": 1}).encode())

@@ -10,13 +10,17 @@ _Last updated: 2026-11-24_
   benchmarking milestone, with the documented timestamp-accuracy and memory limitations.
   It is **not** production acceptance of transcription or highlight detection. Results:
   [`BENCHMARKS.md`](BENCHMARKS.md). Tag `v0.2.0-m0`.
-- **M1, Storage Architecture: implemented, in review** (draft PR, branch
-  `phase2/m1-storage`). Approved by the owner on 2026-11-24, to start without the SSD.
-  - Everything possible without the SSD is done and verified in isolated environments.
-  - Physical-SSD acceptance is deferred until the SanDisk 1 TB arrives
+- **M1, Storage Architecture: merged (PR #9, 2026-11-24); physical-SSD acceptance
+  pending.**
+  - Merged after an independent review (five findings fixed, [`M1_REVIEW.md`](M1_REVIEW.md)
+    §6) and Mac verification of the final code `53bece7`.
+  - M1 is **not** declared complete and `v0.3.0-m1` is **not** tagged until the eight
+    physical-SSD checks pass
     ([checklist §11](M1_STORAGE_CHECKLIST.md#11-acceptance-checks-that-depend-on-the-external-ssd-deferred)).
   - Design: [`ARCHITECTURE.md`](ARCHITECTURE.md) §19.
-  - **M2 is not authorized.**
+- **M2, Rights & Source Management: approved** (owner decisions R1–R6,
+  [`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12). In progress on branch
+  `phase2/m2-rights-sources`.
 
 ### Merged state of `main` (2026-11-24)
 | PR | Content | Reviewed head | Squash commit on `main` |
@@ -26,6 +30,7 @@ _Last updated: 2026-11-24_
 | #4 | Storage lifecycle & retention manager (D10), docs only | `f6c1219` | `1b84d80` |
 | #3 | Phase 2 technical proposal (M0–M7) | `c53a9cb` | `6502a52` |
 | #5 | M0 benchmark harness + results | `20184ca` | `a7554b3` |
+| #9 | M1 Storage Architecture (SSD acceptance pending) | `53bece7` code (evidence head below) | squash on `main` |
 
 Tags (both annotated, pushed by the owner): `v0.1.0` → `7ed5be7`; `v0.2.0-m0` → `0399a5a`.
 
@@ -210,7 +215,7 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
   - start without the SSD;
   - concurrent-safe, verified promotion;
   - migration dry-run by default, never deleting.
-- [x] **M1 Storage Architecture**, branch `phase2/m1-storage` (draft PR):
+- [x] **M1 Storage Architecture**, merged via PR #9 (physical-SSD acceptance pending):
   - **Locations:** five configurable locations. The database is the authority, every process
     loads the layout first, and stored recording paths are unchanged.
   - **Identity:** markers plus the OS volume UUID; APFS required on macOS.
@@ -267,10 +272,7 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
   - **Mac verification of the corrected code `53bece7`** (2026-11-24): all stages exit 0.
     Backend 239 passed + 3 skipped, bench 47 + 1, frontend 17, acceptance 22/22 at the
     60 GiB floor, smoke 30/30. Evidence: `docs/acceptance/2026-11-24-macos-m1-53bece7/`.
-  - **Next:**
-    - re-review of `53bece7`;
-    - merge (owner).
-    M2 starts after that.
+  - Re-review passed; merged into `main` 2026-11-24.
   - **Not yet verified:**
     - every physical-SSD check (checklist §11).
 
@@ -279,7 +281,6 @@ None for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB 
 (owner-formatted APFS). Real footage at scale needs the SSD.
 
 ## Decisions pending
-- Owner and independent review of the M1 draft PR.
 - When the SSD arrives: approval of the physical-SSD acceptance run (checklist §11). No real
   data is moved and no drive is formatted by the agent.
 - Separately and later: migrating real recordings to the SSD.
@@ -287,11 +288,10 @@ None for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB 
   un-deferred, Higgsfield use cases, brand assets).
 
 ## Next steps
-1. Owner runs the M1 branch on the Mac, internal disk only: `scripts/test.sh`, acceptance
-   at the 60 GiB floor, the smoke test.
-2. Independent review of the M1 draft PR.
-3. When the SSD arrives: physical-SSD acceptance (checklist §11), then M1 merge and tag
-   `v0.3.0-m1`.
+1. M2 implementation on `phase2/m2-rights-sources` (draft PR), following the plan's §9
+   sequence and §12 decisions.
+2. When the SSD arrives: physical-SSD acceptance (checklist §11), then tag `v0.3.0-m1`
+   (owner).
 
 ## Review notes for external reviewers
 - Source of truth is this repository's `main` branch.

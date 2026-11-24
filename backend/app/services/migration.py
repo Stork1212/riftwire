@@ -428,7 +428,7 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
 
     def live_identity() -> volumes.VolumeInfo:
         try:
-            return volumes.volume_info(dest)   # fresh probe, never cached
+            return volumes.volume_info(dest)   # same-root cache only (volumes.volume_info)
         except Exception as e:
             raise MigrationRefused(f"could not identify the destination drive: {e}") from e
 
@@ -476,7 +476,8 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
 
     def dest_guard() -> None:
         """Before every write, promotion, cleanup and the final switch: the destination is
-        still our folder (marker) on the approved physical drive (fresh OS volume UUID)."""
+        still our folder (marker) on the approved physical drive (OS volume UUID; on macOS
+        possibly from the same-volume-root cache, which a replacement drive never hits)."""
         if volumes.unmounted_volume_root(dest) is not None or not dest.is_dir():
             raise MigrationRefused("destination drive is no longer available")
         m = _read_marker()

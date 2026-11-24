@@ -210,10 +210,13 @@ def identity_required() -> bool:
 
 
 def volume_info(path: Path) -> VolumeInfo:
-    """Fresh facts about the volume holding the existing path ``path`` (never cached).
+    """Facts about the volume holding the existing path ``path``.
 
-    Where identity is required, the result always carries a valid ``hw_volume_uuid``;
-    otherwise ``IdentityUnavailable`` is raised."""
+    Probed afresh unless the probe allows caching (macOS), in which case a result at most
+    ``CACHE_SECONDS`` old for the *same volume root* (see ``volume_root_key``) may be
+    returned; a different drive at the same path always misses. Where identity is
+    required, the result always carries a valid ``hw_volume_uuid``; otherwise
+    ``IdentityUnavailable`` is raised."""
     probe = _probe
     key = volume_root_key(path) if probe.cache_identity else None   # raises if gone
     if key is None:
@@ -231,7 +234,9 @@ def volume_info(path: Path) -> VolumeInfo:
             raise IdentityUnavailable(f"no valid volume UUID for {info.mount_point}")
         if hw != info.hw_volume_uuid:
             info = VolumeInfo(info.mount_point, info.fs_type, hw, info.label)
-    if key is not None:
+    # Store only if the volume root is still the one the key was computed for: a swap
+    # during the probe must never file the new drive's identity under the old key.
+    if key is not None and volume_root_key(path) == key:
         with _lock:
             if len(_cache) > 256:
                 _cache.clear()

@@ -107,13 +107,13 @@ _MARKER_KEYS = {"format", "kind", "location_uuid", "volume_uuid", "hw_volume_uui
 
 
 def _is_uuid(v: object) -> bool:
+    """Canonical lower-case hyphenated UUID only (the only form RIFTWIRE writes)."""
     if not isinstance(v, str):
         return False
     try:
-        uuid.UUID(v)
+        return str(uuid.UUID(v)) == v
     except ValueError:
         return False
-    return True
 
 
 def validate_marker(m: object) -> dict:
