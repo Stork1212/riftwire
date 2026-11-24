@@ -18,6 +18,7 @@ technical proposal is approved (see [`ROADMAP.md`](ROADMAP.md))._
 | D7 | Branding & editing | Customizable preset system. Default 1080×1920; 35 % camera / 65 % gameplay; bold white subtitles, black outline, red active word; white hook background with bold black text; configurable 2-second outro. **User-uploaded logos, fonts, outros and brand assets.** **Branding configurable independently per publishing channel.** |
 | D8 | Workflow | One application: authorized source → viral moments → clips → edit → subtitles + thumbnails → ranking → approved, publish-ready content. No manual prompts, spreadsheets, batch files, Terminal commands or app-to-app transfers. |
 | D9 | Process | Preserve the Phase 1 architecture. No Phase 2 implementation yet. After Phase 1 is approved and merged → a detailed Phase 2 technical proposal for approval. |
+| D10 | Storage lifecycle (2026-11-23) | **Automated retention manager:** delete locally **generated** video files (and their disposable rendering intermediates) **72 h after the last confirmed, API-verified publication to all intended platforms**. Never when any upload is pending, scheduled, failed, partial or unverified; never with an active job or a manual retention lock; never original recordings; never remote content. Hourly, idempotent, crash-safe, SSD identity verified, full audit trail and dashboard controls (§6a). |
 
 ---
 
@@ -299,6 +300,117 @@ cleanup, disk safeguards and local-first design are unchanged.
 - **Idempotent, verified uploads:** a retried publish never duplicates a post; the platform ID
   and URL are stored; processing status is polled.
 
+## 6a. Storage lifecycle and retention manager (D10)
+
+Generated short-form videos are disposable once they are safely published. This manager
+reclaims their disk space automatically, and only when it is provably safe.
+
+### 6a.1 What may be deleted (and nothing else)
+
+| Deletable (when eligible) | Never deleted by this manager |
+|---|---|
+| Final rendered short-form videos (`generated_artifacts.kind = final_render`) | **Original source recordings** (the `recordings` location; Phase 1 rule 2 still applies) |
+| Their registered **disposable rendering intermediates** (`kind = intermediate`: temp renders, audio stems, subtitle burn-in passes) | Publication records, platform IDs and URLs, analytics |
+| | Thumbnails, transcripts, highlight records, timestamps, evidence |
+| | Editing presets, brand kits, render configurations, prompts |
+| | Any file not registered as a deletable artifact, or outside the exports/render locations |
+| | **Remote published content.** The manager has no platform write or delete capability (§6a.6) |
+
+After deletion, the artifact row stays as a lightweight record: hash, size, render
+configuration, publication links and the deletion audit. The dashboard shows "file removed
+after publication — metadata retained".
+
+### 6a.2 Default policy and eligibility
+
+Defaults: **automatic cleanup enabled, retention period 72 hours** (configurable).
+
+An artifact is eligible **only if every condition holds** at the moment of deletion. All
+conditions are re-checked inside the deletion job's fenced transaction, not only when the
+artifact was listed:
+
+1. Automatic cleanup is enabled and the artifact has **no retention lock** ("Keep forever"
+   or any manual lock).
+2. Every **intended** publication target (platform × channel) recorded for the artifact has
+   status **published** and is **verified**:
+   - **Official API, where supported:** the platform's API confirms the post exists and is
+     processed/live for the stored publication ID, checked again right before deletion. For
+     example, the YouTube Data API `videos.list` returns the video ID with processing
+     complete.
+   - **No usable official API:** the owner must confirm manually in the dashboard. Until
+     then the artifact is not eligible.
+3. **No** target is pending, scheduled, uploading, processing, failed, partially completed,
+   unverified or awaiting retry.
+4. `now ≥ last_successful_publication_at + retention_period`. The countdown starts at the
+   **final** successful publication across all intended targets, never at the generation
+   time. Adding a new target or re-publishing restarts the countdown.
+5. **No active job** references the artifact or its highlight/render: no render, upload,
+   publish, verification, QC or export job is PENDING, RUNNING or RETRY_WAIT.
+6. The artifact's storage volume is **mounted and its identity verified**: the volume
+   marker UUID matches the recorded one (the external SSD check). A path on an unmounted or
+   different volume is never touched.
+7. The file still matches its record (size and, when cheap, SHA-256 or inode/mtime
+   fingerprint) and lies inside an allowed deletable location. Path containment is checked
+   with the same guard as Phase 1 (`safe_join`).
+
+Any failed condition gives the artifact a **blocking reason code** (shown in the dashboard and
+dry run), for example `upload_pending:youtube`, `unverified:tiktok`, `locked`, `active_job`,
+`volume_offline`, `retention_not_elapsed`.
+
+### 6a.3 Crash-safe, idempotent deletion
+
+- **Scheduler:** a persistent `CLEANUP_SWEEP` task runs **hourly while RIFTWIRE is active**.
+  Its `next_run_at` is stored in the DB. On startup an **overdue** sweep runs immediately,
+  so missed runs are recovered after a restart or sleep.
+- **Sweep (light job):** lists candidates and enqueues one `DELETE_ARTIFACT` job per eligible
+  artifact. It is idempotent: one active deletion job per artifact.
+- **`DELETE_ARTIFACT` (fenced):**
+  1. Re-verify every condition in §6a.2, including the platform API check and volume identity.
+  2. In one transaction, write the intent `deleting` with a reason, then atomically rename
+     the file into `<volume>/.riftwire-trash/<artifact_id>` (same volume).
+  3. Unlink it, fsync the directory, and mark `deleted` with `deleted_at` and bytes reclaimed.
+- **Recovery:** the reconciler finishes interrupted deletions. In state `deleting`: file
+  still in place → re-check eligibility, then continue or roll back to `active`; file in the
+  trash → unlink and mark deleted; file gone → mark deleted. Re-running never deletes
+  anything twice or anything else.
+- Uses the Phase 1 queue guarantees (leases, fencing, orphan cleanup) and per-volume floor
+  logic unchanged.
+
+### 6a.4 Dashboard controls
+
+- **Settings:** enable/disable automatic cleanup; retention period (default 72 h);
+  per-channel override (optional).
+- **Per video:**
+  - **Keep forever** toggle, with lock reason and who set it;
+  - **scheduled deletion time**, or the blocking reasons;
+  - publication status per target, with verification time.
+- **Storage reclaimed:** total and per period (by cleanup), alongside current usage per volume.
+- **Cleanup history:** sweeps (time, mode, candidates, deleted, bytes, errors) and a
+  per-artifact **audit log**:
+  - which file (path, hash, size);
+  - why it was eligible (publication IDs and API verification results with timestamps);
+  - who/what deleted it, and when;
+  - or why it was blocked.
+- **Dry-run mode:** lists exactly which files *would* be deleted now and which are blocked,
+  with reasons, and changes nothing. Dry run is the default view before the first real run.
+
+### 6a.5 Configuration
+
+`RIFTWIRE_CLEANUP_ENABLED` (default `true`), `RIFTWIRE_RETENTION_HOURS` (default `72`),
+`RIFTWIRE_CLEANUP_INTERVAL_MINUTES` (default `60`); dashboard settings override, with changes
+audited.
+
+### 6a.6 Safety guarantees (tested)
+
+- **Never deleted:** originals, metadata, or files outside registered deletable artifacts.
+- **Remote content is never touched:** cleanup uses only read-only publication-verification
+  calls. Publishing adapters expose `verify(publication_id)` separately from upload, and the
+  cleanup code path has no access to delete or update operations (enforced by interface and
+  tests).
+- **Unverified means kept.** API errors, timeouts or ambiguous responses → not eligible
+  (fail-safe), retried at the next sweep.
+- **Wrong or offline volume means nothing is deleted.**
+- Idempotent and crash-safe, with the same test approach as Phase 1: real SIGKILL at every
+  deletion step.
 ## 7. Remaining open questions
 
 1. Which YouTube channel(s) and account(s) come first, and who approves posts.
@@ -307,3 +419,5 @@ cleanup, disk safeguards and local-first design are unchanged.
 3. Timing of the 2 TB SSD purchase (URL acquisition and model storage at scale depend on it).
 4. Higgsfield: specific use cases to evaluate first.
 5. Brand assets for the first channel (logo, fonts, outro) and their licences.
+6. Retention: should "Keep forever" be the default for specific channels or categories (e.g.
+   best-performing clips), or always manual?

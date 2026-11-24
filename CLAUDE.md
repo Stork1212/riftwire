@@ -58,6 +58,9 @@ hosting, message brokers, extra microservices.
 1. **Reliability first.** Every stage observable (logs + `system_events`), testable,
    recoverable, idempotent.
 2. **Never delete original recordings automatically.** Not on failure, not on cleanup.
+   Generated videos may be deleted automatically **only** by the retention manager (Phase 5)
+   under `docs/PRODUCT_SPEC.md` §6a: verified publication to every intended target, 72 h
+   default, no active job or lock, SSD identity verified, and never remote content.
 3. **Never load whole videos into memory.** Stream in chunks.
 4. **Atomic file writes.** Write to `data/temp/` on the same volume, validate, then rename.
    Never overwrite an existing managed file.

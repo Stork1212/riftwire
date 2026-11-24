@@ -12,8 +12,8 @@ technical implementation proposal → owner approval → Phase 2 implementation.
 | 1 | **Foundation** | Crash-safe local ingestion, metadata, thumbnails, persistent queue, dashboard | Implemented and verified on the Mac; awaiting final review (PR #1) |
 | 2 | **Sources & Signals** | Rights confirmation + provenance; permitted acquisition (local, authorized YouTube/Twitch, selective sections); configurable storage locations; small local Whisper with word timestamps + benchmark; audio/scene signals | Approved in principle; awaiting technical proposal |
 | 3 | **Highlight Detection & Review** | Interchangeable AI provider interface (Ollama default; OpenAI/Anthropic optional at $0 budget), usage ledger + spending limits; per-game highlight prompts; validated, ranked records; review table; exports; auto-submit | Approved in principle |
-| 4 | **Editing Preset Studio & Rendering** | Per-channel brand kits (uploaded logos/fonts/outros); 1080×1920 35/65 presets, hooks, word-level subtitles, 2 s outro, live preview, VideoToolbox renders + QC; per-game editing prompts | Approved in principle |
-| 5 | **Publishing** | **YouTube Shorts first**; multi-account channels, scheduling, generated metadata + thumbnails, mandatory human approval; then Instagram Reels, TikTok, Facebook Reels, X via official APIs | Approved in principle |
+| 4 | **Editing Preset Studio & Rendering** | Per-channel brand kits (uploaded logos/fonts/outros); 1080×1920 35/65 presets, hooks, word-level subtitles, 2 s outro, live preview, VideoToolbox renders + QC; per-game editing prompts; **artifact registry for generated files (retention foundations)** | Approved in principle |
+| 5 | **Publishing** | **YouTube Shorts first**; multi-account channels, scheduling, generated metadata + thumbnails, mandatory human approval; then Instagram Reels, TikTok, Facebook Reels, X via official APIs; **storage lifecycle & retention manager (72 h after verified publication)** | Approved in principle |
 | 6 | **Analytics & Optimization** | Performance ingestion, scoring feedback, prompt/model A/B evaluation | Approved in principle |
 
 The earlier phase list in CLAUDE.md §1 (2 Analysis, 3 Editing, 4 Publishing, 5 Analytics) is
@@ -87,6 +87,12 @@ downloads (sizes listed in the proposal); SSD timing.
 - Higgsfield evaluated as an **optional premium** plugin (off by default, paid-provider rules
   apply); the core pipeline never depends on it.
 
+- **Retention foundations (D10):** every generated file is registered in
+  `generated_artifacts` (kind `final_render` | `intermediate`, path, volume UUID, size, hash,
+  render/highlight links, `retention_lock`). Intermediates are marked disposable at creation.
+  Renders write only into exports/render locations, never into `recordings`. No deletion
+  logic yet.
+
 **Acceptance (examples)**
 - Golden-frame tests for layouts, hooks and subtitles; active-word timing within one frame.
 - Renders reproducible from recorded preset + brand-kit versions; crash/retry → identical output.
@@ -105,9 +111,29 @@ downloads (sizes listed in the proposal); SSD timing.
 - **Mandatory human approval** before publication (default); scheduling; idempotent, verified
   uploads.
 
+- **Storage lifecycle and retention manager (D10, PRODUCT_SPEC §6a):**
+  - publication targets per artifact;
+  - read-only `verify(publication_id)` per platform adapter;
+  - persistent hourly `CLEANUP_SWEEP` with overdue recovery;
+  - fenced, crash-safe `DELETE_ARTIFACT` (intent → same-volume trash → unlink), with the SSD
+    identity checked before any deletion;
+  - dashboard: enable/disable, retention period (default 72 h), Keep forever, scheduled
+    deletion time, storage reclaimed, history and audit log, dry run.
+
 **Acceptance (examples)**
 - Nothing publishes without an approval record.
 - A retried publish never creates a duplicate post; the platform ID and URL are stored.
+- **Retention:**
+  - 0 deletions when any target is pending, scheduled, failed, partial or unverified, when an
+    active job or retention lock exists, or when the volume is offline or has the wrong
+    identity. One property-test matrix covers every combination.
+  - The countdown starts at the final verified publication (time-travel tests).
+  - An API error means the file is kept.
+  - Originals, thumbnails, transcripts and metadata are never deleted.
+  - The cleanup path cannot call any platform write or delete operation.
+  - Real SIGKILL at every deletion step → recovered with no double deletion.
+  - An overdue sweep runs after restart.
+  - Dry run changes nothing.
 
 ## Phase 6 — Analytics & Optimization
 
@@ -125,6 +151,8 @@ downloads (sizes listed in the proposal); SSD timing.
 - Paid services (cloud AI, Higgsfield) are optional and off by default. The budget is $0
   until the owner sets a limit, and no paid call happens without explicit authorization.
 - Acquisition only by permitted methods, with confirmed rights and no bypassing of restrictions.
+- Only the retention manager (Phase 5) may delete generated video files, and only under
+  PRODUCT_SPEC §6a. Original recordings are never deleted automatically.
 - Each phase ends with a report like `PHASE1_REPORT.md`: verified vs. untested, acceptance
   results on the Mac.
 
