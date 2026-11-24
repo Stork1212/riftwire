@@ -16,6 +16,8 @@ const STATUS_TONE: Record<string, Tone> = {
   CANCELLED: "muted",
   STOPPED: "muted",
   NEVER_STARTED: "muted",
+  ONLINE: "ok",
+  OFFLINE: "bad",
 };
 
 const STATUS_LABEL: Record<string, string> = {

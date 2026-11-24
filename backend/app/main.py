@@ -25,6 +25,7 @@ from app.models import Severity
 from app.services import media, queue
 from app.services.events import record_event
 from app.services.ingest import reconcile
+from app.services.locations import load_layout, maintenance_active
 
 log = get_logger("api")
 
@@ -42,6 +43,16 @@ def startup_checks(app: FastAPI) -> None:
     if not st["ok"]:
         log.error("database schema not at head; run scripts/migrate.sh",
                   extra={"data": st})
+        return
+    # Storage layout first: nothing touches a file before every location is resolved.
+    load_layout(db, s, "api")
+    if maintenance_active(s):
+        # A storage migration is running: never clean up or recover now (a reconcile could
+        # remove files being migrated). Uploads are refused until it ends.
+        with db.session() as sess:
+            record_event(sess, Severity.WARNING, "api", "api_started_during_maintenance",
+                         "API started while a storage migration runs: recovery and cleanup "
+                         "skipped; uploads refused until the migration ends")
         return
     expired = queue.recover_stuck_jobs(
         db, kill_orphan=media.kill_orphan_if_matches,
@@ -61,7 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        settings.ensure_dirs()
+        settings.ensure_internal_dirs()  # locations are resolved/created by load_layout
         configure_logging("api", settings.logs_dir, settings.log_level,
                           settings.log_max_bytes, settings.log_backup_count)
         app.state.db = Database(settings.database_url)

@@ -11,12 +11,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 GIB = 1024**3
+MIN_FLOOR_BYTES = 60 * GIB
+LOCATION_KINDS = ("recordings", "temp", "models", "exports", "assets")
 
 
 class Settings(BaseSettings):
@@ -40,8 +42,14 @@ class Settings(BaseSettings):
     database_path: Path | None = None
 
     max_upload_bytes: int = Field(default=50 * GIB, gt=0)
-    # Owner requirement: keep at least 60 GiB free on the data volume.
+    # Owner requirement: keep at least 60 GiB free on EVERY volume RIFTWIRE writes to.
+    # Mandatory: values below MIN_FLOOR_BYTES are refused unless env == "test" (isolated
+    # test runs only).
     min_free_disk_bytes: int = Field(default=60 * GIB, ge=0)
+    # Disk reservations expire unless renewed (crashed holders never block space forever).
+    reservation_lease_seconds: int = Field(default=900, ge=5)
+    # How long a cached location verification is trusted by the worker's claim loop.
+    storage_check_seconds: float = Field(default=2.0, ge=0)
     upload_chunk_bytes: int = Field(default=1024 * 1024, ge=4096)
     allowed_extensions: list[str] = ["mp4", "mov", "mkv", "webm"]
     stale_temp_seconds: int = Field(default=3600, ge=0)
@@ -76,6 +84,19 @@ class Settings(BaseSettings):
     # Force the no-hard-link copy fallback in INGEST finalize.
     test_force_copy_fallback: bool = False
 
+    # Resolved storage layout (kind -> root), applied by services.locations.load_layout.
+    _locations: dict[str, Path] = PrivateAttr(default_factory=dict)
+    _layout: object | None = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def _floor_is_mandatory(self) -> Settings:
+        if self.min_free_disk_bytes < MIN_FLOOR_BYTES and self.env != "test":
+            raise ValueError(
+                f"RIFTWIRE_MIN_FREE_DISK_BYTES={self.min_free_disk_bytes} is below the "
+                f"mandatory {MIN_FLOOR_BYTES // GIB} GiB floor (only RIFTWIRE_ENV=test "
+                "may lower it)")
+        return self
+
     @field_validator("allowed_extensions")
     @classmethod
     def _normalise_ext(cls, v: list[str]) -> list[str]:
@@ -101,40 +122,92 @@ class Settings(BaseSettings):
     def database_url(self) -> str:
         return f"sqlite:///{self.db_path}"
 
+    # ---- configurable locations (M1): resolved through the loaded layout ------
+    def default_location(self, kind: str) -> Path:
+        return self.data_dir / kind
+
+    def location(self, kind: str) -> Path:
+        if kind not in LOCATION_KINDS:
+            raise KeyError(kind)
+        if kind in self._locations:
+            return self._locations[kind]
+        if self._layout is not None:
+            # A layout is loaded but this kind is not registered (e.g. its drive could not
+            # be identified): never fall back to the internal default path.
+            from app.core.errors import StorageOffline
+
+            raise StorageOffline(f"Storage location '{kind}' is not registered",
+                                 details={"kind": kind, "reason": "not_registered"})
+        return self.default_location(kind)  # no layout yet (tests/tools before startup)
+
+    def apply_layout(self, roots: dict[str, Path], layout: object | None = None) -> None:
+        self._locations = dict(roots)
+        self._layout = layout
+
+    @property
+    def layout(self) -> object | None:
+        return self._layout
+
     @property
     def recordings_dir(self) -> Path:
-        return self.data_dir / "recordings"
+        return self.location("recordings")
 
+    @property
+    def temp_dir(self) -> Path:
+        return self.location("temp")
+
+    @property
+    def models_dir(self) -> Path:
+        return self.location("models")
+
+    @property
+    def exports_dir(self) -> Path:
+        return self.location("exports")
+
+    @property
+    def assets_dir(self) -> Path:
+        return self.location("assets")
+
+    # ---- always internal ------------------------------------------------------
     @property
     def thumbnails_dir(self) -> Path:
         return self.data_dir / "thumbnails"
 
     @property
-    def temp_dir(self) -> Path:
-        return self.data_dir / "temp"
-
-    @property
-    def exports_dir(self) -> Path:
-        return self.data_dir / "exports"
-
-    @property
     def logs_dir(self) -> Path:
         return self.data_dir / "logs"
 
+    def internal_dirs(self) -> list[Path]:
+        """Directories that always live on the internal disk (database, logs, thumbnails)."""
+        return [self.data_dir, self.thumbnails_dir, self.logs_dir, self.db_path.parent]
+
     def required_dirs(self) -> list[Path]:
-        return [
-            self.data_dir,
-            self.recordings_dir,
-            self.thumbnails_dir,
-            self.temp_dir,
-            self.exports_dir,
-            self.logs_dir,
-            self.db_path.parent,
-        ]
+        return self.internal_dirs()
+
+    def ensure_internal_dirs(self) -> None:
+        for d in self.internal_dirs():
+            d.mkdir(parents=True, exist_ok=True)
 
     def ensure_dirs(self) -> None:
-        for d in self.required_dirs():
+        """Create the internal directories, plus the *default* (internal) folder of every
+        location kind that is not configured elsewhere. Never creates a configured
+        external location: that would write to the internal disk if the drive is absent."""
+        for d in self.internal_dirs():
             d.mkdir(parents=True, exist_ok=True)
+        for kind in LOCATION_KINDS:
+            if self._locations.get(kind, self.default_location(kind)) \
+                    == self.default_location(kind):
+                self.default_location(kind).mkdir(parents=True, exist_ok=True)
+
+    def managed_path(self, rel: str) -> Path:
+        """Resolve a stored relative path such as ``recordings/<id>.mp4`` through the
+        layout: the first component names the location kind. Guards against traversal."""
+        from app.services.storage import safe_join  # local import: avoid a cycle
+
+        kind, sep, rest = rel.partition("/")
+        if not sep or kind not in LOCATION_KINDS or not rest:
+            raise ValueError(f"not a managed location path: {rel!r}")
+        return safe_join(self.location(kind), rest)
 
     def safe_summary(self) -> dict:
         """Non-sensitive settings suitable for logs and the System page."""

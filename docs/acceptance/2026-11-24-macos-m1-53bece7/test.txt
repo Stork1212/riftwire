@@ -1,0 +1,48 @@
+[1;36m▸[0m Backend: ruff
+All checks passed!
+[1;36m▸[0m Backend: pytest
+........................................................................ [ 29%]
+........................................................................ [ 59%]
+..............................s......s.........s........................ [ 89%]
+..........................                                               [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastapi/testclient.py:1
+  /Users/gregstork/Claude/riftwire/backend/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_storage_m1.py:471: no second filesystem available
+SKIPPED [1] tests/test_storage_m1.py:608: no second filesystem available
+SKIPPED [1] tests/test_storage_m1.py:871: no second filesystem available
+239 passed, 3 skipped, 1 warning in 48.52s
+[1;36m▸[0m M0 benchmark harness: ruff + pytest (no mlx needed)
+All checks passed!
+........................................s.......                         [100%]
+47 passed, 1 skipped in 17.40s
+[1;36m▸[0m Frontend: lint + typecheck
+[1;36m▸[0m Frontend: tests
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.1.1 [39m[90m/Users/gregstork/Claude/riftwire/frontend[39m
+
+ [32m✓[39m src/test/dashboard.test.tsx [2m([22m[2m17 tests[22m[2m)[22m[33m 631[2mms[22m[39m
+   [32m✓[39m Recordings [2m(4)[22m
+     [33m[2m✓[22m[39m searches by filename[33m 338[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m17 passed[39m[22m[90m (17)[39m
+[2m   Start at [22m 09:59:05
+[2m   Duration [22m 1.31s[2m (tests 51%, environment 34%, setup 7%, import 6%, transform 1%)[22m
+
+[1;36m▸[0m Frontend: production build
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 37 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.68 kB │ gzip:  0.43 kB
+dist/assets/index-D9r9sOql.css    7.95 kB │ gzip:  2.50 kB
+dist/assets/index-Di2QhzBP.js   289.07 kB │ gzip: 90.45 kB │ map: 1,579.72 kB
+
+✓ built in 96ms
+[1;32m✓[0m All checks passed

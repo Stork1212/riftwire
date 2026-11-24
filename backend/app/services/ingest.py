@@ -10,7 +10,6 @@ Nothing in recordings/ is ever deleted or overwritten.
 from __future__ import annotations
 
 import errno
-import fcntl
 import hashlib
 import os
 import re
@@ -26,7 +25,6 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import Settings
 from app.core.errors import (
     ConflictError,
-    InsufficientStorage,
     PayloadTooLarge,
     UnsupportedMedia,
     ValidationFailed,
@@ -36,11 +34,11 @@ from app.core.testhooks import crashpoint
 from app.db.base import utcnow
 from app.db.session import Database
 from app.models import Job, JobStatus, JobType, Recording, RecordingStatus, Severity
-from app.services import media
+from app.services import media, reservations, transfer
 from app.services.events import record_event
+from app.services.locations import Layout, get_layout, require_no_maintenance
 from app.services.queue import active_lease_tokens, enqueue
 from app.services.storage import (
-    SpaceReservations,
     file_extension,
     free_bytes,
     fsync_dir,
@@ -53,7 +51,10 @@ from app.services.storage import (
 log = get_logger("ingest")
 
 SPACE_CHECK_EVERY = 256 * 1024 * 1024
-RESERVATIONS = SpaceReservations()
+RENEW_EVERY_SECONDS = 60.0
+# Unknown-length uploads are admitted one window at a time, BEFORE the bytes are written
+# (review finding 3): the reservation always covers every byte that may be written next.
+UNKNOWN_LENGTH_WINDOW = 256 * 1024 * 1024
 
 
 # ============================================================================ upload
@@ -62,10 +63,21 @@ class UploadSession:
     """Receives one streamed upload into temp/<import_id>.part.
 
     Synchronous by design (no FastAPI imports); the API calls ``write`` from a thread.
+    Requires the temp and recordings locations to be online, and holds a persistent
+    per-volume disk reservation (shared with the worker) for the bytes still to come.
+
+    No byte is written without admission: ``_credit`` is the number of bytes admitted and
+    not yet written. Known length: the whole length is admitted up front. Unknown length:
+    admitted in windows of ``UNKNOWN_LENGTH_WINDOW``. Before any write that exceeds the
+    credit, or when the lease is due for renewal, the drive is re-verified and the
+    reservation renewed (re-admitted if it expired) *before* writing.
     """
 
-    def __init__(self, settings: Settings, filename: str, content_length: int | None):
+    def __init__(self, settings: Settings, filename: str, content_length: int | None,
+                 db: Database):
         self.settings = settings
+        self.db = db
+        self.layout: Layout = get_layout(settings)
         self.original_filename = sanitize_display_filename(filename)
         self.ext = file_extension(filename)
         self.import_id = str(uuid.uuid4())
@@ -75,7 +87,9 @@ class UploadSession:
         self._fh = None
         self._since_check = 0
         self._content_length = content_length
-        self._reserved = False
+        self._reservation: reservations.Reservation | None = None
+        self._last_renew = time.monotonic()
+        self._credit = 0
 
         if self.ext not in settings.allowed_extensions:
             raise UnsupportedMedia(
@@ -90,39 +104,60 @@ class UploadSession:
                     f"File is {content_length} bytes; the limit is "
                     f"{settings.max_upload_bytes} bytes",
                     details={"max_upload_bytes": settings.max_upload_bytes})
-        needed = content_length or 0
-        free = free_bytes(settings.temp_dir)
-        if not RESERVATIONS.try_reserve(self.import_id, needed, free,
-                                        settings.min_free_disk_bytes):
-            raise InsufficientStorage(
-                "Not enough free disk space: importing this file would leave less than "
-                f"the {settings.min_free_disk_bytes // 1024**3} GiB safety minimum.",
-                details={"free_bytes": free, "required_bytes": needed,
-                         "min_free_bytes": settings.min_free_disk_bytes})
-        self._reserved = True
-        self._fh = open(self.part_path, "xb")  # noqa: SIM115  exclusive create; closed in finish/abort
+        # Both drives must be present and verified before a single byte is written, and
+        # no storage migration may be running.
+        require_no_maintenance(settings)
+        self.layout.require_online("temp", "recordings")
+        first = content_length if content_length is not None else self._window()
+        self._reservation = reservations.reserve(
+            db, self.layout, "temp", f"upload:{self.import_id}", first,
+            lease_seconds=settings.reservation_lease_seconds, free_fn=free_bytes)
+        self._credit = first
+        try:
+            self._fh = open(self.part_path, "xb")  # noqa: SIM115  closed in finish/abort
+        except BaseException:
+            self.release()
+            raise
+
+    def _window(self) -> int:
+        return max(1, min(UNKNOWN_LENGTH_WINDOW, self.settings.max_upload_bytes - self.size))
 
     def write(self, chunk: bytes) -> None:
         if not chunk:
             return
-        self.size += len(chunk)
-        if self.size > self.settings.max_upload_bytes:
+        n = len(chunk)
+        new_size = self.size + n
+        if new_size > self.settings.max_upload_bytes:
             raise PayloadTooLarge("Upload exceeds the maximum allowed size",
                                   details={"max_upload_bytes": self.settings.max_upload_bytes})
-        if self._content_length is not None and self.size > self._content_length:
+        if self._content_length is not None and new_size > self._content_length:
             raise ValidationFailed("Upload is larger than its declared Content-Length")
+        # Admission BEFORE the write: never write beyond the admitted credit or under a
+        # lease that may have expired.
+        if (n > self._credit or self._since_check + n > SPACE_CHECK_EVERY
+                or time.monotonic() - self._last_renew >= RENEW_EVERY_SECONDS):
+            self._recheck(n)
         self._hash.update(chunk)
         self._fh.write(chunk)
-        self._since_check += len(chunk)
-        if self._since_check >= SPACE_CHECK_EVERY:
-            self._since_check = 0
-            free = free_bytes(self.settings.temp_dir)
-            if free < self.settings.min_free_disk_bytes:
-                raise InsufficientStorage(
-                    "Free disk space fell below the safety minimum during upload",
-                    details={"free_bytes": free,
-                             "min_free_bytes": self.settings.min_free_disk_bytes})
+        self.size = new_size
+        self._credit -= n
+        self._since_check += n
 
+    def _recheck(self, next_chunk: int = 0) -> None:
+        """Re-verify the drive and renew the reservation with the bytes that may still be
+        written (re-admitted if the lease expired). Raises StorageOffline /
+        InsufficientStorage (the upload is then aborted); nothing is written first."""
+        self.layout.require_online("temp")
+        if self._content_length is not None:
+            admit = max(0, self._content_length - self.size)
+        else:
+            admit = max(next_chunk, self._window())
+        reservations.renew(self.db, self.layout, self._reservation, admit,
+                           lease_seconds=self.settings.reservation_lease_seconds,
+                           free_fn=free_bytes)
+        self._credit = admit
+        self._since_check = 0
+        self._last_renew = time.monotonic()
     def finish(self) -> str:
         """Close and fsync the part file. Returns the SHA-256 hex digest."""
         if self._content_length is not None and self.size != self._content_length:
@@ -131,9 +166,19 @@ class UploadSession:
             raise ValidationFailed("Empty upload")
         self._fh.flush()
         os.fsync(self._fh.fileno())
+        # Final floor check on the drive as it is now (other programs may have written to
+        # it meanwhile): the upload is refused rather than left below the floor.
+        self._recheck_final()
         self._fh.close()
         self._fh = None
         return self._hash.hexdigest()
+
+    def _recheck_final(self) -> None:
+        self.layout.require_online("temp")
+        reservations.renew(self.db, self.layout, self._reservation, 0,
+                           lease_seconds=self.settings.reservation_lease_seconds,
+                           free_fn=free_bytes)
+        self._credit = 0
 
     def abort(self) -> None:
         """Remove the partial file (temp only). Safe to call more than once."""
@@ -150,9 +195,12 @@ class UploadSession:
         self.release()
 
     def release(self) -> None:
-        if self._reserved:
-            RESERVATIONS.release(self.import_id)
-            self._reserved = False
+        if self._reservation is not None:
+            try:
+                reservations.release(self.db, self._reservation)
+            except Exception:
+                log.exception("could not release reservation (it will expire)")
+            self._reservation = None
 
 
 @dataclass
@@ -199,6 +247,7 @@ def complete_upload(db: Database, settings: Settings, up: UploadSession,
             raise ValidationFailed(f"Media inspection timed out: {e}",
                                    code="inspection_timeout", status_code=503) from e
 
+        get_layout(settings).require_online("temp")  # never rename on a swapped drive
         ext = media.choose_extension(info, up.ext)
         rec_id = up.import_id
         stored = f"{rec_id}.{ext}"
@@ -258,7 +307,10 @@ def _make_readonly(path: Path) -> None:
 
 STAGING_DIRNAME = ".staging"  # inside recordings/: same volume as the final files
 LINK_UNSUPPORTED = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK}
-_PARTIAL_RE = re.compile(r"^(?P<rec>[0-9a-f-]{36})\.(?P<token>[0-9a-z-]+)\.partial$")
+# <rec>[.<ext>].<token>.partial — attempt-scoped staging copies (see services.transfer).
+_PARTIAL_RE = re.compile(
+    r"^(?P<rec>[0-9a-f-]{36})(?:\.[a-z0-9]{1,10})?\.(?P<token>[0-9a-z-]+)\.partial$")
+_THUMB_TMP_RE = re.compile(r"^\.job-(?P<job>[0-9a-f-]{36})-(?P<token>[0-9a-z-]+)\.tmp\.jpg$")
 _JOB_TMP_RE = re.compile(r"^job-(?P<job>[0-9a-f-]{36})-(?P<token>[0-9a-z-]+)\.tmp\.")
 
 
@@ -267,18 +319,23 @@ def staging_dir(settings: Settings) -> Path:
 
 
 def finalize_recording(settings: Settings, rec: Recording, *, attempt_token: str,
-                       progress=None, should_stop=None) -> str:
+                       progress=None, should_stop=None, db: Database | None = None,
+                       holder: str | None = None) -> str:
     """Move a STAGED recording into recordings/ (idempotent; never overwrites).
 
     Performs only filesystem work; the caller records the DB result in a fenced
     transaction. Returns a short description of what happened.
 
-    Primary path: hard link (refuses to replace an existing file) → fsync → unlink temp.
-    Fallback (filesystems without hard links): copy into an attempt-unique staging file
-    on the destination volume, fsync, verify SHA-256, then promote with a no-overwrite
-    rename under a per-recording lock. The final path only ever appears complete.
+    Same volume: hard link (refuses to replace an existing file) → fsync → unlink temp.
+    Different volumes (temp and recordings on different drives): reserve the space on the
+    recordings volume, then ``transfer.transfer_file``: attempt-unique staging copy on the
+    destination volume, fsync, re-verify the staged file's SHA-256 from disk, promote with
+    an atomic no-overwrite hard link. The final path only ever appears complete.
+    Both locations are verified online first (``StorageOffline`` otherwise).
     """
-    dst = safe_join(settings.data_dir, rec.file_path)
+    layout = get_layout(settings)
+    layout.require_online("temp", "recordings")
+    dst = settings.managed_path(rec.file_path)
     src = (safe_join(settings.temp_dir, rec.staging_filename)
            if rec.staging_filename else None)
     total = max(1, rec.file_size_bytes)
@@ -304,7 +361,7 @@ def finalize_recording(settings: Settings, rec: Recording, *, attempt_token: str
         linked = False
         try:
             if force_copy:
-                raise OSError(errno.ENOTSUP, "hard links disabled for test")
+                raise OSError(errno.EXDEV, "cross-device link forced for test")
             os.link(src, dst)  # refuses to replace an existing file
             linked = True
         except FileExistsError:
@@ -312,17 +369,17 @@ def finalize_recording(settings: Settings, rec: Recording, *, attempt_token: str
         except OSError as e:
             if e.errno not in LINK_UNSUPPORTED:
                 raise
-            # Filesystem without hard links: crash-safe staged copy.
-            if _copy_via_staging(settings, rec, src, dst, attempt_token,
-                                 progress=lambda d: prog(d, 45, 45),
-                                 should_stop=should_stop):
-                fsync_dir(dst.parent)
+            # Different volume: verified staged copy on the recordings volume.
+            if _copy_across_volumes(settings, layout, rec, src, dst, attempt_token,
+                                    db=db, holder=holder,
+                                    progress=lambda d: prog(d, 45, 45),
+                                    should_stop=should_stop) == "promoted":
                 crashpoint("finalize_after_promote")
                 src.unlink()
                 fsync_dir(src.parent)
                 _make_readonly(dst)
                 return "copied"
-            dst_exists = True  # another attempt promoted first; verified below
+            dst_exists = True  # another attempt promoted first (already verified)
         if linked:
             fsync_file(dst)
             fsync_dir(dst.parent)
@@ -349,60 +406,42 @@ def finalize_recording(settings: Settings, rec: Recording, *, attempt_token: str
                         permanent=True)
 
 
-def _copy_via_staging(settings: Settings, rec: Recording, src: Path, dst: Path,
-                      attempt_token: str, *, progress=None, should_stop=None) -> bool:
-    """Copy ``src`` to ``dst`` without ever exposing a partial file at ``dst``.
-
-    Returns True if this attempt promoted the file, False if ``dst`` already existed at
-    promotion time (left untouched; the caller verifies it). The attempt-unique staging
-    file is always removed unless it was promoted.
-    """
-    sdir = staging_dir(settings)
-    sdir.mkdir(exist_ok=True)
-    part = sdir / f"{rec.id}.{attempt_token}.partial"
-    h = hashlib.sha256()
-    done = 0
+def _copy_across_volumes(settings: Settings, layout: Layout, rec: Recording, src: Path,
+                         dst: Path, attempt_token: str, *, db: Database | None,
+                         holder: str | None, progress=None, should_stop=None) -> str:
+    """Reserve space on the recordings volume (when a database is available) and run the
+    verified, no-overwrite transfer. Returns ``"promoted"`` or ``"already_present"``."""
+    res = None
+    if db is not None:
+        res = reservations.reserve(db, layout, "recordings",
+                                   holder or f"finalize:{rec.id}:{attempt_token}",
+                                   rec.file_size_bytes,
+                                   lease_seconds=settings.reservation_lease_seconds,
+                                   free_fn=free_bytes)
     try:
-        with open(src, "rb") as fi, open(part, "xb") as fo:
-            while chunk := fi.read(1024 * 1024):
-                fo.write(chunk)
-                h.update(chunk)
-                done += len(chunk)
-                if progress:
-                    progress(done)
-                crashpoint("finalize_copy_midway")
-                if should_stop and should_stop():
-                    raise InterruptedError("copy cancelled")
-            fo.flush()
-            os.fsync(fo.fileno())
-        if h.hexdigest() != rec.sha256:
-            # Source was verified moments ago, so this is a copy/I-O fault: retryable.
-            raise FinalizeError("SHA-256 mismatch in staged copy; will retry", permanent=False)
-        fsync_dir(sdir)
-        crashpoint("finalize_copy_verified")
-        return promote_no_replace(part, dst, sdir / f"{rec.id}.lock")
+        sdir = staging_dir(settings)
+        layout.require_online("recordings")
+        sdir.mkdir(exist_ok=True)  # no parents: fails if the recordings root vanished
+        keeper = (reservations.Keeper(db, layout, res, rec.file_size_bytes,
+                                      lease_seconds=settings.reservation_lease_seconds,
+                                      free_fn=free_bytes) if db is not None else None)
+
+        def on_progress(done: int) -> None:
+            if keeper is not None:
+                keeper.tick(done)  # keep the lease alive during long copies
+            if progress:
+                progress(done)
+        try:
+            return transfer.transfer_file(
+                src, dst, rec.sha256, sdir, attempt_token, progress=on_progress,
+                should_stop=should_stop,
+                # Re-verify the recordings drive immediately before promotion.
+                guard=lambda: layout.require_online("recordings"))
+        except transfer.TransferError as e:
+            raise FinalizeError(str(e), permanent=e.permanent) from e
     finally:
-        part.unlink(missing_ok=True)  # no-op once promoted (renamed away)
-
-
-def promote_no_replace(staged: Path, dst: Path, lock_path: Path) -> bool:
-    """Atomically rename ``staged`` to ``dst`` unless ``dst`` exists.
-
-    All RIFTWIRE attempts that may promote to ``dst`` serialize on an exclusive ``flock`` of
-    ``lock_path`` (same directory tree, released by the OS if the process dies), so the
-    existence check and the rename cannot interleave with another attempt. Returns False
-    (and leaves ``dst`` untouched) if ``dst`` already exists.
-    """
-    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        if dst.exists():
-            return False
-        os.rename(staged, dst)  # atomic within one volume
-        return True
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
+        if db is not None:
+            reservations.release(db, res)
 
 
 # ============================================================================ reconcile
@@ -413,6 +452,7 @@ class ReconcileReport:
     reenqueued: list[str]
     orphan_files: list[str]
     missing_files: list[str]
+    skipped_offline: list[str] | None = None
 
 
 def reconcile(db: Database, settings: Settings, component: str,
@@ -429,10 +469,21 @@ def reconcile(db: Database, settings: Settings, component: str,
     * Nothing else in recordings/ is ever deleted.
     """
     now_ts = now_ts or time.time()
-    report = ReconcileReport([], [], [], [])
-    sdir = staging_dir(settings)
-    temp_files = sorted(p for p in settings.temp_dir.iterdir() if p.is_file())
-    staging_files = sorted(p for p in sdir.iterdir() if p.is_file()) if sdir.is_dir() else []
+    report = ReconcileReport([], [], [], [], [])
+    # Offline locations are never touched (not listed, not cleaned, not created).
+    layout = get_layout(settings)
+    temp_ok = layout.state("temp").online
+    rec_ok = layout.state("recordings").online
+    for kind, ok in (("temp", temp_ok), ("recordings", rec_ok)):
+        if not ok:
+            report.skipped_offline.append(kind)
+    temp_files = sorted(p for p in settings.temp_dir.iterdir() if p.is_file()) \
+        if temp_ok else []
+    sdir = staging_dir(settings) if rec_ok else None
+    staging_files = sorted(p for p in sdir.iterdir() if p.is_file()) \
+        if sdir is not None and sdir.is_dir() else []
+    thumb_tmp_files = sorted(settings.thumbnails_dir.glob(".job-*.tmp.jpg")) \
+        if settings.thumbnails_dir.is_dir() else []
     active = active_lease_tokens(db)  # read AFTER listing files (see docstring)
     with db.session() as s:
         staged_names = set(s.scalars(select(Recording.staging_filename)
@@ -456,6 +507,13 @@ def reconcile(db: Database, settings: Settings, component: str,
             p.unlink(missing_ok=True)
             report.removed_temp.append(p.name)
 
+    # Thumbnail temp files of dead attempts (thumbnails/.job-<job>-<token>.tmp.jpg).
+    for p in thumb_tmp_files:
+        m = _THUMB_TMP_RE.match(p.name)
+        if m and m["token"] not in active:
+            p.unlink(missing_ok=True)
+            report.removed_temp.append(f"thumbnails/{p.name}")
+
     for p in staging_files:
         m = _PARTIAL_RE.match(p.name)
         if m and m["token"] not in active:
@@ -475,13 +533,14 @@ def reconcile(db: Database, settings: Settings, component: str,
             elif job.status == JobStatus.CANCELLED.value:
                 pass  # owner cancelled; leave as is
 
-        for p in sorted(settings.recordings_dir.iterdir()):
-            if p.is_file() and not p.name.startswith(".") and p.name not in known_files:
-                report.orphan_files.append(p.name)
-        for rec in s.scalars(select(Recording).where(
-                Recording.status == RecordingStatus.READY.value)):
-            if not (settings.data_dir / rec.file_path).exists():
-                report.missing_files.append(rec.id)
+        if rec_ok:
+            for p in sorted(settings.recordings_dir.iterdir()):
+                if p.is_file() and not p.name.startswith(".") and p.name not in known_files:
+                    report.orphan_files.append(p.name)
+            for rec in s.scalars(select(Recording).where(
+                    Recording.status == RecordingStatus.READY.value)):
+                if not settings.managed_path(rec.file_path).exists():
+                    report.missing_files.append(rec.id)
 
         if report.removed_temp:
             record_event(s, Severity.INFO, component, "temp_cleanup",
@@ -496,5 +555,9 @@ def reconcile(db: Database, settings: Settings, component: str,
             record_event(s, Severity.ERROR, component, "recording_file_missing",
                          "READY recording's file is missing from recordings/",
                          recording_id=rid)
+        for kind in report.skipped_offline:
+            record_event(s, Severity.WARNING, component, "reconcile_skipped_offline",
+                         f"Reconcile skipped the offline '{kind}' location (nothing touched)")
+    reservations.reclaim_expired(db, component)
     return report
 

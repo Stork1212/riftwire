@@ -1,0 +1,31 @@
+From https://github.com/Stork1212/riftwire
+ * branch            phase2/m1-storage -> FETCH_HEAD
+   9fc026f..4703e22  phase2/m1-storage -> origin/phase2/m1-storage
+Already on 'phase2/m1-storage'
+Your branch is behind 'origin/phase2/m1-storage' by 2 commits, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+Updating 9fc026f..4703e22
+Fast-forward
+ CLAUDE.md                                          |  25 ++-
+ backend/app/core/config.py                         |  14 +-
+ backend/app/main.py                                |  10 +-
+ backend/app/services/ingest.py                     |  32 +++-
+ backend/app/services/migration.py                  | 130 ++++++++++---
+ backend/app/services/reservations.py               |  41 ++++
+ backend/app/services/transfer.py                   |  11 +-
+ backend/app/workers/handlers.py                    |  19 +-
+ backend/tests/test_storage_m1.py                   | 209 +++++++++++++++++++++
+ docs/ARCHITECTURE.md                               |  77 ++++++--
+ docs/M1_REVIEW.md                                  | 116 ++++++++++++
+ docs/M1_STORAGE_CHECKLIST.md                       |   3 +-
+ docs/PHASE1_REPORT.md                              |   2 +-
+ docs/PHASE2_PROPOSAL.md                            |  13 +-
+ docs/PROJECT_STATUS.md                             |  18 +-
+ docs/ROADMAP.md                                    |   4 +-
+ docs/TROUBLESHOOTING.md                            |  28 ++-
+ .../2026-11-24-macos-m1-9fc026f-acceptance.json    | 165 ++++++++++++++++
+ .../2026-11-24-macos-m1-9fc026f-test.txt           |  46 +++++
+ 19 files changed, 886 insertions(+), 77 deletions(-)
+ create mode 100644 docs/M1_REVIEW.md
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-9fc026f-acceptance.json
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-9fc026f-test.txt

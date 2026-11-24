@@ -1,0 +1,35 @@
+RIFTWIRE M1 Mac verification  started 2026-11-24T14:57:53Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m1-verify-53bece7-20261124T145753Z
+working tree: clean
+HEAD: 53bece76d6bf6e224203a7f8696d77a3cffd7f06 (matches)
+free space before: 135.87 GiB (floor 60 GiB, abort below 62 GiB)
+
+== test: scripts/test.sh
+   exit code 0  (74 s)  free now 134.03 GiB
+
+== acceptance: backend/.venv/bin/python scripts/acceptance.py --min-free-gib 60 --report /Users/gregstork/Claude/riftwire-env/m1-verify-53bece7-20261124T145753Z/acceptance.json
+   exit code 0  (25 s)  free now 133.16 GiB
+
+== smoke: scripts/smoke_test.sh /Users/gregstork/Claude/riftwire-env/m1-verify-53bece7-20261124T145753Z/smoke-report.txt
+   exit code 0  (10 s)  free now 132.02 GiB
+
+free space after: 132.02 GiB (before 135.87 GiB)
+
+== counts
+239 passed, 3 skipped, 1 warning in 48.52s
+47 passed, 1 skipped in 17.40s
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m17 passed[39m[22m[90m (17)[39m
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m17 passed[39m[22m[90m (17)[39m
+22/22 steps passed
+smoke PASS lines: 30
+smoke FAIL lines: 0
+smoke SKIP lines: 0
+
+== warnings (all logs)
+warning lines: 4  (details in warnings.txt)
+working tree after: clean
+
+RESULT  test=0  acceptance=0  smoke=0
+ALL PASSED

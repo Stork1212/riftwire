@@ -1,5 +1,5 @@
 // Test-only fixtures (never used by the running application).
-import type { Job, Recording, RecordingDetail, SystemStatus } from "../types/api";
+import type { StorageStatus, Job, Recording, RecordingDetail, SystemStatus } from "../types/api";
 
 export const recording = (over: Partial<Recording> = {}): Recording => ({
   id: "rec-1",
@@ -63,9 +63,25 @@ export const systemStatus = (over: Partial<SystemStatus> = {}): SystemStatus => 
   data_dir: "/Users/test/riftwire/data",
   storage: { total_bytes: 500 * 2 ** 30, used_bytes: 430 * 2 ** 30, free_bytes: 70 * 2 ** 30,
     min_free_bytes: 60 * 2 ** 30, importable_bytes: 10 * 2 ** 30, recordings_bytes: 2 ** 30,
-    below_floor: false },
+    below_floor: false, locations: [], volumes: [] },
   counts: { recordings: 3, recordings_by_status: { READY: 3 }, total_duration_ms: 3_720_000,
     jobs: { PENDING: 2, RUNNING: 1, COMPLETED: 7, FAILED: 1, RETRY_WAIT: 1, CANCELLED: 0 } },
   recent_errors: [],
+  ...over,
+});
+
+export const storageStatus = (over: Partial<StorageStatus> = {}): StorageStatus => ({
+  total_bytes: 500 * 2 ** 30, used_bytes: 430 * 2 ** 30, free_bytes: 70 * 2 ** 30,
+  min_free_bytes: 60 * 2 ** 30, importable_bytes: 10 * 2 ** 30, recordings_bytes: 2 ** 30,
+  below_floor: false,
+  locations: (["recordings", "temp", "models", "exports", "assets"] as const).map((kind) => ({
+    kind, path: `/data/${kind}`, online: true, reason: "online", message: "online",
+    fs_type: "apfs", volume_uuid: "vol-internal", volume_label: "Macintosh HD",
+    mount_point: "/System/Volumes/Data", usage_bytes: kind === "recordings" ? 2 ** 30 : 0,
+  })),
+  volumes: [{ volume_uuid: "vol-internal", kinds: ["recordings", "temp", "models", "exports",
+    "assets"], online: true, label: "Macintosh HD", mount_point: "/System/Volumes/Data",
+  floor_bytes: 60 * 2 ** 30, total_bytes: 500 * 2 ** 30, free_bytes: 70 * 2 ** 30,
+  reserved_bytes: 2 ** 30, headroom_bytes: 9 * 2 ** 30, below_floor: false }],
   ...over,
 });

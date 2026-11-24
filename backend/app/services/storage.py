@@ -6,7 +6,6 @@ import hashlib
 import os
 import re
 import shutil
-import threading
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path
@@ -90,28 +89,3 @@ def fsync_dir(path: Path) -> None:
 
 def free_bytes(path: Path) -> int:
     return shutil.disk_usage(path).free
-
-
-class SpaceReservations:
-    """Tracks bytes promised to in-flight uploads so concurrent uploads cannot jointly
-    breach the free-space floor."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._reserved: dict[str, int] = {}
-
-    def try_reserve(self, key: str, nbytes: int, free_now: int, floor: int) -> bool:
-        with self._lock:
-            others = sum(self._reserved.values())
-            if free_now - others - nbytes < floor:
-                return False
-            self._reserved[key] = nbytes
-            return True
-
-    def release(self, key: str) -> None:
-        with self._lock:
-            self._reserved.pop(key, None)
-
-    def total(self) -> int:
-        with self._lock:
-            return sum(self._reserved.values())

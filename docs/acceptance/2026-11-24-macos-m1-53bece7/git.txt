@@ -1,0 +1,39 @@
+From https://github.com/Stork1212/riftwire
+ * branch            phase2/m1-storage -> FETCH_HEAD
+   25a2734..53bece7  phase2/m1-storage -> origin/phase2/m1-storage
+Already on 'phase2/m1-storage'
+Your branch is behind 'origin/phase2/m1-storage' by 1 commit, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+Updating 25a2734..53bece7
+Fast-forward
+ backend/app/services/volumes.py                    |  65 +++++++-
+ backend/tests/test_storage_m1_review.py            |  52 +++++++
+ docs/ARCHITECTURE.md                               |  10 +-
+ docs/M1_REVIEW.md                                  |  18 ++-
+ .../2026-11-24-macos-m1-25a2734/README.md          |  13 ++
+ .../2026-11-24-macos-m1-25a2734/acceptance.json    | 165 +++++++++++++++++++++
+ .../2026-11-24-macos-m1-25a2734/acceptance.txt     |  26 ++++
+ .../2026-11-24-macos-m1-25a2734/df-after.txt       |   2 +
+ .../2026-11-24-macos-m1-25a2734/df-before.txt      |   2 +
+ .../2026-11-24-macos-m1-25a2734/environment.txt    |  17 +++
+ .../acceptance/2026-11-24-macos-m1-25a2734/git.txt |  48 ++++++
+ .../2026-11-24-macos-m1-25a2734/smoke.txt          |   7 +
+ .../2026-11-24-macos-m1-25a2734/summary.txt        |  35 +++++
+ .../2026-11-24-macos-m1-25a2734/test.txt           |  48 ++++++
+ .../2026-11-24-macos-m1-25a2734/tree-after.txt     |   0
+ .../2026-11-24-macos-m1-25a2734/verify-script.sh   |  77 ++++++++++
+ .../2026-11-24-macos-m1-25a2734/warnings.txt       |   4 +
+ 17 files changed, 576 insertions(+), 13 deletions(-)
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/README.md
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/acceptance.json
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/acceptance.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/df-after.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/df-before.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/environment.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/git.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/smoke.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/summary.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/test.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/tree-after.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/verify-script.sh
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-25a2734/warnings.txt

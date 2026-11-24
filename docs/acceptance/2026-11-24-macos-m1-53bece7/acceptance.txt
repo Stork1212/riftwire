@@ -1,0 +1,26 @@
+RIFTWIRE acceptance · data dir /var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/riftwire-acceptance-v066whau/data · port 8765
+  PASS     1  Start the backend — API healthy
+  PASS     2  Start the worker — worker process running
+  PASS     3  Backend ready and worker reporting heartbeats — ready; ffmpeg: ffmpeg version 9.1; videotoolbox=True
+  PASS     4  Open the local dashboard (served by the API) — dashboard + 1 asset(s) served
+  PASS     5  Import a valid test video — HTTP 201, recording 11132127…, 8626082 bytes
+  PASS     6  Observe import + processing progress — upload streamed in 33 chunks; processing states observed: ['COMPLETED', 'PENDING', 'RUNNING']
+  PASS     7  Recording is stored — recordings/11132127-5363-495e-b35e-efc0c1e6e6fa.mp4 (SHA-256 verified, read-only)
+  PASS     8  Metadata extracted correctly (vs. independent ffprobe) — 1920x1080 @ 30000/1001, 12012 ms, h264/aac
+  PASS     9  Thumbnail generated — 480x270 JPEG (16:9 preserved)
+  PASS    10  Recording appears in the dashboard API — 1 recording(s) listed
+  PASS    11  Processing jobs reach COMPLETED — INGEST=COMPLETED, METADATA=COMPLETED, THUMBNAIL=COMPLETED
+  PASS    12  Restart the application and worker — API and worker restarted (SIGTERM → start)
+  PASS    13  Recordings and job history persist — recording + 3 completed jobs persisted
+  PASS  14-15  Import the same video again → duplicate detected — HTTP 409 — This recording was already imported as 'GTA synthetic heist.mp4'.
+  PASS  16-17  Import an invalid file → safe rejection, clear error — 422 — Invalid or unsupported media: ffprobe could not read the file: <input>…; .txt → 415
+  PASS    X1  Interrupted upload is cleaned up safely — client disconnected at 33% → partial file removed, event logged
+  PASS    X2  Interrupted processing job recovers (crash + orphan FFmpeg) — worker SIGKILLed mid-THUMBNAIL; orphan FFmpeg killed on restart; job completed on attempt 2; WEBM without audio handled
+  PASS    X3  Import refused when free space would drop below the floor — HTTP 507 — Not enough free disk space on the temp drive: this would leave less than the 931
+  PASS    X4  Structured logs written — api.log and worker.log are structured JSON
+  PASS    M1  Storage locations registered and verified — 5 locations online with identity markers; 1 volume(s)
+  PASS    M2  Offline location: writes refused, jobs wait, recovery on return — upload refused (503) with nothing written; INGEST waited with 0 attempts, then completed on attempt 1 after the drive returned
+  PASS    M3  Verified migration of the recordings location — dry run wrote nothing; refused while running; moved 3 file(s) byte-identical; originals kept; new imports land in the new location
+
+22/22 steps passed
+report: /Users/gregstork/Claude/riftwire-env/m1-verify-53bece7-20261124T145753Z/acceptance.json

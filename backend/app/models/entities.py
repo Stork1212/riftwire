@@ -192,3 +192,105 @@ class Worker(Base):
     last_heartbeat_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     status: Mapped[str] = mapped_column(String(16), default="RUNNING")
     current_job_id: Mapped[str | None] = mapped_column(UUIDStr)
+
+
+# ============================================================================ storage (M1)
+
+class LocationKind(enum.StrEnum):
+    """Configurable storage locations. The database, logs and thumbnails stay internal."""
+
+    RECORDINGS = "recordings"
+    TEMP = "temp"
+    MODELS = "models"
+    EXPORTS = "exports"
+    ASSETS = "assets"
+
+
+class StorageLocation(Base):
+    """Where each location kind lives. The database row is the authority; every process
+    loads it at startup (``services.locations.load_layout``) before touching any file."""
+
+    __tablename__ = "storage_locations"
+    __table_args__ = (
+        CheckConstraint(_enum_check("kind", LocationKind), name="kind_valid"),
+        CheckConstraint("floor_bytes >= 0", name="floor_nonneg"),
+    )
+
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    path: Mapped[str] = mapped_column(String(1024))
+    # Identity written into the location's marker file; must match on every verification.
+    location_uuid: Mapped[str] = mapped_column(UUIDStr)
+    # Groups locations on the same physical volume (shared reservations and floor).
+    volume_uuid: Mapped[str] = mapped_column(UUIDStr)
+    # The OS's own volume identifier (macOS APFS VolumeUUID via diskutil), when available.
+    hw_volume_uuid: Mapped[str | None] = mapped_column(String(64))
+    fs_type: Mapped[str | None] = mapped_column(String(32))
+    floor_bytes: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class DiskReservation(Base):
+    """Bytes promised to in-flight writes, per volume. Shared by the API and the worker.
+
+    ``bytes`` is what the holder may still write. Rows expire unless renewed, so a crashed
+    holder never blocks space forever.
+    """
+
+    __tablename__ = "disk_reservations"
+    __table_args__ = (
+        CheckConstraint("bytes >= 0", name="bytes_nonneg"),
+        Index("ix_disk_reservations_volume", "volume_uuid", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(UUIDStr, primary_key=True, default=new_uuid)
+    volume_uuid: Mapped[str] = mapped_column(UUIDStr)
+    location_kind: Mapped[str] = mapped_column(String(16))
+    holder: Mapped[str] = mapped_column(String(128))
+    bytes: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class MigrationStatus(enum.StrEnum):
+    COPYING = "COPYING"      # files being copied/verified (resumable)
+    SWITCHED = "SWITCHED"    # all verified; location now points at the destination
+    ABORTED = "ABORTED"      # stopped by the owner; nothing switched
+
+
+class StorageMigration(Base):
+    __tablename__ = "storage_migrations"
+    __table_args__ = (
+        CheckConstraint(_enum_check("status", MigrationStatus), name="status_valid"),
+    )
+
+    id: Mapped[str] = mapped_column(UUIDStr, primary_key=True, default=new_uuid)
+    kind: Mapped[str] = mapped_column(String(16))
+    source_path: Mapped[str] = mapped_column(String(1024))
+    dest_path: Mapped[str] = mapped_column(String(1024))
+    dest_location_uuid: Mapped[str] = mapped_column(UUIDStr)
+    # OS volume UUID of the destination drive approved for this migration (review fix 1).
+    dest_hw_volume_uuid: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default=MigrationStatus.COPYING.value)
+    total_files: Mapped[int] = mapped_column(Integer, default=0)
+    total_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class StorageMigrationItem(Base):
+    """One file of a migration: the resumable journal (one row per relative path)."""
+
+    __tablename__ = "storage_migration_items"
+    __table_args__ = (
+        UniqueConstraint("migration_id", "rel_path", name="uq_migration_item_path"),
+        CheckConstraint("state IN ('PENDING','VERIFIED')", name="state_valid"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    migration_id: Mapped[str] = mapped_column(
+        UUIDStr, ForeignKey("storage_migrations.id", ondelete="CASCADE"))
+    rel_path: Mapped[str] = mapped_column(String(1024))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(16), default="PENDING")

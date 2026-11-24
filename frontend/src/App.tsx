@@ -6,6 +6,7 @@ import { OverviewPage } from "./pages/OverviewPage";
 import { QueuePage } from "./pages/QueuePage";
 import { RecordingDetailPage } from "./pages/RecordingDetailPage";
 import { RecordingsPage } from "./pages/RecordingsPage";
+import { StoragePage } from "./pages/StoragePage";
 import { SystemPage } from "./pages/SystemPage";
 
 export function AppRoutes() {
@@ -17,6 +18,7 @@ export function AppRoutes() {
         <Route path="recordings/:id" element={<RecordingDetailPage />} />
         <Route path="import" element={<ImportPage />} />
         <Route path="queue" element={<QueuePage />} />
+        <Route path="storage" element={<StoragePage />} />
         <Route path="system" element={<SystemPage />} />
         <Route path="*" element={<Panel><EmptyState title="Page not found" /></Panel>} />
       </Route>

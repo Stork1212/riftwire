@@ -67,3 +67,20 @@ class TransientJobError(JobError):
 
 class PermanentJobError(JobError):
     permanent = True
+
+
+# ---- Storage (M1) ---------------------------------------------------------
+
+class StorageOffline(AppError):
+    """A storage location is not usable right now (unplugged, wrong drive, wrong
+    filesystem, missing marker). Never a reason to fall back to another location."""
+
+    status_code = 503
+    code = "storage_offline"
+
+
+class StorageOfflineJobError(TransientJobError):
+    """Raised inside a job when a location it needs is offline. The worker defers the job
+    without consuming an attempt."""
+
+    permanent = False

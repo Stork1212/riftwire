@@ -12,7 +12,6 @@ from app.db.migrations import schema_status
 from app.db.session import Database
 from app.models import Job, Recording
 from app.services.storage import (
-    SpaceReservations,
     file_extension,
     safe_join,
     sanitize_display_filename,
@@ -71,13 +70,6 @@ def test_safe_join_allows_inside(tmp_path):
     assert safe_join(tmp_path, "recordings/a.mp4") == (tmp_path / "recordings/a.mp4").resolve()
 
 
-def test_space_reservations():
-    r = SpaceReservations()
-    assert r.try_reserve("a", 40, free_now=100, floor=50)
-    assert not r.try_reserve("b", 20, free_now=100, floor=50)  # 100-40-20 < 50
-    r.release("a")
-    assert r.try_reserve("b", 20, free_now=100, floor=50)
-
 
 # ------------------------------------------------------------------ migrations / db
 
@@ -86,7 +78,9 @@ def test_migration_upgrade_and_downgrade(settings):
     run_migrations(settings.database_url)
     db = Database(settings.database_url)
     tables = set(inspect(db.engine).get_table_names())
-    assert {"recordings", "jobs", "system_events", "workers", "alembic_version"} <= tables
+    assert {"recordings", "jobs", "system_events", "workers", "alembic_version",
+            "storage_locations", "disk_reservations", "storage_migrations",
+            "storage_migration_items"} <= tables
     assert schema_status(db.engine)["ok"]
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))

@@ -7,6 +7,7 @@ from app.main import create_app
 from app.services import queue
 from app.services.system import clear_tool_cache
 from tests.conftest import requires_ffmpeg
+from tests.helpers import user_files
 from tests.test_ingest import drain
 
 pytestmark = requires_ffmpeg
@@ -43,7 +44,11 @@ def test_health_liveness(client):
 def test_readiness_ok(client):
     r = client.get("/health/ready")
     assert r.status_code == 200 and r.json()["ready"] is True
-    assert set(r.json()["checks"]) == {"database", "ffmpeg", "ffprobe", "data_dirs"}
+    assert set(r.json()["checks"]) == {"database", "ffmpeg", "ffprobe", "data_dirs", "storage"}
+    st = r.json()["checks"]["storage"]
+    assert st["ok"] and st["offline"] == []
+    assert {loc["kind"] for loc in st["locations"]} == {
+        "recordings", "temp", "models", "exports", "assets"}
 
 
 def test_readiness_unmigrated_is_503_but_liveness_ok(settings):
@@ -103,7 +108,7 @@ def test_import_rejections(client, settings, media_dir, name, status, code):
     assert err["message"]
     assert str(settings.data_dir) not in err["message"]  # no server paths leaked
     assert "/tmp" not in err["message"] and ".part" not in err["message"]
-    assert list(settings.temp_dir.iterdir()) == []
+    assert user_files(settings.temp_dir) == []
 
 
 def test_import_too_large(client, settings, media_dir):

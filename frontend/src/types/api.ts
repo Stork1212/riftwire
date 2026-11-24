@@ -111,15 +111,7 @@ export interface SystemStatus {
   ffmpeg: ToolInfo;
   ffprobe: ToolInfo;
   data_dir: string;
-  storage: {
-    total_bytes: number;
-    used_bytes: number;
-    free_bytes: number;
-    min_free_bytes: number;
-    importable_bytes: number;
-    recordings_bytes: number;
-    below_floor: boolean;
-  };
+  storage: StorageStatus;
   counts: {
     recordings: number;
     recordings_by_status: Partial<Record<RecordingStatus, number>>;
@@ -127,6 +119,60 @@ export interface SystemStatus {
     jobs: Record<JobStatus, number>;
   };
   recent_errors: SystemEvent[];
+}
+
+export type LocationKind = "recordings" | "temp" | "models" | "exports" | "assets";
+
+export interface StorageLocation {
+  kind: LocationKind;
+  path?: string;
+  online: boolean;
+  reason: string;
+  message: string;
+  fs_type?: string | null;
+  volume_uuid?: string;
+  volume_label?: string | null;
+  mount_point?: string | null;
+  usage_bytes?: number | null;
+}
+
+export interface StorageVolume {
+  volume_uuid: string;
+  kinds: LocationKind[];
+  online: boolean;
+  label: string | null;
+  mount_point: string | null;
+  floor_bytes: number;
+  total_bytes: number | null;
+  free_bytes: number | null;
+  reserved_bytes: number;
+  headroom_bytes: number | null;
+  below_floor: boolean | null;
+}
+
+export interface StorageMigration {
+  id: string;
+  kind: LocationKind;
+  source_path: string;
+  dest_path: string;
+  status: "COPYING" | "SWITCHED" | "ABORTED";
+  total_files: number;
+  verified_files: number;
+  total_bytes: number;
+  updated_at: string;
+}
+
+export interface StorageStatus {
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  min_free_bytes: number;
+  importable_bytes: number;
+  recordings_bytes: number;
+  below_floor: boolean;
+  locations: StorageLocation[];
+  volumes: StorageVolume[];
+  migrations?: StorageMigration[];
 }
 
 export interface ApiErrorBody {
