@@ -59,8 +59,9 @@ _Last updated: 2026-11-24_
     type tokens, reusable layout components, and a fixed sidebar (the regression from the
     `55ae624` nav grouping). The browser layout check at 1440×900, 1280×800 and
     1920×1080 went from 39 page views with issues to 0.
+  - **Mac verification of `ee17e07`** (2026-11-24): all stages exit 0. Backend 374 + 3
+    skipped, bench 47 + 1, frontend 35, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
   - **Pending:**
-    - Mac verification of the layout commit;
     - updated independent review;
     - merge (owner).
     M3 is not started.

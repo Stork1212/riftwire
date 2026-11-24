@@ -188,7 +188,10 @@ text, plus tables that scroll inside their panel.
 | Acceptance (`--min-free-gib 1`, test-only) | **28/28** |
 | Smoke (test-only floor) | **28 PASS, 0 FAIL** |
 
+**Mac run of `ee17e07`** (evidence: `docs/acceptance/2026-11-24-macos-m2-ee17e07/`): all stages
+exit 0, clean tree before and after; backend **374 passed, 3 skipped**, bench 47 + 1,
+frontend **35/35**, build OK; acceptance **28/28** at the 60 GiB floor; smoke **30/30**.
+
 The screenshots and the checker script are review aids kept out of the repository. Fonts
-in the container differ slightly from macOS, so the Mac run of the pinned script is still
-the reference for everything except the visual check.
+in the container differ slightly from macOS, so the Mac run is the reference for everything except the visual check.
 

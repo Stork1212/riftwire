@@ -1,0 +1,54 @@
+From https://github.com/Stork1212/riftwire
+ * branch            phase2/m2-rights-sources -> FETCH_HEAD
+   55ae624..ee17e07  phase2/m2-rights-sources -> origin/phase2/m2-rights-sources
+Already on 'phase2/m2-rights-sources'
+Your branch is behind 'origin/phase2/m2-rights-sources' by 2 commits, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+Updating 55ae624..ee17e07
+Fast-forward
+ docs/M2_REVIEW.md                                  |  64 +++-
+ docs/PROJECT_STATUS.md                             |   8 +-
+ .../2026-11-24-macos-m2-55ae624/README.md          |  13 +
+ .../2026-11-24-macos-m2-55ae624/acceptance.json    | 207 ++++++++++
+ .../2026-11-24-macos-m2-55ae624/acceptance.txt     |  32 ++
+ .../2026-11-24-macos-m2-55ae624/df-after.txt       |   2 +
+ .../2026-11-24-macos-m2-55ae624/df-before.txt      |   2 +
+ .../2026-11-24-macos-m2-55ae624/environment.txt    |  17 +
+ .../acceptance/2026-11-24-macos-m2-55ae624/git.txt |  66 ++++
+ .../2026-11-24-macos-m2-55ae624/smoke-cleanup.txt  |   4 +
+ .../2026-11-24-macos-m2-55ae624/smoke.txt          |  72 ++++
+ .../2026-11-24-macos-m2-55ae624/summary.txt        |  36 ++
+ .../2026-11-24-macos-m2-55ae624/test.txt           | 113 ++++++
+ .../2026-11-24-macos-m2-55ae624/tree-after.txt     |   0
+ .../2026-11-24-macos-m2-55ae624/verify-script.sh   |  83 ++++
+ .../2026-11-24-macos-m2-55ae624/warnings.txt       |   4 +
+ frontend/src/components/JobStages.tsx              |   4 +-
+ frontend/src/components/LinkResolver.tsx           |   4 +-
+ frontend/src/components/ui.tsx                     |  28 ++
+ frontend/src/pages/CatalogPage.tsx                 |  13 +-
+ frontend/src/pages/CreatorsPage.tsx                |  15 +-
+ frontend/src/pages/ImportPage.tsx                  |  16 +-
+ frontend/src/pages/OverviewPage.tsx                |  11 +-
+ frontend/src/pages/QueuePage.tsx                   |  32 +-
+ frontend/src/pages/RecordingDetailPage.tsx         |  11 +-
+ frontend/src/pages/RecordingsPage.tsx              |  16 +-
+ frontend/src/pages/SourceDetailPage.tsx            |  22 +-
+ frontend/src/pages/SourcesPage.tsx                 |  11 +-
+ frontend/src/pages/StoragePage.tsx                 |   9 +-
+ frontend/src/pages/SystemPage.tsx                  |   4 +-
+ frontend/src/styles.css                            | 422 +++++++++++++++------
+ 31 files changed, 1127 insertions(+), 214 deletions(-)
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/README.md
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/acceptance.json
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/acceptance.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/df-after.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/df-before.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/environment.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/git.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/smoke-cleanup.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/smoke.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/summary.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/test.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/tree-after.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/verify-script.sh
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-55ae624/warnings.txt
