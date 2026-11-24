@@ -52,6 +52,9 @@ log = get_logger("ingest")
 
 SPACE_CHECK_EVERY = 256 * 1024 * 1024
 RENEW_EVERY_SECONDS = 60.0
+# Unknown-length uploads are admitted one window at a time, BEFORE the bytes are written
+# (review finding 3): the reservation always covers every byte that may be written next.
+UNKNOWN_LENGTH_WINDOW = 256 * 1024 * 1024
 
 
 # ============================================================================ upload
@@ -62,6 +65,12 @@ class UploadSession:
     Synchronous by design (no FastAPI imports); the API calls ``write`` from a thread.
     Requires the temp and recordings locations to be online, and holds a persistent
     per-volume disk reservation (shared with the worker) for the bytes still to come.
+
+    No byte is written without admission: ``_credit`` is the number of bytes admitted and
+    not yet written. Known length: the whole length is admitted up front. Unknown length:
+    admitted in windows of ``UNKNOWN_LENGTH_WINDOW``. Before any write that exceeds the
+    credit, or when the lease is due for renewal, the drive is re-verified and the
+    reservation renewed (re-admitted if it expired) *before* writing.
     """
 
     def __init__(self, settings: Settings, filename: str, content_length: int | None,
@@ -80,6 +89,7 @@ class UploadSession:
         self._content_length = content_length
         self._reservation: reservations.Reservation | None = None
         self._last_renew = time.monotonic()
+        self._credit = 0
 
         if self.ext not in settings.allowed_extensions:
             raise UnsupportedMedia(
@@ -98,42 +108,56 @@ class UploadSession:
         # no storage migration may be running.
         require_no_maintenance(settings)
         self.layout.require_online("temp", "recordings")
+        first = content_length if content_length is not None else self._window()
         self._reservation = reservations.reserve(
-            db, self.layout, "temp", f"upload:{self.import_id}", content_length or 0,
+            db, self.layout, "temp", f"upload:{self.import_id}", first,
             lease_seconds=settings.reservation_lease_seconds, free_fn=free_bytes)
+        self._credit = first
         try:
             self._fh = open(self.part_path, "xb")  # noqa: SIM115  closed in finish/abort
         except BaseException:
             self.release()
             raise
 
+    def _window(self) -> int:
+        return max(1, min(UNKNOWN_LENGTH_WINDOW, self.settings.max_upload_bytes - self.size))
+
     def write(self, chunk: bytes) -> None:
         if not chunk:
             return
-        self.size += len(chunk)
-        if self.size > self.settings.max_upload_bytes:
+        n = len(chunk)
+        new_size = self.size + n
+        if new_size > self.settings.max_upload_bytes:
             raise PayloadTooLarge("Upload exceeds the maximum allowed size",
                                   details={"max_upload_bytes": self.settings.max_upload_bytes})
-        if self._content_length is not None and self.size > self._content_length:
+        if self._content_length is not None and new_size > self._content_length:
             raise ValidationFailed("Upload is larger than its declared Content-Length")
+        # Admission BEFORE the write: never write beyond the admitted credit or under a
+        # lease that may have expired.
+        if (n > self._credit or self._since_check + n > SPACE_CHECK_EVERY
+                or time.monotonic() - self._last_renew >= RENEW_EVERY_SECONDS):
+            self._recheck(n)
         self._hash.update(chunk)
         self._fh.write(chunk)
-        self._since_check += len(chunk)
-        if (self._since_check >= SPACE_CHECK_EVERY
-                or time.monotonic() - self._last_renew >= RENEW_EVERY_SECONDS):
-            self._since_check = 0
-            self._recheck()
+        self.size = new_size
+        self._credit -= n
+        self._since_check += n
 
-    def _recheck(self) -> None:
-        """Re-verify the drive and renew the reservation with the bytes still to come;
-        raises StorageOffline / InsufficientStorage (the upload is then aborted)."""
+    def _recheck(self, next_chunk: int = 0) -> None:
+        """Re-verify the drive and renew the reservation with the bytes that may still be
+        written (re-admitted if the lease expired). Raises StorageOffline /
+        InsufficientStorage (the upload is then aborted); nothing is written first."""
         self.layout.require_online("temp")
-        remaining = max(0, (self._content_length or 0) - self.size)
-        reservations.renew(self.db, self.layout, self._reservation, remaining,
+        if self._content_length is not None:
+            admit = max(0, self._content_length - self.size)
+        else:
+            admit = max(next_chunk, self._window())
+        reservations.renew(self.db, self.layout, self._reservation, admit,
                            lease_seconds=self.settings.reservation_lease_seconds,
                            free_fn=free_bytes)
+        self._credit = admit
+        self._since_check = 0
         self._last_renew = time.monotonic()
-
     def finish(self) -> str:
         """Close and fsync the part file. Returns the SHA-256 hex digest."""
         if self._content_length is not None and self.size != self._content_length:
@@ -142,9 +166,19 @@ class UploadSession:
             raise ValidationFailed("Empty upload")
         self._fh.flush()
         os.fsync(self._fh.fileno())
+        # Final floor check on the drive as it is now (other programs may have written to
+        # it meanwhile): the upload is refused rather than left below the floor.
+        self._recheck_final()
         self._fh.close()
         self._fh = None
         return self._hash.hexdigest()
+
+    def _recheck_final(self) -> None:
+        self.layout.require_online("temp")
+        reservations.renew(self.db, self.layout, self._reservation, 0,
+                           lease_seconds=self.settings.reservation_lease_seconds,
+                           free_fn=free_bytes)
+        self._credit = 0
 
     def abort(self) -> None:
         """Remove the partial file (temp only). Safe to call more than once."""

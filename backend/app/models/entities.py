@@ -269,6 +269,8 @@ class StorageMigration(Base):
     source_path: Mapped[str] = mapped_column(String(1024))
     dest_path: Mapped[str] = mapped_column(String(1024))
     dest_location_uuid: Mapped[str] = mapped_column(UUIDStr)
+    # OS volume UUID of the destination drive approved for this migration (review fix 1).
+    dest_hw_volume_uuid: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(16), default=MigrationStatus.COPYING.value)
     total_files: Mapped[int] = mapped_column(Integer, default=0)
     total_bytes: Mapped[int] = mapped_column(BigInteger, default=0)

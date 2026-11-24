@@ -52,6 +52,7 @@ FILESYSTEM_NOT_ALLOWED = "filesystem_not_allowed"
 NOT_WRITABLE = "not_writable"
 NOT_REGISTERED = "not_registered"
 PROBE_FAILED = "probe_failed"
+IDENTITY_UNRECORDED = "identity_unrecorded"
 
 REASON_TEXT = {
     ONLINE: "online",
@@ -65,6 +66,7 @@ REASON_TEXT = {
     NOT_WRITABLE: "the location folder is not writable",
     NOT_REGISTERED: "the location is not registered",
     PROBE_FAILED: "the drive could not be identified",
+    IDENTITY_UNRECORDED: "no drive identity was recorded for this location (re-register it)",
 }
 
 
@@ -95,16 +97,65 @@ class LocationState:
 
 # --------------------------------------------------------------------------- markers
 
-def read_marker(root: Path) -> dict | None:
+class MarkerInvalid(ValueError):
+    """The marker exists but is not a valid format-1 RIFTWIRE location marker."""
+
+
+MARKER_MAX_BYTES = 64 * 1024
+_MARKER_KEYS = {"format", "kind", "location_uuid", "volume_uuid", "hw_volume_uuid",
+                "created_at"}
+
+
+def _is_uuid(v: object) -> bool:
+    if not isinstance(v, str):
+        return False
     try:
-        raw = (root / MARKER).read_text(encoding="utf-8")
+        uuid.UUID(v)
+    except ValueError:
+        return False
+    return True
+
+
+def validate_marker(m: object) -> dict:
+    """Strict schema check of a parsed marker. Raises ``MarkerInvalid``."""
+    if not isinstance(m, dict):
+        raise MarkerInvalid("marker is not a JSON object")
+    if set(m) != _MARKER_KEYS:
+        raise MarkerInvalid(f"marker keys {sorted(m)} != {sorted(_MARKER_KEYS)}")
+    if type(m["format"]) is not int or m["format"] != MARKER_FORMAT:
+        raise MarkerInvalid(f"unsupported marker format {m['format']!r}")
+    if m["kind"] not in LOCATION_KINDS:
+        raise MarkerInvalid(f"unknown location kind {m['kind']!r}")
+    if not _is_uuid(m["location_uuid"]) or not _is_uuid(m["volume_uuid"]):
+        raise MarkerInvalid("location_uuid/volume_uuid must be UUIDs")
+    hw = m["hw_volume_uuid"]
+    if hw is not None and volumes.valid_volume_uuid(hw) is None:
+        raise MarkerInvalid("hw_volume_uuid must be null or a volume UUID")
+    if not isinstance(m["created_at"], str):
+        raise MarkerInvalid("created_at must be a string")
+    return m
+
+
+def read_marker(root: Path) -> dict | None:
+    """The validated marker of ``root``; None if absent. Raises ``MarkerInvalid`` (a
+    ``ValueError``) if it is malformed, and ``OSError`` if it cannot be read."""
+    try:
+        with open(root / MARKER, "rb") as f:
+            raw = f.read(MARKER_MAX_BYTES + 1)
     except FileNotFoundError:
         return None
-    return json.loads(raw)
+    if len(raw) > MARKER_MAX_BYTES:
+        raise MarkerInvalid("marker too large")
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except ValueError as e:  # JSONDecodeError and UnicodeDecodeError are ValueErrors
+        raise MarkerInvalid(f"marker is not valid JSON: {e}") from e
+    return validate_marker(data)
 
 
 def write_marker(root: Path, data: dict) -> None:
     """Create the marker atomically and exclusively: never overwrites an existing one."""
+    validate_marker(data)
     final = root / MARKER
     tmp = root / f".riftwire-location.{uuid.uuid4().hex}.tmp"
     with open(tmp, "x", encoding="utf-8") as f:
@@ -142,12 +193,15 @@ def verify(loc: Location) -> LocationState:
     if (m.get("location_uuid") != loc.location_uuid or m.get("volume_uuid") != loc.volume_uuid
             or m.get("kind") != loc.kind):
         return LocationState(k, False, MARKER_MISMATCH)
+    if volumes.identity_required() and not loc.hw_volume_uuid:
+        return LocationState(k, False, IDENTITY_UNRECORDED)
     try:
         vi = volumes.volume_info(loc.path)
-    except Exception as e:  # diskutil missing/timeout, unreadable mountinfo, ...
+    except Exception as e:  # diskutil missing/timeout, no volume UUID, mountinfo, ...
         log.warning(f"volume probe failed for {loc.kind}: {e}")
         return LocationState(k, False, PROBE_FAILED)
-    if loc.hw_volume_uuid and vi.hw_volume_uuid != loc.hw_volume_uuid:
+    if (loc.hw_volume_uuid or volumes.identity_required()) \
+            and vi.hw_volume_uuid != loc.hw_volume_uuid:
         return LocationState(k, False, WRONG_VOLUME, vi.fs_type, vi.mount_point, vi.label)
     if not volumes.filesystem_allowed(vi.fs_type):
         return LocationState(k, False, FILESYSTEM_NOT_ALLOWED, vi.fs_type, vi.mount_point,
@@ -259,11 +313,19 @@ def register_root(rows: list[StorageLocation], kind: str, root: Path,
         raise StorageOffline(f"{kind}: filesystem '{vi.fs_type}' is not allowed (APFS "
                              "required)", details={"kind": kind,
                                                    "reason": FILESYSTEM_NOT_ALLOWED})
-    existing = read_marker(root)
+    try:
+        existing = read_marker(root)
+    except (OSError, ValueError) as e:
+        raise StorageOffline(f"{kind}: the identity marker in {root} is invalid ({e})",
+                             details={"kind": kind, "reason": MARKER_UNREADABLE}) from e
     if existing is not None:
-        if existing.get("kind") != kind:
-            raise StorageOffline(f"{root} already holds a marker for '{existing.get('kind')}'",
+        if existing["kind"] != kind:
+            raise StorageOffline(f"{root} already holds a marker for '{existing['kind']}'",
                                  details={"kind": kind, "reason": MARKER_MISMATCH})
+        if existing["hw_volume_uuid"] is not None \
+                and existing["hw_volume_uuid"] != vi.hw_volume_uuid:
+            raise StorageOffline(f"{root} carries the marker of a different drive",
+                                 details={"kind": kind, "reason": WRONG_VOLUME})
         loc_uuid, vol_uuid = existing["location_uuid"], existing["volume_uuid"]
     else:
         loc_uuid = str(uuid.uuid4())
@@ -323,6 +385,18 @@ def load_layout(db: Database, settings: Settings, component: str = "app", *,
                 write_marker(root, marker_for(_to_location(r)))
                 record_event(s, Severity.WARNING, component, "storage_location_restored",
                              f"Recreated missing internal folder for {r.kind}")
+            # A row registered before the OS volume UUID was required has none. Internal
+            # defaults live inside the data directory on the internal disk (which cannot be
+            # swapped), so their identity is recorded now. External locations are never
+            # adopted this way: they stay offline (identity_unrecorded) until migrated.
+            if (volumes.identity_required() and not r.hw_volume_uuid
+                    and root == settings.default_location(r.kind) and root.is_dir()):
+                try:
+                    r.hw_volume_uuid = volumes.volume_info(root).hw_volume_uuid
+                    record_event(s, Severity.INFO, component, "storage_identity_recorded",
+                                 f"Recorded the internal disk's volume UUID for {r.kind}")
+                except Exception as e:
+                    log.warning(f"could not record identity for {r.kind}: {e}")
         s.flush()
         locs = {r.kind: _to_location(r) for r in rows}
     layout = Layout(settings, locs)

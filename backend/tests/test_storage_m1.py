@@ -44,6 +44,11 @@ from tests.helpers import import_file, user_files
 from tests.test_ingest import drain, get_rec, sha_file
 
 SHM = Path("/dev/shm")
+# Simulated drives carry real-format OS volume UUIDs (required on macOS).
+DATA_UUID = "8EC78228-715D-4039-B15E-0F6A8CA34C02"
+SSD_ONE = "11111111-1111-4111-8111-111111111111"
+SSD_TWO = "22222222-2222-4222-8222-222222222222"
+EXFAT_1 = "33333333-3333-4333-8333-333333333333"
 
 
 def second_volume(tmp_path) -> Path | None:
@@ -72,15 +77,14 @@ class FakeProbe(volumes.VolumeProbe):
     is answered by the real platform probe, so the actual internal disk keeps its real
     identity (on macOS its real VolumeUUID was recorded when the layout was loaded)."""
 
-    cacheable = False
-
     def __init__(self):
         self.real = volumes.default_probe()
+        # Same identity policy as the real platform (on macOS: OS volume UUID required).
+        self.requires_hw_uuid = self.real.requires_hw_uuid
         self.rules: list[tuple[str, tuple[str, str | None]]] = []
 
     def set(self, prefix: Path, fs: str, hw: str | None) -> None:
         self.rules.insert(0, (str(prefix), (fs, hw)))
-        volumes._cache.clear()  # real drives differ by st_dev; simulated ones share one
 
     def info(self, path: Path) -> volumes.VolumeInfo:
         p = str(path)
@@ -128,11 +132,20 @@ def test_defaults_registered_with_markers_once(db, settings):
     assert len(events(db, "storage_location_registered")) == n_events == 5
 
 
+def _marker(kind="temp", **kw):
+    m = {"format": 1, "kind": kind, "location_uuid": str(uuid.uuid4()),
+         "volume_uuid": str(uuid.uuid4()), "hw_volume_uuid": None,
+         "created_at": utcnow().isoformat()}
+    m.update(kw)
+    return m
+
+
 def test_marker_is_never_overwritten(tmp_path):
-    locations.write_marker(tmp_path, {"kind": "temp", "location_uuid": "a"})
+    a, b = _marker(), _marker()
+    locations.write_marker(tmp_path, a)
     with pytest.raises(FileExistsError):
-        locations.write_marker(tmp_path, {"kind": "temp", "location_uuid": "b"})
-    assert json.loads((tmp_path / MARKER).read_text())["location_uuid"] == "a"
+        locations.write_marker(tmp_path, b)
+    assert json.loads((tmp_path / MARKER).read_text())["location_uuid"] == a["location_uuid"]
     assert [p.name for p in tmp_path.iterdir()] == [MARKER]  # no temp files left
 
 
@@ -154,7 +167,7 @@ def test_marker_missing_or_foreign_makes_location_offline(db, settings):
     saved = marker.read_text()
     marker.unlink()
     assert lay.state("temp").reason == locations.MARKER_MISSING
-    marker.write_text(json.dumps({**json.loads(saved), "location_uuid": "someone-else"}))
+    marker.write_text(json.dumps({**json.loads(saved), "location_uuid": str(uuid.uuid4())}))
     assert lay.state("temp").reason == locations.MARKER_MISMATCH
     marker.write_text("{not json")
     assert lay.state("temp").reason == locations.MARKER_UNREADABLE
@@ -165,12 +178,11 @@ def test_marker_missing_or_foreign_makes_location_offline(db, settings):
 def test_swapped_drive_detected_by_os_volume_uuid(db, settings, tmp_path, probe):
     ext = tmp_path / "ssd" / "riftwire-exports"
     ext.mkdir(parents=True)
-    probe.set(tmp_path / "ssd", "apfs", "SSD-ONE")
+    probe.set(tmp_path / "ssd", "apfs", SSD_ONE)
     lay = _external(db, settings, "exports", ext)
     assert lay.state("exports").online
     # Same path, marker copied over, but a DIFFERENT physical drive is mounted there.
-    probe.set(tmp_path / "ssd", "apfs", "SSD-TWO")
-    volumes._cache.clear()
+    probe.set(tmp_path / "ssd", "apfs", SSD_TWO)
     st = lay.state("exports")
     assert not st.online and st.reason == locations.WRONG_VOLUME
 
@@ -182,7 +194,7 @@ def test_apfs_required_on_macos_no_override(db, settings, tmp_path, probe, monke
         assert not volumes.filesystem_allowed(fs)
     ext = tmp_path / "exfat-drive" / "rec"
     ext.mkdir(parents=True)
-    probe.set(tmp_path / "exfat-drive", "exfat", "EXFAT-1")
+    probe.set(tmp_path / "exfat-drive", "exfat", EXFAT_1)
     with pytest.raises(StorageOffline, match="APFS"):
         _external(db, settings, "recordings", ext)
     assert not (ext / MARKER).exists()
@@ -677,7 +689,7 @@ def test_migration_refusals_write_nothing(db, mig_settings, media_dir, tmp_path,
     monkeypatch.setattr(volumes.platform, "system", lambda: "Darwin")
     exfat = tmp_path / "exfat"
     exfat.mkdir()
-    probe.set(exfat, "exfat", "E1")
+    probe.set(exfat, "exfat", EXFAT_1)
     probs = migration.plan(db, s, lay, "recordings", exfat / "rec").problems
     assert any("APFS" in x for x in probs), probs
     monkeypatch.setattr(volumes.platform, "system", lambda: "Linux")
@@ -800,32 +812,33 @@ class FakeRunner:
 
 
 def test_darwin_probe_asks_diskutil_about_the_mount_point_not_the_folder():
-    run = FakeRunner(DF_DATA, _plist("DATA-UUID", "Data"))
+    run = FakeRunner(DF_DATA, _plist(DATA_UUID.lower(), "Data"))
     vi = volumes.DarwinProbe(run).info(Path("/Users/greg/Claude/riftwire/data/recordings"))
-    assert vi == volumes.VolumeInfo("/System/Volumes/Data", "apfs", "DATA-UUID", "Data")
+    assert vi == volumes.VolumeInfo("/System/Volumes/Data", "apfs", DATA_UUID, "Data")
     du = [c for c in run.calls if c[0].endswith("diskutil")][0]
     assert du[-1] == "/System/Volumes/Data"  # regression: diskutil rejects plain folders
 
 
 def test_darwin_probe_handles_names_with_spaces_and_exfat():
-    vi = volumes.DarwinProbe(FakeRunner(DF_SSD, _plist("SSD-UUID", "SanDisk SSD"))).info(
+    vi = volumes.DarwinProbe(FakeRunner(DF_SSD, _plist(SSD_ONE, "SanDisk SSD"))).info(
         Path("/Volumes/SanDisk SSD/riftwire/recordings"))
     assert (vi.mount_point, vi.fs_type, vi.hw_volume_uuid) == (
-        "/Volumes/SanDisk SSD", "apfs", "SSD-UUID")
+        "/Volumes/SanDisk SSD", "apfs", SSD_ONE)
     df_card = DF_SSD.replace("/Volumes/SanDisk SSD", "/Volumes/Camera Card")
-    vi = volumes.DarwinProbe(FakeRunner(df_card, _plist("C", "Card", "exfat"))).info(
+    vi = volumes.DarwinProbe(FakeRunner(df_card, _plist(EXFAT_1, "Card", "exfat"))).info(
         Path("/Volumes/Camera Card/x"))
     assert vi.fs_type == "exfat" and not volumes.filesystem_allowed(vi.fs_type, "Darwin")
 
 
-def test_darwin_probe_survives_diskutil_failure():
-    vi = volumes.DarwinProbe(FakeRunner(DF_DATA, None)).info(Path("/Users/x"))
-    assert vi.fs_type == "apfs" and vi.hw_volume_uuid is None  # still identified by marker
+def test_darwin_probe_fails_closed_without_a_valid_volume_uuid():
+    """Review finding 2: no identity → no storage on macOS (was: hw_volume_uuid=None)."""
+    for diskutil in (None, _plist("not-a-uuid", "Data"), _plist("", "Data"),
+                     "<?xml version='1.0'?><plist version='1.0'><array/></plist>"):
+        with pytest.raises(volumes.IdentityUnavailable):
+            volumes.DarwinProbe(FakeRunner(DF_DATA, diskutil)).info(Path("/Users/x"))
 
 
 class BrokenProbe(volumes.VolumeProbe):
-    cacheable = False
-
     def info(self, path):
         raise RuntimeError("probe exploded")
 

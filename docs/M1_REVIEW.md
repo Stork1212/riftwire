@@ -1,7 +1,9 @@
 # M1 Storage Architecture: final engineering review
 
-_PR #9 (draft), branch `phase2/m1-storage`. Review performed 2026-11-24 after the owner's
-Mac verification. The physical-SSD acceptance gate remains open (§5)._
+_PR #9 (draft), branch `phase2/m1-storage`. Internal review performed 2026-11-24 after the
+owner's Mac verification (§1–§5). The independent review of code commit `4703e22` and its
+corrections are in §6, which supersedes §3–§4 where they differ. The physical-SSD acceptance
+gate remains open (§5)._
 
 ## 1. Scope reviewed
 
@@ -121,3 +123,53 @@ Requires the SanDisk 1 TB SSD, formatted APFS by the owner. No real recordings a
 can build on it. The tag `v0.3.0-m1` and the declaration that M1 is complete wait for this
 gate. Until then `PROJECT_STATUS.md` shows M1 as "merged, SSD acceptance pending". The
 owner decides.
+
+## 6. Independent review of `4703e22`: findings and corrections
+
+Every finding was validated against the source **before** any change. Each was then
+reproduced with a regression test that fails on `4703e22` and passes after the fix. The
+regression tests are in `backend/tests/test_storage_m1_review.py`.
+
+To check this, the test file was run against an untouched checkout of `4703e22`:
+- **15 of its 18 tests fail.** Each fails with the reported defect, not a missing name.
+  For example, three concurrent unknown-length uploads went **7 MiB below the floor**, and
+  resume onto a replacement drive with a copied marker was **not refused**.
+- **The other 3 pass there by design.** They guard related behaviour that was already
+  correct (an upload is refused during maintenance, exFAT is still refused, an expired
+  reservation must pass the floor check again).
+
+### 6.1 Findings
+
+| # | Sev. | Validated in source (`4703e22`) | Correction | Regression tests |
+|---|---|---|---|---|
+| 1 | High | **Confirmed.** `migration.py` `dest_guard()` compared only the marker's location UUID, and the switch recorded whatever drive was mounted at that moment. A copy of the destination folder on another drive at the same mount path would resume and switch | Journal column `dest_hw_volume_uuid` (Alembic **0003**). It is recorded when the destination is first identified and compared against a fresh probe on resume (`plan` and `execute`), before each file, promotion, cleanup and final re-hash, and immediately before the switch. The switch records the approved UUID | `test_f1_copied_marker_on_replacement_drive_never_resumes`, `test_f1_drive_swap_mid_copy_stops_before_promotion`, `test_f1_swap_after_final_rehash_never_switches`, `test_f1_switch_records_the_approved_drive` |
+| 2 | High | **Confirmed.** `DarwinProbe` returned `hw_volume_uuid=None` when diskutil failed. `register_root` accepted it, and `verify` skipped the UUID check for such rows permanently. **Cache confirmed:** a 10 s cache keyed by `st_dev` could return a previous drive's UUID after a remount that reuses the device number | On macOS a valid VolumeUUID is required: `IdentityUnavailable` makes registration fail, the location report `probe_failed`, and migration refuse. Rows without a UUID report `identity_unrecorded`. Internal defaults get their UUID recorded at startup; external locations are never adopted. UUIDs are validated and normalised. **The identity cache is removed**, so every check probes afresh | `test_f2_no_registration_without_os_volume_uuid`, `test_f2_registered_without_identity_fails_closed`, `test_f2_identity_is_never_served_from_a_cache`, `test_darwin_probe_fails_closed_without_a_valid_volume_uuid`, `test_f2_real_macos_disk_has_a_valid_volume_uuid` (macOS only) |
+| 3 | High | **Confirmed.** Unknown-length uploads reserved 0 bytes. The floor was re-checked only *after* writing, every 256 MB or 60 s, so uploads shorter than that were never checked. Concurrent uploads could each overshoot | Admission **before** every write: the full length up front if known, otherwise 256 MiB windows admitted before the bytes are written. Leases are renewed before the next write, and an expired lease must be re-admitted first. Final floor check at `finish()` | `test_f3_concurrent_unknown_length_uploads_never_cross_the_floor` (3 threads), `test_f3_short_unknown_upload_needs_admission_before_any_byte`, `test_f3_floor_enforced_at_finish`, `test_f3_no_write_after_the_lease_expired_without_readmission` |
+| 4 | Medium | **Confirmed.** `plan()` used `need = total` even when resuming | `remaining_need()`: only files without a full-size copy at the destination count (those copies are still verified by hash), minus the run's own stale partials. Peak usage never exceeds that figure, because each partial is removed before its file is copied. The reservation uses the same per-file figures | `test_f4_resume_needs_only_the_remaining_bytes`: 1.6 MiB headroom finishes the resume; 1.4 MiB is refused; the full 3 MiB is no longer required |
+| 5 | Medium | **Confirmed.** `read_marker()` returned any JSON value, and `verify()` called `.get` on it. A marker containing `[]` raised `AttributeError` at startup, in readiness and in the worker | Strict validation: exact keys, `format == 1` as an integer, a known kind, UUID fields, `hw_volume_uuid` null or a valid volume UUID, a ≤ 64 KiB cap, UTF-8 JSON. Invalid markers report `marker_unreadable` and never raise. Registration and migration refuse cleanly, and markers are validated before writing | `test_f5_invalid_markers_report_offline_without_crashing` (18 malformed variants × startup, readiness, storage API, upload, reconcile), `test_f5_invalid_marker_refused_by_registration_and_migration` |
+
+No finding was disputed.
+
+### 6.2 Additional audit items
+
+| Item | Result |
+|---|---|
+| Reservation renewal after lease expiry | **Uploads:** renewal now happens *before* the next write, and re-admission after reclamation goes through the full floor check, so nothing is written under an expired reservation (`test_f3_no_write_after_the_lease_expired_without_readmission`, `test_audit_reservation_renew_after_expiry_readmits_with_floor`). **Long copies** (`Keeper`): renewed between chunks at least every 60 s against a 15 min lease. Residual: one chunk whose write itself stalls longer than the lease. Documented in ARCHITECTURE §19.9 |
+| Check-then-write / check-then-delete during drive replacement | Not fully closable, and documented exactly in ARCHITECTURE §19.9. Writes go through descriptors opened after verification, so after a swap they fail rather than land on the new drive. Promotion is re-verified immediately before `link`, which never overwrites. Deletions only touch RIFTWIRE-generated temporary names in a just-verified location. The switch is guarded immediately before its transaction |
+| Maintenance lock vs. active writers | **Ordering gap found and fixed.** `execute()` checked for a running API *before* taking the maintenance lock, leaving a window for an API (and an upload) to start in between. Now the maintenance lock is taken first, then the worker lock, then the API check. Uploads and worker start already refuse while the lock is held (`test_audit_maintenance_lock_is_taken_before_checking_for_writers`, `test_audit_upload_started_after_lock_is_refused`) |
+| Unchanged requirements | 60 GiB floor (the container smoke run at the real floor correctly refused imports with **507**, having 28 GiB free), APFS-only (`test_audit_exfat_still_refused_with_strict_identity`), $0, and the eight SSD checks (§5) |
+
+### 6.3 Verification of the corrections (cloud container, Linux)
+
+| Check | Result |
+|---|---|
+| `scripts/test.sh` (exit 0) | ruff clean; backend **239 passed, 1 skipped** (macOS-only test), 1 third-party warning; bench **48 passed**; frontend lint/typecheck clean, **17/17**; build OK |
+| Alembic | upgrade → downgrade 0002 → upgrade; `alembic check`: no drift; head `0003` |
+| Acceptance (`--min-free-gib 1`, test-only floor: the container has 28 GiB free) | **22/22** (exit 0) |
+| Smoke at the **production 60 GiB floor** | imports refused with 507 as designed (only 28 GiB free) |
+| Smoke with a test-only 1 GiB floor | **28 PASS, 0 FAIL, 1 SKIP** (caffeinate, macOS only), exit 0 |
+
+**Not yet verified:**
+- a **Mac re-run of the corrected commit**: the Mac evidence in `docs/acceptance/2026-11-24-macos-m1-4703e22/` covers `4703e22` only;
+- the macOS-only identity test;
+- the physical-SSD gate (§5).

@@ -218,9 +218,21 @@ def check_destination(layout: Layout, kind: str, dest: Path,
             problems.append("destination exists and is not a folder")
         else:
             names = [n for n in os.listdir(dest) if n != STAGING]
-            m = read_marker(dest) if MARKER in names else None
+            try:
+                m = read_marker(dest) if MARKER in names else None
+            except (OSError, ValueError) as e:
+                return problems + [f"the destination's identity marker is invalid ({e})"]
             resuming = (resume is not None and m is not None
-                        and m.get("location_uuid") == resume.dest_location_uuid)
+                        and m["location_uuid"] == resume.dest_location_uuid)
+            if resuming and resume.dest_hw_volume_uuid:
+                try:
+                    live = volumes.volume_info(dest).hw_volume_uuid
+                except Exception as e:
+                    return problems + [f"could not identify the destination drive: {e}"]
+                if live != resume.dest_hw_volume_uuid:
+                    return problems + ["the destination folder is on a different drive than "
+                                       "the one this migration started on (a copied marker "
+                                       "does not authorize a replacement drive)"]
             if names and not resuming:
                 problems.append("destination folder is not empty (choose an empty or new "
                                 "folder)")
@@ -261,11 +273,16 @@ def plan(db: Database, settings: Settings, layout: Layout, kind: str, dest: Path
             rel = p.relative_to(src).as_posix()
             files.append(PlanFile(rel, p.stat().st_size, known.get(rel)))
     verified = 0
-    if resume is not None and Path(resume.dest_path) == dest:
+    journal: dict[str, tuple[int, str]] = {}
+    resuming = resume is not None and Path(resume.dest_path) == dest
+    if resuming:
         with db.session() as s:
-            verified = len(list(s.scalars(select(StorageMigrationItem.id).where(
-                StorageMigrationItem.migration_id == resume.id,
-                StorageMigrationItem.state == "VERIFIED"))))
+            for rel, size, state in s.execute(select(
+                    StorageMigrationItem.rel_path, StorageMigrationItem.size_bytes,
+                    StorageMigrationItem.state).where(
+                    StorageMigrationItem.migration_id == resume.id)):
+                journal[rel] = (size, state)
+                verified += state == "VERIFIED"
     total = sum(f.size for f in files)
     floor = _effective_floor(settings)
     free = None
@@ -273,7 +290,10 @@ def plan(db: Database, settings: Settings, layout: Layout, kind: str, dest: Path
         anchor = _nearest_existing(dest)
         free = free_bytes(anchor)
         same_volume = os.stat(anchor).st_dev == os.stat(src).st_dev if st.online else False
-        need = total  # copies are new data even on the same volume
+        # Copies are new data even on the same volume. On resume only what is still to be
+        # copied counts, and our own stale partials (removed before their file is copied
+        # again) are space that will be given back.
+        need = (remaining_need(dest, resume.id, files, journal) if resuming else total)
         if free - need < floor:
             problems.append(
                 f"not enough free space at the destination: {free / 1024**3:.1f} GiB free, "
@@ -284,6 +304,39 @@ def plan(db: Database, settings: Settings, layout: Layout, kind: str, dest: Path
     anchor = _nearest_existing(dest)
     return Plan(kind, src, dest, files, total, free, floor, problems,
                 resume.id if resume else None, verified, anchor, os.stat(anchor).st_dev)
+
+
+def _token(migration_id: str) -> str:
+    return f"migration-{migration_id[:8]}"
+
+
+def _item_need(dest: Path, migration_id: str, rel: str, size: int) -> int:
+    """New bytes still needed on the destination for one file: 0 if a full-size copy is
+    already there (it is verified by hash, not trusted), minus our own stale partial."""
+    try:
+        if (dest / rel).stat().st_size == size:
+            return 0
+    except OSError:
+        pass
+    partial = dest / STAGING / transfer.staged_name(Path(rel).name, _token(migration_id))
+    try:
+        stale = partial.stat().st_size
+    except OSError:
+        stale = 0
+    return max(0, size - stale)
+
+
+def remaining_need(dest: Path, migration_id: str, files: list[PlanFile],
+                   journal: dict[str, tuple[int, str]]) -> int:
+    """Bytes a resumed migration still has to add to the destination volume.
+
+    Usage never peaks above the final figure: each stale partial is removed just before
+    its (larger or equal) file is copied, so ``Σ (size − partial)`` over the files still to
+    copy is the requirement relative to the space free now."""
+    sizes = {f.rel_path: f.size for f in files}
+    for rel, (size, _state) in journal.items():
+        sizes.setdefault(rel, size)
+    return sum(_item_need(dest, migration_id, rel, size) for rel, size in sizes.items())
 
 
 # --------------------------------------------------------------------------- execute
@@ -315,23 +368,31 @@ def execute(db: Database, settings: Settings, kind: str, dest: Path, *,
     switched) on any failed precondition or verification."""
     from app.workers.worker import WorkerLock, WorkerLockedError  # avoid import cycle
 
-    if check_api and api_running(settings):
-        raise MigrationRefused("RIFTWIRE's API is running: stop it first (scripts/stop.sh)")
-    wlock = WorkerLock(settings.data_dir / "worker.lock")
-    try:
-        wlock.acquire()
-    except WorkerLockedError:
-        raise MigrationRefused("the RIFTWIRE worker is running: stop it first "
-                               "(scripts/stop.sh)") from None
+    # Order matters (review): take the maintenance lock FIRST. From then on a newly started
+    # API refuses uploads and a newly started worker refuses to run, so checking that no
+    # API and no worker is running *after* taking it leaves no window for a writer to
+    # start in between.
     mlock = MaintenanceLock(settings)
+    if not mlock.acquire():
+        raise MigrationRefused("another storage migration is running")
+    wlock = WorkerLock(settings.data_dir / "worker.lock")
+    have_wlock = False
     try:
-        if not mlock.acquire():
-            raise MigrationRefused("another storage migration is running")
+        try:
+            wlock.acquire()
+            have_wlock = True
+        except WorkerLockedError:
+            raise MigrationRefused("the RIFTWIRE worker is running: stop it first "
+                                   "(scripts/stop.sh)") from None
+        if check_api and api_running(settings):
+            raise MigrationRefused("RIFTWIRE's API is running: stop it first "
+                                   "(scripts/stop.sh)")
         return _execute_locked(db, settings, kind, canonical(dest),
                                rehash=rehash, progress=progress)
     finally:
+        if have_wlock:
+            wlock.release()
         mlock.release()
-        wlock.release()
 
 
 def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
@@ -364,14 +425,41 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
     if not dest.exists():
         create_destination(p)
         progress(f"created destination {dest}")
-    marker = read_marker(dest)
+
+    def live_identity() -> volumes.VolumeInfo:
+        try:
+            return volumes.volume_info(dest)   # fresh probe, never cached
+        except Exception as e:
+            raise MigrationRefused(f"could not identify the destination drive: {e}") from e
+
+    def _read_marker() -> dict | None:
+        try:
+            return read_marker(dest)
+        except (OSError, ValueError) as e:
+            raise MigrationRefused(f"destination identity marker is invalid: {e}") from e
+
+    # The physical drive approved for this migration is recorded in the journal the first
+    # time the destination is identified, and compared on every later check. A marker
+    # copied to another drive therefore never authorizes that drive (review finding 1).
+    marker = _read_marker()
+    vi = live_identity()
+    expected_hw = mig.dest_hw_volume_uuid
+    if expected_hw is None and marker is not None:
+        expected_hw = marker["hw_volume_uuid"]      # journal from before this field existed
+    if expected_hw is None:
+        expected_hw = vi.hw_volume_uuid
+    if volumes.identity_required() and expected_hw is None:
+        raise MigrationRefused("the destination drive has no OS volume UUID")
+    if vi.hw_volume_uuid != expected_hw:
+        raise MigrationRefused("the destination is on a different drive than the one this "
+                               "migration was approved for; refusing")
+    if mig.dest_hw_volume_uuid != expected_hw:
+        with db.session() as s_:
+            s_.get(StorageMigration, mig.id).dest_hw_volume_uuid = expected_hw
+        mig.dest_hw_volume_uuid = expected_hw
     if marker is None:
         if any(n not in (STAGING,) for n in os.listdir(dest)):
             raise MigrationRefused("destination has files but no marker; refusing")
-        try:
-            vi = volumes.volume_info(dest)
-        except Exception as e:
-            raise MigrationRefused(f"could not identify the destination drive: {e}") from e
         if not volumes.filesystem_allowed(vi.fs_type):
             raise MigrationRefused(f"filesystem '{vi.fs_type}' is not allowed (APFS required)")
         write_marker(dest, {"format": MARKER_FORMAT, "kind": kind,
@@ -379,17 +467,24 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
                             "volume_uuid": _volume_uuid_for(db, dest, vi.hw_volume_uuid),
                             "hw_volume_uuid": vi.hw_volume_uuid,
                             "created_at": utcnow().isoformat()})
-        marker = read_marker(dest)
-    if marker is None or marker.get("location_uuid") != mig.dest_location_uuid:
+        marker = _read_marker()
+    if marker is None or marker["location_uuid"] != mig.dest_location_uuid \
+            or marker["kind"] != kind:
         raise MigrationRefused("destination marker does not match the migration journal")
+    if marker["hw_volume_uuid"] is not None and marker["hw_volume_uuid"] != expected_hw:
+        raise MigrationRefused("destination marker belongs to a different drive")
 
     def dest_guard() -> None:
-        """Immediately before each promotion: the destination is still our drive/folder."""
+        """Before every write, promotion, cleanup and the final switch: the destination is
+        still our folder (marker) on the approved physical drive (fresh OS volume UUID)."""
         if volumes.unmounted_volume_root(dest) is not None or not dest.is_dir():
             raise MigrationRefused("destination drive is no longer available")
-        m = read_marker(dest)
-        if m is None or m.get("location_uuid") != mig.dest_location_uuid:
+        m = _read_marker()
+        if m is None or m["location_uuid"] != mig.dest_location_uuid:
             raise MigrationRefused("destination identity changed (drive swapped?)")
+        if live_identity().hw_volume_uuid != expected_hw:
+            raise MigrationRefused("destination drive changed (different OS volume UUID); "
+                                   "a copied marker does not authorize a replacement drive")
 
     # 2. Journal: one row per file (idempotent).
     with db.session() as s:
@@ -419,8 +514,10 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
 
     # 3. Copy + verify each pending file under a reservation on the destination volume.
     pending = [it for it in items if it.state != "VERIFIED"]
-    remaining = sum(it.size_bytes for it in pending)
+    need = {it.id: _item_need(dest, mig.id, it.rel_path, it.size_bytes) for it in pending}
+    remaining = sum(need.values())
     dest_vol = marker["volume_uuid"]
+    dest_guard()
     res = reservations.reserve_on_volume(
         db, dest_vol, dest, _effective_floor(settings), kind, f"migration:{mig.id}",
         remaining, lease_seconds=settings.reservation_lease_seconds, free_fn=free_bytes)
@@ -437,9 +534,10 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
             dest_guard()
             make_dirs_below(dest, Path(it.rel_path).parent)
             make_dirs_below(dest, Path(STAGING))
-            token = f"migration-{mig.id[:8]}"
+            token = _token(mig.id)
             # A hard crash mid-copy leaves our own partial (same token): remove it before
-            # resuming. Safe: the maintenance lock guarantees no concurrent writer.
+            # resuming. Safe: the maintenance lock guarantees no concurrent writer, and the
+            # guard above re-verified the drive just before this cleanup.
             (staging / transfer.staged_name(dst.name, token)).unlink(missing_ok=True)
             keeper = reservations.Keeper(db, None, res, remaining,
                                          lease_seconds=settings.reservation_lease_seconds,
@@ -457,7 +555,7 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
                 row.state = "VERIFIED"
                 s.get(StorageMigration, mig.id).updated_at = utcnow()
             copied += 1
-            remaining -= it.size_bytes
+            remaining = max(0, remaining - need[it.id])
             dest_guard()  # drive still here before touching the reservation / next file
             reservations.renew(db, None, res, remaining,
                                lease_seconds=settings.reservation_lease_seconds,
@@ -465,6 +563,7 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
             progress(f"verified {it.rel_path} ({outcome})")
     finally:
         reservations.release(db, res)
+    dest_guard()
     try:
         staging.rmdir()
     except OSError:
@@ -483,14 +582,18 @@ def _execute_locked(db: Database, settings: Settings, kind: str, dest: Path, *,
                                        "nothing switched")
         progress(f"final verification: {len(items)} file(s) re-hashed, all match")
 
-    # 5. Switch in one transaction.
-    vi = volumes.volume_info(dest)
+    # 5. Switch in one transaction, right after a final identity check. The recorded
+    #    identity is the approved drive's, never whatever happens to be mounted now.
+    dest_guard()
+    vi = live_identity()
+    if vi.hw_volume_uuid != expected_hw:
+        raise MigrationRefused("destination drive changed before the switch; nothing switched")
     with db.session() as s:
         row = s.get(StorageLocation, kind)
         row.path = str(dest)
         row.location_uuid = mig.dest_location_uuid
         row.volume_uuid = dest_vol
-        row.hw_volume_uuid = vi.hw_volume_uuid
+        row.hw_volume_uuid = expected_hw
         row.fs_type = vi.fs_type
         row.floor_bytes = max(row.floor_bytes, settings.min_free_disk_bytes)
         row.updated_at = utcnow()

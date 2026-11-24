@@ -536,10 +536,22 @@ Owner decisions (2026-11-24):
   **offline**, with a stable reason code:
   1. the drive is mounted (`/Volumes/<name>` must be a mount point);
   2. the root exists;
-  3. the marker exists, is readable and matches the row;
+  3. the marker exists, is readable, passes strict schema validation (exact keys,
+     format 1, known kind, UUID fields, ≤ 64 KiB) and matches the row. An invalid marker
+     means offline (`marker_unreadable`), never an exception (review fix 5). Markers are
+     validated before they are written too;
   4. the OS volume UUID matches (catches a different drive with a copied folder). On macOS:
      mount point from `df -P`, filesystem from `mount`, VolumeUUID from
      `diskutil info -plist <mount point>` (diskutil rejects plain folders). All read-only.
+     - On macOS the VolumeUUID is **required** (review fix 2). If diskutil fails or returns
+       no valid UUID, the probe raises `IdentityUnavailable`: registration is refused, the
+       location reports `probe_failed`, and a migration stops.
+     - A row recorded without a UUID reports `identity_unrecorded`. The one exception:
+       internal defaults inside the data directory get their UUID recorded at startup,
+       because the internal disk cannot be swapped. External locations are never adopted
+       this way.
+     - Identity is **probed afresh on every check**, with no device-number cache, so a
+       remount that reuses a device number cannot return a previous drive's UUID.
   5. the filesystem is allowed (`apfs` on macOS);
   6. the root is writable.
 - **Nothing falls back.** An offline location raises `StorageOffline` (HTTP 503
@@ -562,8 +574,14 @@ Owner decisions (2026-11-24):
   floor(volume)`. Concurrent callers in any process serialize on the SQLite write lock.
   `floor(volume)` is the strictest of the configured floor and every location's floor on
   that volume.
+- **Admission before writing (review fix 3):** no byte is written that was not admitted.
+  - Uploads of known length reserve the full length up front.
+  - Uploads of unknown length are admitted in windows of 256 MiB. Before any write that
+    exceeds the admitted credit, the next window is admitted first.
+  - At `finish()` the floor is checked once more, and the upload is refused if another
+    program has since used the space.
 - **Leases:** `bytes` is what the holder may still write. Holders renew with their remaining
-  bytes every 256 MB and every 60 s, re-checking the floor. Rows expire (default 15 min) and
+  bytes every 256 MB and every 60 s, *before* the next write, re-checking the floor. Rows expire (default 15 min) and
   are reclaimed, so a crashed holder never blocks space forever. A renewal after reclamation
   re-admits under the same id.
 - **Holders:**
@@ -600,7 +618,9 @@ src ─copy─► <dest>/.staging/<name>.<token>.partial   (O_EXCL, fsync, fsync
 
 ### 19.5 Maintenance lock
 `storage-maintenance.lock` (OS lock, released if the holder dies) is held by the migration
-tool for its whole run. While it is held:
+tool for its whole run. The tool takes it **first**, then the worker lock, and only then
+checks that no API is running (review: the earlier order left a window for an API to start
+between the check and the lock). While it is held:
 - the worker refuses to start;
 - uploads are refused (503);
 - an API started meanwhile skips lease recovery and the reconciler, so it can never delete a
@@ -615,13 +635,22 @@ tool for its whole run. While it is held:
   - the drive is mounted, and nothing is created directly under `/` or `/Volumes`;
   - filesystem allowed and writable;
   - empty, or the same unfinished migration's folder;
-  - free space minus the planned bytes stays at or above the floor.
+  - free space minus the planned bytes stays at or above the floor. On resume the planned
+    bytes are only what is still to be copied (files without a full-size copy at the
+    destination), minus the run's own stale partials, which are removed before their file
+    is copied again (review fix 4).
 - **`--execute`:**
-  1. Refuses if the API answers on its port or the worker lock is held. Holds the worker lock
-     and the maintenance lock.
+  1. Takes the maintenance lock, then the worker lock, then refuses if the API answers on
+     its port.
   2. Writes the journal row **first**, so every later crash point is resumable. Then it
      creates the destination one level at a time below the planned anchor, which must
      still be the same device as at planning, and writes the marker.
+     - The destination drive's OS volume UUID is recorded in the journal
+       (`dest_hw_volume_uuid`) the first time it is identified.
+     - Every later check compares a fresh probe against it: on resume, before each file,
+       before each promotion, before cleanup, before the final re-hash and before the
+       switch. A marker copied to another drive never authorizes that drive (review fix 1).
+     - The switch records the approved UUID, never whatever happens to be mounted.
   3. Journals every file in `storage_migration_items` (PENDING → VERIFIED, committed per
      file).
   4. Transfers each file under a destination reservation (§19.4). Recordings are verified
@@ -633,8 +662,9 @@ tool for its whole run. While it is held:
   A stale `.partial` left by a hard crash (own token) is removed first. `--abort` gives up
   and leaves the location unchanged.
 - **Drive vanishes mid-run:** subfolders are created one level at a time below the verified
-  destination root, never with `parents=True`. The destination identity is re-checked
-  before each file, before each promotion and before the final re-hash. A vanished drive
+  destination root, never with `parents=True`. The destination identity (marker and OS
+  volume UUID) is re-checked before each file, before each promotion, before cleanup,
+  before the final re-hash and before the switch. A vanished drive
   stops the run and nothing is recreated.
 - **Never deletes originals:** they are listed for the owner. Migrating real user data needs
   separate owner approval.
@@ -665,15 +695,45 @@ Storage page, read-only:
 Folders are never created with `parents=True` below a location root, and never under an
 absent `/Volumes/<name>`. Every path is resolved through the loaded layout.
 
-### 19.9 Residual risks (documented, accepted)
-- **Swap window:** a drive could be swapped in the milliseconds between a verification and
-  the write or promotion that follows it. Two mitigations apply:
-  - writes go through file descriptors opened on the verified drive;
-  - promotion is re-verified immediately before `link`.
+### 19.9 Residual risks and race windows (documented, accepted)
+
+Verification and the action that follows it are separate system calls. RIFTWIRE narrows the
+windows between them; it does not claim to close them. The remaining windows:
+
+- **Check-then-write (uploads, staged copies).**
+  - Data is written through a file descriptor opened after verification.
+  - If the drive is swapped later, writes to that descriptor fail with an I/O error. They
+    cannot land on the new drive.
+  - The window is between verification and `open()`: microseconds.
+- **Check-then-promote (`link(2)`).**
+  - The guard re-verifies the drive's marker and OS volume UUID immediately before
+    `link`. A swap in the microseconds between the guard and `link` is not excluded.
+  - In that case `link` either fails (the staged file is not on the new drive) or creates
+    the name on the old, detached drive. It never overwrites a file.
+- **Check-then-delete (reconciler, migration cleanup of its own partial).**
+  - Deletion targets RIFTWIRE-generated names (`<uuid>.part`,
+    `<name>.<token>.partial`, `.job-<id>-<token>.tmp.jpg`) in a location verified just
+    before.
+  - A swap in between could only remove a file with the same generated name on the other
+    drive. In practice that means a clone of our own temporary files.
+  - Recordings and other originals are never deleted.
+- **Migration switch.** The destination is verified (marker and OS volume UUID) immediately
+  before the switch transaction. A swap after the switch makes the location `wrong_volume`
+  (offline), never writable.
 - **Byte-identical clones:** a block-level clone of an APFS volume can carry the same
   VolumeUUID *and* the copied marker. It would be accepted as the same drive; its content is
   identical by construction.
+- **Reservation leases.**
+  - Every holder renews before its lease can lapse, *before* writing the next bytes
+    (uploads), or at least every 60 s during a copy (`Keeper`).
+  - An expired reservation is re-admitted only through the full floor check.
+  - Remaining window: during a cross-volume copy, `Keeper` renews between chunks. A
+    single chunk write that itself stalled longer than the lease (15 min, for example on
+    a hung device) could complete after its reservation was reclaimed. Its size is
+    bounded by one chunk.
+- **Space used by other programs** is not reserved. It is seen at the next admission or
+  renewal, and at upload finalization, which then refuses rather than going below the
+  floor.
 - **Physical behaviour is not yet exercised:** real I/O errors on unplug, sleep/wake
   unmounts and multi-GB throughput are pending the physical-SSD acceptance gate (checklist
   §11).
-
