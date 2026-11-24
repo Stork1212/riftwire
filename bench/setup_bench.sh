@@ -9,7 +9,6 @@ ROOT="$(pwd)"
 VENV="$ROOT/bench/.venv"
 FLOOR_GIB=60
 MARGIN_GIB=1
-NEED_MB=600   # ~426 MB installed + pip build/temp overhead
 
 PY="${RIFTWIRE_PYTHON:-}"
 for c in "$PY" python3.13 /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13; do
@@ -19,13 +18,26 @@ done
 [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ] || \
   echo "! Not macOS/arm64: mlx will not install here (tests can still run in backend/.venv)."
 
-free_kb=$(df -k "$ROOT" | awk 'NR==2{print $4}')
-need_kb=$(( (FLOOR_GIB + MARGIN_GIB) * 1024 * 1024 + NEED_MB * 1024 ))
-if [ "$free_kb" -lt "$need_kb" ]; then
-  echo "✗ Not enough free space: $((free_kb/1048576)) GiB free; need ${FLOOR_GIB} GiB floor + ${MARGIN_GIB} GiB margin + ~${NEED_MB} MB."
-  exit 1
+# Check each volume written to: the venv (repo volume) and pip's temp area (TMPDIR).
+TMP="${TMPDIR:-/tmp}"
+VENV_MB=450   # measured ~426 MB installed
+PIP_TMP_MB=350  # wheels (~121 MB) + unpack area, freed after install
+need_on() {  # need_on PATH MB
+  local mount free_kb need_kb
+  mount=$(df -P "$1" | awk 'NR==2{print $6}')
+  free_kb=$(df -Pk "$1" | awk 'NR==2{print $4}')
+  need_kb=$(( (FLOOR_GIB + MARGIN_GIB) * 1024 * 1024 + $2 * 1024 ))
+  if [ "$free_kb" -lt "$need_kb" ]; then
+    echo "✗ Not enough free space on $mount: $((free_kb/1048576)) GiB free; need ${FLOOR_GIB} GiB floor + ${MARGIN_GIB} GiB margin + ~$2 MB."
+    exit 10
+  fi
+  echo "▸ $mount: $((free_kb/1048576)) GiB free (needs ~$2 MB above the ${FLOOR_GIB} GiB floor)"
+}
+if [ "$(df -P "$ROOT" | awk 'NR==2{print $6}')" = "$(df -P "$TMP" | awk 'NR==2{print $6}')" ]; then
+  need_on "$ROOT" $((VENV_MB + PIP_TMP_MB))
+else
+  need_on "$ROOT" "$VENV_MB"; need_on "$TMP" "$PIP_TMP_MB"
 fi
-echo "▸ Free space OK: $((free_kb/1048576)) GiB (floor ${FLOOR_GIB} GiB)"
 
 [ -d "$VENV" ] || "$PY" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --quiet --no-deps --require-hashes --no-cache-dir \

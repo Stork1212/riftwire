@@ -23,14 +23,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from riftbench import dataset, models, report, runner, signals, sysinfo  # noqa: E402
+from riftbench import (  # noqa: E402
+    dataset,
+    estimate,
+    models,
+    report,
+    runner,
+    signals,
+    sysinfo,
+)
 from riftbench.config import (  # noqa: E402
     FLOOR_BYTES,
     GIB,
     ROOT,
     InsufficientSpace,
     bench_dir,
-    check_space,
     data_dir,
     dir_size,
     models_dir,
@@ -40,8 +47,6 @@ from riftbench.metrics import score_timing_set, wer  # noqa: E402
 from riftbench.tts import SayTTS, ToneTTS  # noqa: E402
 
 BENCH_VENV_PY = ROOT / "bench" / ".venv" / "bin" / "python"
-DATASETS_EST = 300 * 1000**2      # all speech sets (16 kHz mono) + TTS cache
-SIGNALS_EST = 1200 * 1000**2      # 10 min 1080p60 source + proxy
 
 
 def now() -> str:
@@ -56,26 +61,47 @@ def parse_models(s: str) -> list[str]:
     return keys
 
 
+EXIT_NO_SPACE = 10   # distinct exit code: refused only because of the free-space floor
+EXIT_OVER_BUDGET = 11  # estimated peak exceeds the owner-approved disk budget
+
+
 def cmd_plan(a: argparse.Namespace) -> int:
+    keys = parse_models(a.models)
+    out = Path(a.out).expanduser() if a.out else default_out()
     print(f"Data dir: {data_dir()}  (models → {models_dir()}, datasets → {bench_dir()})")
-    total = 0
-    for k, spec in models.REGISTRY.items():
+    for k in keys:
+        spec = models.REGISTRY[k]
         have = "present" if not models.verify(spec) else "not downloaded"
         print(f"  whisper-{k:<5} {spec.repo:<36} {spec.params:>5} params  "
               f"{spec.total_bytes / 1e6:7.1f} MB  [{have}]")
         for f in spec.files:
             print(f"      https://huggingface.co/{spec.repo}/resolve/main/{f.name}"
                   f"  {f.size:>11,} B  sha256={f.sha256 or '(size-checked only)'}")
-        total += models.missing_bytes(spec)
-    venv = dir_size(ROOT / "bench" / ".venv")
-    need = total + DATASETS_EST + SIGNALS_EST
-    c = check_space(data_dir(), need)
-    print(f"Bench venv on disk: {venv / 1e6:.0f} MB")
-    print(f"Still to write: models {total / 1e6:.0f} MB + datasets ≈{DATASETS_EST / 1e6:.0f} MB"
-          f" + signals ≈{SIGNALS_EST / 1e6:.0f} MB = {need / 1e9:.2f} GB")
-    print(f"Free: {c.free_bytes / GIB:.1f} GiB → after: {(c.free_bytes - need) / GIB:.1f} GiB "
-          f"(floor {FLOOR_BYTES / GIB:.0f} GiB) → {'OK' if c.ok else 'REFUSED'}")
-    return 0 if c.ok else 1
+    comps = estimate.components(keys, out, quick=a.quick)
+    all_ok = True
+    total_final = total_peak = 0
+    for vol in estimate.by_volume(comps):
+        ok, free = estimate.check(vol)
+        all_ok &= ok
+        total_final += vol.final
+        total_peak += vol.peak
+        print(f"\nVolume of {vol.mount_hint} (device {vol.device}):")
+        for c in vol.components:
+            extra = f" (+{c.transient_bytes / 1e6:.0f} MB transient)" if c.transient_bytes else ""
+            print(f"  {c.name:<26} {c.final_bytes / 1e6:8.0f} MB{extra}  → {c.path}"
+                  + (f"  [{c.note}]" if c.note else ""))
+        print(f"  final {vol.final / 1e9:.2f} GB · PEAK {vol.peak / 1e9:.2f} GB · free "
+              f"{free / GIB:.1f} GiB → after peak {(free - vol.peak) / GIB:.1f} GiB "
+              f"(floor {FLOOR_BYTES / GIB:.0f} GiB + 1 GiB margin) → {'OK' if ok else 'REFUSED'}")
+    print(f"\nTOTAL still to write: final {total_final / 1e9:.2f} GB, peak "
+          f"{total_peak / 1e9:.2f} GB (already on disk: {estimate.existing_usage() / 1e9:.2f} GB)")
+    if not all_ok:
+        return EXIT_NO_SPACE
+    if a.budget_gb is not None and total_peak > a.budget_gb * 1e9:
+        print(f"REFUSED: estimated peak {total_peak / 1e9:.2f} GB exceeds the approved budget "
+              f"of {a.budget_gb:.2f} GB.")
+        return EXIT_OVER_BUDGET
+    return 0
 
 
 def cmd_fetch(a: argparse.Namespace) -> int:
@@ -87,7 +113,10 @@ def cmd_fetch(a: argparse.Namespace) -> int:
         try:
             print(f"whisper-{k}: {models.fetch(spec)}")
         except InsufficientSpace as e:
-            print(f"whisper-{k}: SKIPPED — {e}")
+            print(f"whisper-{k}: SKIPPED (free-space floor) — {e}")
+            return EXIT_NO_SPACE
+        except Exception as e:  # network, checksum, HTTP, I/O: a real failure, never a skip
+            print(f"whisper-{k}: FAILED — {type(e).__name__}: {e}")
             return 1
     return 0
 
@@ -102,9 +131,10 @@ def _tts(a: argparse.Namespace):
 
 
 def build_datasets(a: argparse.Namespace) -> list[Path]:
-    require_space(bench_dir(), DATASETS_EST, "dataset build")
-    tts = _tts(a)
     sets = dataset.QUICK_SETS if a.quick else dataset.DEFAULT_SETS
+    ds_final, tts_cache, ds_transient = estimate.dataset_bytes(sets)
+    require_space(bench_dir(), ds_final + tts_cache + ds_transient, "dataset build")
+    tts = _tts(a)
     out = []
     for s in sets:
         t0 = time.perf_counter()
@@ -205,9 +235,9 @@ def cmd_all(a: argparse.Namespace) -> int:
         transcribe_all(a, dirs, out, res)
     if not a.skip_signals:
         print("▸ Signals")
-        require_space(bench_dir(), SIGNALS_EST, "signals benchmark")
         spec = signals.VideoSpec(seconds=60, width=1280, height=720) if a.quick \
             else signals.VideoSpec()
+        require_space(bench_dir(), estimate.signals_bytes(spec), "signals benchmark")
         res["signals"] = signals.run(spec, bench_dir() / "signals")
         save(out, res)
     finalize(out, res)
@@ -236,7 +266,12 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("plan").set_defaults(func=cmd_plan)
+    pl = sub.add_parser("plan")
+    pl.add_argument("--models", default="tiny,base,small")
+    pl.add_argument("--out")
+    pl.add_argument("--quick", action="store_true")
+    pl.add_argument("--budget-gb", type=float, help="refuse if the estimated peak exceeds this")
+    pl.set_defaults(func=cmd_plan)
     f = sub.add_parser("fetch-models")
     f.add_argument("--models", default="tiny,base")
     f.add_argument("--confirm", action="store_true")
@@ -261,7 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         return a.func(a)
     except InsufficientSpace as e:
         print(f"✗ {e}")
-        return 1
+        return EXIT_NO_SPACE
 
 
 if __name__ == "__main__":

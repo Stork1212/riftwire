@@ -16,40 +16,89 @@ It is **not** part of the RIFTWIRE app: nothing under `backend/` imports it.
   `fetch-models --confirm`, after a free-space check, and each file is verified by size
   (and SHA-256 for the weights). Sizes: tiny 74.4 MB, base 143.7 MB, small 481.3 MB.
   `small` is fetched only if the floor check passes.
-- **Hard 60 GiB free-space floor:** setup, model download, dataset build and the signal
-  benchmark each refuse to run if they would leave less than 60 GiB plus a 1 GiB margin free.
+- **Hard 60 GiB free-space floor:** the plan, setup, model download, dataset build and the
+  signal benchmark each refuse to run if they would leave less than 60 GiB plus a 1 GiB
+  margin free on the volume they write to. A watchdog also enforces the floor live on every
+  volume.
 - **Data:** synthetic and reproducible only. Speech comes from macOS `say`; video comes from
   FFmpeg test sources. No real footage, no network access during runs (`HF_HUB_OFFLINE=1`),
   no Ollama, no LLMs, no paid APIs.
 
 ## Run on the Mac
 
-One command does everything below, with free space measured before setup and every 5 s
-during the run (`free_space.csv`). A watchdog stops the whole run if free space drops below
-60 GiB:
+Run it from a **dedicated, detached worktree** pinned to the reviewed commit, so it can never
+touch work in `~/Claude/riftwire`. The launcher also refuses to start in a tree with
+uncommitted or untracked files, and checks afterwards that HEAD and the tree are unchanged.
 
 ```bash
-bench/run_m0.sh
+cd ~/Claude/riftwire
+git fetch origin
+git worktree add --detach ../riftwire-m0 <PR #5 commit SHA>
+cd ../riftwire-m0
+bench/run_m0.sh            # add RIFTWIRE_BENCH_BUDGET_GB=<approved GB> if the owner raises it
 ```
 
-Or step by step:
+`run_m0.sh` runs these steps; it stops on any failure:
+
+1. `plan` (stdlib only, before anything is installed): a **per-volume peak** estimate. It
+   refuses with exit 10 if any volume would drop below 60 GiB + 1 GiB margin, and with exit 11
+   if the peak exceeds the approved budget (`RIFTWIRE_BENCH_BUDGET_GB`, default **1.9 GB**).
+   If the full plan is refused, it re-plans without `small`.
+2. `setup_bench.sh`: checks the venv volume and pip's temp volume, then installs.
+3. Downloads tiny and base: any failure stops the run.
+4. Downloads small: a **floor refusal (exit 10) is the only tolerated skip**. A network,
+   checksum, HTTP or I/O error stops the run.
+5. Runs the benchmark, then verifies the git tree is unchanged.
+
+Every volume the run writes to is sampled every 5 s: the repo/venv, `RIFTWIRE_DATA_DIR`,
+`TMPDIR` and `HF_HOME` (both redirected inside the data dir), and the results directory.
+Samples go to `free_space.csv`. If any volume drops below 60 GiB, the watchdog stops every
+child process (exit 3). Hugging Face Xet transfers and its chunk cache are disabled, and pip
+runs with `--no-cache-dir`, so no cache is written outside the monitored places.
+
+Exit codes: 0 ok · 1 step failed · 3 floor breach · 4 git safety · 10 floor refusal ·
+11 over budget.
+
+### Storage estimate (exact parameters, conservative)
+
+| Component | Final | Transient | Where |
+|---|---|---|---|
+| bench venv (no torch) | 426 MB | +350 MB pip unpack area | repo volume / `TMPDIR` |
+| whisper tiny / base / small | 74 / 144 / 481 MB | none (same-dir `.incomplete` → rename) | data dir |
+| HF metadata | ≤ 5 MB | none | `HF_HOME` in data dir |
+| speech WAVs (111 min, 16 kHz mono) | 217 MB | +38 MB variant mixing | data dir |
+| TTS clip cache | ≤ 70 MB | none | data dir |
+| 10 min 1080p60 video at 12 Mbit/s + 640 px proxy, ×1.3 margin | 1.34 GB | none (`.tmp` → rename) | data dir |
+| results | ≤ 50 MB | none | `~/Claude/riftwire-env` |
+| **Total with small** | **2.81 GB** | **peak ≈ 3.16 GB** | |
+| **Total without small** | **2.32 GB** | **peak ≈ 2.67 GB** | |
+
+`plan` prints these figures from the actual registry and dataset parameters, minus anything
+already on disk. Use `bench/run.py plan --models ... --budget-gb N`.
+
+Manual step-by-step (same checks, no watchdog):
 
 ```bash
-bench/setup_bench.sh                                     # creates bench/.venv (checks space)
-bench/.venv/bin/python bench/run.py plan                 # exact files/sizes, no network
+bench/.venv/bin/python bench/run.py plan --models tiny,base,small --budget-gb 1.9
+bench/setup_bench.sh
 bench/.venv/bin/python bench/run.py fetch-models --models tiny,base --confirm
-bench/.venv/bin/python bench/run.py fetch-models --models small --confirm   # refuses below floor
+bench/.venv/bin/python bench/run.py fetch-models --models small --confirm   # exit 10 = floor
 bench/.venv/bin/python bench/run.py all --models tiny,base,small
 ```
 
-Results go to `~/Claude/riftwire-env/bench-<UTC>/` as `results.json` (raw) and `results.md`
-(summary, target checks, recommendation). Each transcription runs in a **fresh process**
-under `/usr/bin/time -l`, which records peak memory footprint and maximum RSS.
+Results go to `~/Claude/riftwire-env/bench-<UTC>/` as `results.json` (raw), `results.md`
+(summary, target checks, recommendation), `free_space.csv` and `console.log`. Each
+transcription runs in a **fresh process** under `/usr/bin/time -l`, which records peak
+memory footprint and maximum RSS.
 
 To remove everything afterwards:
-- `bench/run.py clean --confirm` removes the datasets and signal videos.
-- `rm -rf bench/.venv data/models/mlx-community--whisper-*` removes the environment and
-  the models.
+
+```bash
+cd ~/Claude/riftwire && git worktree remove --force ../riftwire-m0
+```
+
+This deletes the worktree, including its venv, models and datasets; results stay in
+`riftwire-env`.
 
 ## What is measured
 
