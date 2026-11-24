@@ -1,0 +1,63 @@
+# Original synthetic commentary corpus for RIFTWIRE benchmarks (written for this project).
+# Plain words only: no numbers, no contractions, no brand or game names, to keep WER scoring
+# unambiguous. One sentence per line. Lines starting with # are ignored.
+no way he just jumped the whole bridge on a motorbike
+the police are right behind us so take the next left
+watch out for that truck it is coming straight at you
+I cannot believe that actually worked on the first try
+okay we need to get to the airport before the timer runs out
+look at the helicopter circling above the harbor
+that was the cleanest landing I have ever seen
+hold on the car is flipping over again
+we lost them in the tunnel let us hide behind the warehouse
+somebody grab the bag before the guards come back
+the rain makes the road really slippery tonight
+why is the boat sinking we only hit one rock
+turn the radio up this song is perfect for the chase
+the alarm went off way too early
+keep driving and do not stop for anything
+he stole my car while I was buying a sandwich
+that jump should be impossible but here we are
+the camera angle on that crash was beautiful
+we have five stars and absolutely no plan
+follow the yellow marker on the map
+the parachute opened just above the rooftop
+everyone in the street started running at the same time
+I think the mission failed because of that bus
+let us try the heist again but quieter this time
+the sunset over the beach looks incredible from up here
+please tell me you remembered to refuel the plane
+the bridge is closed so we have to take the highway
+there is a secret room behind the bookshelf
+the dog followed us all the way to the pier
+we are surrounded so just wait for the signal
+that was the funniest glitch I have seen all week
+grab the wheel I need to fix the engine
+the motorcycle wheelie lasted almost a full minute
+he landed the stunt and then drove straight into the ocean
+the traffic lights all turned green at once
+our getaway driver is asleep in the back seat
+check the roof there might be a sniper
+the train is leaving and we are still on the platform
+nobody saw that coming not even the developers
+the tow truck took my car with me inside it
+we should probably have read the instructions first
+look at the lightning hitting the tower
+quick hide in the dumpster before they turn around
+I just wanted to buy coffee and now there is a chase
+this is the best moment of the entire stream
+the crowd cheered when the race car crossed the line
+we broke every window in the building by accident
+the plane barely cleared the mountain
+the boss is calling and I am not answering
+the van exploded right after we jumped out
+stay low and move along the fence
+that pedestrian dodged three cars in a row
+we found the treasure under the old lighthouse
+the getaway went perfectly until the very last turn
+there are way too many birds on this beach
+the submarine is surfacing next to the cruise ship
+I accidentally drove the tank into the swimming pool
+my character tripped over the curb in slow motion
+everyone stop moving the guard is looking this way
+that was close we almost lost the whole crew
