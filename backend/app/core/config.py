@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     # (owner decision R1); M2 implements no fetcher either way.
     url_acquisition_enabled: bool = False
 
+    clip_whisper_python: Path | None = None
+    clip_whisper_model: Path | None = None
+
     thumbnail_width: int = Field(default=480, ge=16, le=3840)
     thumbnail_height: int = Field(default=270, ge=16, le=2160)
 

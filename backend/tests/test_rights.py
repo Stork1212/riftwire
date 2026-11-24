@@ -648,3 +648,29 @@ def test_api_import_refused_before_any_byte_without_rights(client, w, media_dir,
         assert s.scalar(select(func.count()).select_from(Recording)) == 0
         assert s.scalar(select(func.count()).select_from(Source)) == 0   # dry run rolled back
     assert [p.name for p in settings.temp_dir.iterdir() if not p.name.startswith(".")] == []
+
+
+@requires_ffmpeg
+def test_clip_cut_checks_edit_rights_and_length(w, client, db, settings, media_dir):
+    scope = {**FULL_SCOPE, "max_clip_seconds": 1}
+    licence = w.licence(scope=scope)
+    source_id = w.source(url=None, kind="local", creator_channel_id=w.local)
+    recording = import_file(db, settings, media_dir / "basic.mp4").recording
+    drain(db, settings)
+    path = f"/api/v1/recordings/{recording.id}/clip"
+    params = {"start_ms": 0, "end_ms": 1000}
+    assert client.post(path, params=params).status_code == 403
+
+    with db.session() as session:
+        acquisition.attach_media(session, settings, source_id, recording.id)
+    too_long = client.post(path, params={"start_ms": 0, "end_ms": 1500})
+    assert too_long.status_code == 403
+    assert too_long.json()["error"]["details"]["reason"] == rights.CLIP_TOO_LONG
+    result = client.post(path, params=params)
+    assert result.status_code == 200, result.text
+    assert result.headers["content-type"] == "video/mp4"
+    assert result.content[4:8] == b"ftyp"
+
+    with db.session() as session:
+        rights.revoke(session, licence, "rights withdrawn")
+    assert client.post(path, params=params).status_code == 403

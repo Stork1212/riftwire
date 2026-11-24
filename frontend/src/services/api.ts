@@ -59,6 +59,28 @@ export function qs(params: Record<string, string | number | undefined | null>): 
   return s ? `?${s}` : "";
 }
 
+export interface ClipSuggestion {
+  start_ms: number;
+  end_ms: number;
+  transcript: string;
+}
+
+export function suggestClips(id: string): Promise<{ items: ClipSuggestion[] }> {
+  return request(`/api/v1/recordings/${encodeURIComponent(id)}/clip-suggestions`, { method: "POST" });
+}
+
+export async function downloadClip(id: string, start: number, end: number): Promise<void> {
+  const path = `/api/v1/recordings/${encodeURIComponent(id)}/clip${qs({ start_ms: start, end_ms: end })}`;
+  const response = await fetch(path, { method: "POST" });
+  if (!response.ok) throw parseError(response.status, await response.text());
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `clip-${start}-${end}.mp4`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export interface ListParams {
   limit?: number;
   offset?: number;

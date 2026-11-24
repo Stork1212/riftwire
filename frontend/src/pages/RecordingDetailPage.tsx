@@ -1,4 +1,5 @@
 import { Link, useParams } from "react-router-dom";
+import { RecordingClips } from "../components/RecordingClips";
 import { JobStages } from "../components/JobStages";
 import { ErrorBanner, Loading, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
@@ -37,6 +38,7 @@ export function RecordingDetailPage() {
               </dl>
             </Panel>
           </div>
+          {r.status === "READY" && <RecordingClips key={r.id} recording={r} />}
           <Panel title="Processing" actions={<Link className="btn btn-ghost btn-sm" to={`/queue?recording=${r.id}`}>Queue view</Link>}>
             <JobStages jobs={r.jobs} />
           </Panel>

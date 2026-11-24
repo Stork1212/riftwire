@@ -25,7 +25,7 @@ from app.schemas.api import (
     RecordingDetail,
     RecordingOut,
 )
-from app.services import media, queue, rights_import, system
+from app.services import clips, media, queue, rights_import, system
 from app.services.events import record_event
 from app.services.ingest import UploadSession, complete_upload
 from app.services.storage import safe_join
@@ -204,6 +204,20 @@ async def import_recording(request: Request, db: DB, cfg: CFG,
             acquisition_method, filename)
     return ImportResponse(recording=rec_out(result.recording, source_id=linked),
                           job_id=result.job_id, source_id=linked, source_error=error)
+
+
+@api.post("/recordings/{recording_id}/clip-suggestions", dependencies=[Depends(require_schema)])
+def suggest_clips(recording_id: str, db: DB, cfg: CFG):
+    return {"items": clips.suggest(db, cfg, recording_id)}
+
+
+@api.post("/recordings/{recording_id}/clip", dependencies=[Depends(require_schema)])
+def cut_clip(recording_id: str, start_ms: int, end_ms: int, db: DB, cfg: CFG):
+    result = clips.cut(db, cfg, recording_id, start_ms, end_ms)
+    return Response(result, media_type="video/mp4", headers={
+        "Content-Disposition": f'attachment; filename="clip-{start_ms}-{end_ms}.mp4"',
+        "Cache-Control": "no-store",
+    })
 
 
 @api.get("/recordings/{recording_id}/thumbnail", dependencies=[Depends(require_schema)])
