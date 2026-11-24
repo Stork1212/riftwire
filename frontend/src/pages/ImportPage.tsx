@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { JobStages } from "../components/JobStages";
-import { SourceDownload } from "../components/SourceDownload";
+import { SourceAcquire } from "../components/SourceAcquire";
 import { LinkResolver } from "../components/LinkResolver";
 import { ErrorBanner, PageHeader, Panel, ProgressBar, StatusBadge } from "../components/ui";
 import { ApiError, api, uploadRecording, type UploadHandle } from "../services/api";
@@ -89,7 +89,7 @@ export function ImportPage() {
           ) : (
             <LinkResolver submitLabel="Use this video" onSource={(id) => setUrlSource(id)} />
           )}
-          {urlSource && <SourceDownload key={urlSource} sourceId={urlSource} />}
+          {urlSource && <SourceAcquire key={urlSource} sourceId={urlSource} />}
           <p className="hint">You can also import the creator's original file or your own
             platform export below.</p>
         </Panel>

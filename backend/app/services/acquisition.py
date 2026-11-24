@@ -9,9 +9,10 @@ Two independent checks gate every acquisition:
 2. method permission: those rights list this acquisition method (``url_fetch``
    additionally needs written platform permission on record and the global switch).
 
-M2 implements only the providers fed by the existing upload path (no network). The others
-are declared and refuse cleanly with ``acquisition_unavailable`` until a later, separately
-approved milestone implements them.
+The upload-fed providers are always available. ``url_fetch`` is available only when the
+owner switches URL acquisition on, and only RIFTWIRE's own fetcher
+(``services/url_download``) may record it: an uploaded file can never be labelled as
+fetched. The others are declared and refuse cleanly with ``acquisition_unavailable``.
 """
 
 from __future__ import annotations
@@ -54,8 +55,8 @@ PROVIDERS: dict[str, AcquisitionProvider] = {p.method: p for p in (
     AcquisitionProvider(AcquisitionMethod.WATCH_FOLDER.value, False,
                         "Watch-folder automation (not implemented in M2)."),
     AcquisitionProvider(AcquisitionMethod.URL_FETCH.value, False,
-                        "Generic URL fetching (needs written platform permission; off; not "
-                        "implemented in M2)."),
+                        "RIFTWIRE fetches a saved video link itself (needs written platform "
+                        "permission on the licence and URL acquisition switched on)."),
 )}
 
 
@@ -66,11 +67,25 @@ def provider(method: str) -> AcquisitionProvider:
     return p
 
 
-def check_acquire(s: Session, settings: Settings, source_id: str,
-                  method: str) -> rights.Decision:
-    """Both checks, before a single byte is accepted. Raises on refusal."""
+def is_available(method: str, settings: Settings) -> bool:
     p = provider(method)
-    if not p.available:
+    if method == AcquisitionMethod.URL_FETCH.value:
+        return settings.url_acquisition_enabled
+    return p.available
+
+
+def check_acquire(s: Session, settings: Settings, source_id: str,
+                  method: str, *, fetched: bool = False) -> rights.Decision:
+    """Both checks, before a single byte is accepted. Raises on refusal.
+    ``fetched``: the caller is RIFTWIRE's own URL fetcher (the only one allowed to claim
+    ``url_fetch``)."""
+    p = provider(method)
+    if method == AcquisitionMethod.URL_FETCH.value and not fetched:
+        raise ValidationFailed("Media obtained by URL fetching can only be recorded by "
+                               "RIFTWIRE's own acquisition (Acquire footage on the source's "
+                               "page), not by an upload.", code="url_fetch_reserved",
+                               details={"method": method})
+    if not is_available(method, settings):
         raise AcquisitionUnavailable(f"Acquisition method '{method}' is not available: "
                                      f"{p.description}", details={"method": method})
     return rights.require(s, source_id, "acquire", method=method,
@@ -78,7 +93,8 @@ def check_acquire(s: Session, settings: Settings, source_id: str,
 
 
 def attach_media(s: Session, settings: Settings, source_id: str, recording_id: str,
-                 method: str | None = None, *, actor: str = "owner") -> rights.Decision:
+                 method: str | None = None, *, actor: str = "owner",
+                 fetched: bool = False) -> rights.Decision:
     """Link an imported recording to its source after re-checking both permissions.
     Idempotent for the same source; never moves media to a different source."""
     src = s.get(Source, source_id)
@@ -88,7 +104,7 @@ def attach_media(s: Session, settings: Settings, source_id: str, recording_id: s
     if rec is None:
         raise NotFoundError("Recording not found")
     m = method or src.acquisition_method
-    d = check_acquire(s, settings, source_id, m)
+    d = check_acquire(s, settings, source_id, m, fetched=fetched)
     if rec.source_id == source_id:
         if rec.acquisition_method is None and method is not None:
             # Linked media whose method was never recorded (pre-0005 data without a

@@ -74,10 +74,6 @@ export async function downloadClip(id: string, start: number, end: number, subti
   return downloadMp4(path, `clip-${start}-${end}${subtitles ? "-captioned" : ""}.mp4`);
 }
 
-export function downloadSource(id: string): Promise<void> {
-  return downloadMp4(`/api/v1/sources/${encodeURIComponent(id)}/download`, "source-video.mp4");
-}
-
 async function downloadMp4(path: string, filename: string): Promise<void> {
   let response: Response;
   try {

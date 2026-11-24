@@ -18,7 +18,7 @@ vi.mock("../services/rightsApi", () => ({
     "updateBrandChannel", "listCreators", "createCreator", "updateCreator", "addChannel",
     "creatorRights", "createRights", "supersedeRights", "revokeRights", "addEvidenceNote",
     "addEvidenceFile", "acquisitionMethods", "resolve", "listSources", "createSource", "getSource",
-    "updateSource", "setAssignments", "attachRecording", "rightsCheck", "provenance",
+    "updateSource", "setAssignments", "attachRecording", "acquireSource", "rightsCheck", "provenance",
   ].map((k) => [k, vi.fn()])),
 }));
 
@@ -340,13 +340,19 @@ describe("Games & channels", () => {
 });
 
 describe("Import and navigation", () => {
-  it("offers local import and shows download refusals for saved video links", async () => {
+  it("acquires a saved link as a linked recording and explains refusals", async () => {
     r.resolve.mockResolvedValue({
       platform: "twitch", media: "vod", video_id: "1", canonical_url: "https://www.twitch.tv/videos/1",
       start_ms: null, channel_login: null, existing_source: source(),
       match: { status: "matched", matcher: "existing_source", reason: "", creator_channel_id: "ch-1", candidates: [] },
       channel: null, creator_name: null, covered: true, covering_record_ids: [],
     });
+    r.acquireSource
+      .mockRejectedValueOnce(new ApiError(403, "rights_refused", "Written platform permission is required.",
+        { reason: "platform_permission_missing" }))
+      .mockResolvedValueOnce({ recording: { ...recording({ id: "rec-9", original_filename: "twitch-1.mp4" }),
+        source_id: source().id, acquisition_method: "url_fetch" },
+        source_id: source().id, job_id: "job-1", already_acquired: false });
     renderAt("/import");
     expect(screen.getByRole("tab", { name: "Local file" })).toHaveAttribute("aria-selected", "true");
     await userEvent.click(screen.getByRole("tab", { name: "Video URL" }));
@@ -354,16 +360,15 @@ describe("Import and navigation", () => {
     await userEvent.click(screen.getByRole("button", { name: "Check link" }));
     await userEvent.click(await screen.findByRole("button", { name: "Already a source: use it" }));
     expect(screen.getByLabelText("How this file was obtained")).toBeInTheDocument();
-    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({
-      error: { code: "rights_refused", message: "Written platform permission is required." },
-    }), { status: 403 }));
-    try {
-      await userEvent.click(screen.getByRole("button", { name: "Download MP4" }));
-      expect(await screen.findByRole("alert")).toHaveTextContent("Written platform permission is required.");
-      expect(fetch).toHaveBeenCalledWith(`/api/v1/sources/${source().id}/download`, { method: "POST" });
-    } finally {
-      fetch.mockRestore();
-    }
+    const acquire = screen.getAllByRole("button", { name: "Acquire footage" })[0] as HTMLElement;
+    await userEvent.click(acquire);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Written platform permission is required.");
+    expect(r.acquireSource).toHaveBeenCalledWith(source().id);
+    await userEvent.click(acquire);
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("Acquired and linked: twitch-1.mp4");
+    expect(within(status).getByRole("link", { name: "twitch-1.mp4" })).toHaveAttribute("href", "/recordings/rec-9");
+    expect(acquire).toBeDisabled();
   });
 
   it("groups navigation into Workspace, Management and System", () => {

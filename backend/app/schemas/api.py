@@ -82,6 +82,14 @@ class EventOut(BaseModel):
     related_recording_id: str | None
 
 
+class AcquireOut(BaseModel):
+    """A saved link fetched by RIFTWIRE and imported as a linked recording."""
+    recording: RecordingOut
+    source_id: str
+    job_id: str | None = None          # INGEST job; None when it was already acquired
+    already_acquired: bool = False
+
+
 class ImportResponse(BaseModel):
     recording: RecordingOut
     job_id: str

@@ -107,6 +107,14 @@ export interface Decision {
   action: string | null;
 }
 
+/** POST /sources/{id}/acquire: the saved link fetched and imported as a linked recording. */
+export interface Acquired {
+  recording: Recording;
+  source_id: string;
+  job_id: string | null;
+  already_acquired: boolean;
+}
+
 export interface Source {
   id: string;
   kind: "local" | "youtube" | "twitch";
