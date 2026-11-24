@@ -89,11 +89,18 @@ then read tokens) before commit.
 | Where | Commit | Result |
 |---|---|---|
 | Owner's Mac (macOS 26.5.2, M3 Pro, FFmpeg 9.1), internal disk, **60 GiB floor** | `9fc026f` | `scripts/test.sh`: backend 208 + 2 skipped (2nd-filesystem tests), bench 47 + 1 skip, frontend 17, build. **Acceptance 22/22.** Smoke 30/30 (`29f612e`). Evidence: `docs/acceptance/2026-11-24-macos-m1-9fc026f-*` |
-| Cloud container (Linux), after this review | this commit | Backend **221** passed (incl. 50 storage tests; a real second filesystem `/dev/shm` for cross-volume), frontend 17, build, acceptance **22/22**, smoke 28 + 1 macOS-only skip |
+| **Owner's Mac, reviewed code** (macOS 26.5.2, M3 Pro, Python 3.13.2, FFmpeg 9.1, APFS internal disk), **60 GiB floor** | **`4703e22`** | Pinned run (HEAD verified, clean tree before and after, `pipefail`, per-stage exit codes all **0**): ruff clean; backend **218 passed, 3 skipped** (the three 2nd-filesystem tests; no second filesystem on the Mac), 1 warning; bench **47 passed, 1 skipped**; frontend lint/typecheck clean, **17/17**; build OK; **acceptance 22/22** (incl. M1–M3, VideoToolbox detected); **smoke 30 PASS, 0 FAIL, 0 SKIP**. Free space 69.80 GiB before and after. Evidence: `docs/acceptance/2026-11-24-macos-m1-4703e22/` |
+| Cloud container (Linux), after this review | `4703e22` | Backend **221** passed (incl. 50 storage tests; a real second filesystem `/dev/shm` for cross-volume), frontend 17, build, acceptance **22/22**, smoke 28 + 1 macOS-only skip |
 
-The review fixes (§2, rows 1–11) are verified in the container. They are **not yet
-re-run on the Mac**. A Mac re-run of `scripts/test.sh` and acceptance is recommended before
-merge.
+The review fixes (§2, rows 1–11) are verified on the Mac and in the container. The three
+cross-drive tests that skip on the Mac (thumbnails with external temp, cross-volume transfer
+and migration paths) ran and passed in the container on a real second filesystem; on real
+hardware they are covered by the SSD gate (§5).
+
+**Warnings (Mac run):** one, third-party: Starlette's `StarletteDeprecationWarning` about
+`httpx` in `starlette.testclient` (test client only, no runtime effect). Not acted on: changing
+the test HTTP client would be a new dependency, which needs approval. No warnings in acceptance
+or smoke.
 
 ## 5. Open gate: physical-SSD acceptance (unchanged)
 

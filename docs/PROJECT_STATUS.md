@@ -256,8 +256,12 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
     - a drive unplugged mid-migration could have its folders recreated on the internal
       disk.
     Documentation inconsistencies were corrected as well.
+  - **Mac verification of the reviewed commit `4703e22`** (2026-11-24, pinned script): all
+    stages exit 0. Backend 218 passed + 3 skipped (2nd-filesystem), bench 47 + 1 skip,
+    frontend 17, build, acceptance 22/22 at the 60 GiB floor, smoke 30/30. Evidence:
+    `docs/acceptance/2026-11-24-macos-m1-4703e22/`.
+  - **Next:** independent review of PR #9, then merge (owner). M2 starts after that.
   - **Not yet verified:**
-    - Mac re-run of the review fixes (recommended before merge);
     - every physical-SSD check (checklist §11).
 
 ## Blockers
