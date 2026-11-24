@@ -46,7 +46,7 @@ still to be written. The launcher's git checks apply the same way.
 
 1. `plan` (stdlib only, before anything is installed): a **per-volume peak** estimate. It
    refuses with exit 10 if any volume would drop below 60 GiB + 1 GiB margin, and with exit 11
-   if the peak exceeds the approved budget (`RIFTWIRE_BENCH_BUDGET_GB`, default **1.9 GB**).
+   if what is already on disk plus the peak exceeds the approved budget (`RIFTWIRE_BENCH_BUDGET_GB`, default **3.5 GB**, owner-approved 2026-11-24).
    If the full plan is refused, it re-plans without `small`.
 2. `setup_bench.sh`: checks the venv volume and pip's temp volume, then installs.
 3. Downloads tiny and base: any failure stops the run.
@@ -91,7 +91,7 @@ already on disk. Use `bench/run.py plan --models ... --budget-gb N`.
 Manual step-by-step (same checks, no watchdog):
 
 ```bash
-bench/.venv/bin/python bench/run.py plan --models tiny,base,small --budget-gb 1.9
+bench/.venv/bin/python bench/run.py plan --models tiny,base,small --budget-gb 3.5
 bench/setup_bench.sh
 bench/.venv/bin/python bench/run.py fetch-models --models tiny,base --confirm
 bench/.venv/bin/python bench/run.py fetch-models --models small --confirm   # exit 10 = floor

@@ -97,3 +97,12 @@ def test_resume_signals_keeps_earlier_transcription(tmp_path, monkeypatch):
     assert len(res["transcription"]) == 1 and res["signals"]["scene_cuts"]["truth"] > 0
     assert res["resumed"] and "base" in res["evaluation"]
     assert run.main(["all", "--resume", "--out", str(out)]) == 2  # would duplicate runs
+
+
+def test_budget_counts_what_is_already_on_disk(capsys, monkeypatch):
+    du = namedtuple("du", "total used free")
+    monkeypatch.setattr(config.shutil, "disk_usage", lambda p: du(0, 0, 500 * config.GIB))
+    monkeypatch.setattr(run.estimate, "existing_usage", lambda: 3_000_000_000)
+    assert run.main(["plan", "--models", "tiny", "--budget-gb", "4"]) == run.EXIT_OVER_BUDGET
+    assert "on disk 3.00 GB" in capsys.readouterr().out
+    assert run.main(["plan", "--models", "tiny", "--budget-gb", "8"]) == 0

@@ -97,9 +97,13 @@ def cmd_plan(a: argparse.Namespace) -> int:
           f"{total_peak / 1e9:.2f} GB (already on disk: {estimate.existing_usage() / 1e9:.2f} GB)")
     if not all_ok:
         return EXIT_NO_SPACE
-    if a.budget_gb is not None and total_peak > a.budget_gb * 1e9:
-        print(f"REFUSED: estimated peak {total_peak / 1e9:.2f} GB exceeds the approved budget "
-              f"of {a.budget_gb:.2f} GB.")
+    # The approved budget covers the benchmark's TOTAL footprint: what earlier runs already
+    # left on disk (venv, models, datasets, videos) plus this run's peak.
+    total_with_existing = estimate.existing_usage() + total_peak
+    if a.budget_gb is not None and total_with_existing > a.budget_gb * 1e9:
+        print(f"REFUSED: on disk {estimate.existing_usage() / 1e9:.2f} GB + this run's peak "
+              f"{total_peak / 1e9:.2f} GB = {total_with_existing / 1e9:.2f} GB exceeds the "
+              f"approved budget of {a.budget_gb:.2f} GB.")
         return EXIT_OVER_BUDGET
     return 0
 

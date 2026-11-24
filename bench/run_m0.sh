@@ -12,8 +12,8 @@
 #   stopped.
 # * The run refuses to start in a git tree with uncommitted or untracked (non-ignored) changes,
 #   and checks after the run that HEAD and the tree are unchanged. Use a dedicated worktree.
-# * The estimated PEAK disk use must be ≤ RIFTWIRE_BENCH_BUDGET_GB (default 1.9, the approved
-#   figure). The run refuses otherwise.
+# * Total footprint (on disk + this run's PEAK) must be ≤ RIFTWIRE_BENCH_BUDGET_GB (default 3.5,
+#   owner-approved 2026-11-24); the floor checks are unchanged. The run refuses otherwise.
 #
 # Resume only the signals step of an earlier run (same safety checks, no downloads):
 #   bench/run_m0.sh --signals-only ~/Claude/riftwire-env/bench-<UTC>
@@ -31,7 +31,7 @@ ROOT="$(pwd -P)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="${SIGNALS_ONLY:-${RIFTWIRE_BENCH_OUT:-$ROOT/../riftwire-env/bench-$STAMP}}"
 mkdir -p "$OUT" && OUT="$(cd "$OUT" && pwd -P)"
-BUDGET_GB="${RIFTWIRE_BENCH_BUDGET_GB:-1.9}"
+BUDGET_GB="${RIFTWIRE_BENCH_BUDGET_GB:-3.5}"   # owner-approved 2026-11-24
 FLOOR_GIB=60
 # The floor can only be raised (e.g. to test the watchdog), never lowered.
 [ "${RIFTWIRE_BENCH_FLOOR_GIB:-60}" -gt 60 ] 2>/dev/null && FLOOR_GIB=$RIFTWIRE_BENCH_FLOOR_GIB
