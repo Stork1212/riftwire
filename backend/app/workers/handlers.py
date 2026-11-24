@@ -99,8 +99,8 @@ def _load_recording(ctx: JobContext) -> Recording:
 def handle_ingest(ctx: JobContext) -> None:
     rec = _load_recording(ctx)
     try:
-        outcome = finalize_recording(ctx.settings, rec, progress=ctx.progress,
-                                     should_stop=ctx.should_stop)
+        outcome = finalize_recording(ctx.settings, rec, attempt_token=ctx.claimed.token,
+                                     progress=ctx.progress, should_stop=ctx.should_stop)
     except FinalizeError as e:
         if e.permanent:
             raise PermanentJobError(str(e)) from e

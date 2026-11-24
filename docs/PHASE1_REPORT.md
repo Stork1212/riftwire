@@ -27,6 +27,28 @@ The same checks also pass in the Linux dev container (FFmpeg 6.1) and from a fre
 dashboard test. It was fixed in the test file only (no application code changed); the full
 suite was re-run in the dev container with 148 + 13 passed and a clean build.
 
+### Review round 1 — fixes for PR #1 findings (2026-11-24)
+
+The independent review (static inspection at `6d16b85`) found two crash-safety edge cases.
+Both are fixed, covered by deterministic regression tests, and three related issues found
+during a follow-up audit were fixed too:
+
+| # | Finding | Fix | Regression tests |
+|---|---|---|---|
+| 1 | `recover_stuck_jobs` could kill a live owner's FFmpeg and take over its job if the owner renewed between scan and recovery (the final check compared only the token, which renewal doesn't change) | **Fence → terminate → transition.** Eligibility is re-checked and the token replaced atomically *before* any kill; the PID is read in the same transaction; `kill_failed` keeps the job fenced; transition is a CAS on the recovery token | 6 in `test_queue.py`: renewal between scan and recovery (old code fails: owner killed and taken over), owner fenced before the kill (old code fails: owner could still renew), unkillable child, recoverer crash mid-recovery, two concurrent recoverers (exactly one kill), late scan with live lease |
+| 2 | Copy fallback wrote directly to the final path; an interrupted copy left a partial file that made the retry fail permanently | **Crash-safe staged copy:** attempt-unique `recordings/.staging/<rec>.<token>.partial` → fsync → SHA-256 verify → no-overwrite promote (`flock` + existence check + atomic rename) → unlink the temp source. Stale staging files are removed by token | 9 in `test_ingest.py` + 3 real-process hard-crash tests (`finalize_copy_midway`, `finalize_copy_verified`, `finalize_after_promote`) |
+| A | Attempt-scoped temp outputs were swept by **age** (1 h), so a long-running active attempt could lose its file | Swept by **lease token** (only if no RUNNING job holds it) | `test_job_temp_outputs_cleaned_by_token_not_age` |
+| B | The reconciler could read tokens before listing files, so a just-claimed attempt's file could look stale | Files are listed first, then tokens are read | `test_reconcile_lists_files_before_reading_tokens` |
+| C | Startup ran the reconciler before recovery, so dead attempts' files survived until the next restart; `kill_orphan_if_matches` reported "killed" even if the process survived | Recovery runs before the reconciler; new `kill_failed` result | covered by the crash tests above |
+
+Verification after the fixes (dev container, Python 3.13, FFmpeg 6.1):
+- ruff clean; **166 passed** pytest (148 + 18 new), also 166 on Python 3.11;
+- the 18 new tests repeated 25× with no flakes;
+- **13 passed** Vitest; ESLint and tsc clean; production build OK;
+- acceptance **19/19** (`--min-free-gib 1`).
+
+macOS re-run at the 60 GiB floor: see the "macOS re-run after review fixes" section below.
+
 ### Re-verification from a fresh GitHub clone (2026-11-23, 23:40 UTC)
 
 To rule out anything that existed only in the working copy, branch `phase1/foundation` at
@@ -158,7 +180,7 @@ Still not verified:
 | Dashboard in a real browser **on the Mac** | Browser check was done with headless Chrome in the dev container | Open the dashboard, import a small synthetic clip |
 | `RIFTWIRE_CAFFEINATE=1` | macOS-only, not exercised | `RIFTWIRE_CAFFEINATE=1 scripts/start.sh` |
 | Recordings larger than ~120 MB on the Mac; multi-GB files | Owner instruction to use small synthetic files; ~9 GiB headroom | Streaming is memory-bounded by test; test multi-GB once an external SSD exists |
-| Hard-link fallback copy path | APFS supports hard links | Code reviewed; not exercised |
+| Copy fallback on a real filesystem **without** hard links (e.g. exFAT) | APFS supports hard links; the fallback is exercised by forcing it (test setting / `EPERM` injection) on APFS and ext4 | Recommended: keep RIFTWIRE data on APFS (as planned) |
 
 ## 7. Known issues
 

@@ -1,0 +1,144 @@
+{
+  "passed": 19,
+  "failed": 0,
+  "total": 19,
+  "platform": "Linux-6.18.44-fc-v819-x86_64-with-glibc2.39",
+  "python": "3.13.18",
+  "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "min_free_gib": 1.0,
+  "results": [
+    {
+      "step": "1",
+      "title": "Start the backend",
+      "result": "PASS",
+      "note": "API healthy",
+      "seconds": 1.07
+    },
+    {
+      "step": "2",
+      "title": "Start the worker",
+      "result": "PASS",
+      "note": "worker process running",
+      "seconds": 1.0
+    },
+    {
+      "step": "3",
+      "title": "Backend ready and worker reporting heartbeats",
+      "result": "PASS",
+      "note": "ready; ffmpeg: ffmpeg version 6.1.1-3ubuntu5; videotoolbox=False",
+      "seconds": 0.19
+    },
+    {
+      "step": "4",
+      "title": "Open the local dashboard (served by the API)",
+      "result": "PASS",
+      "note": "dashboard + 1 asset(s) served",
+      "seconds": 0.05
+    },
+    {
+      "step": "5",
+      "title": "Import a valid test video",
+      "result": "PASS",
+      "note": "HTTP 201, recording eab18707\u2026, 8660257 bytes",
+      "seconds": 0.59
+    },
+    {
+      "step": "6",
+      "title": "Observe import + processing progress",
+      "result": "PASS",
+      "note": "upload streamed in 34 chunks; processing states observed: ['COMPLETED', 'PENDING', 'RUNNING']",
+      "seconds": 0.66
+    },
+    {
+      "step": "7",
+      "title": "Recording is stored",
+      "result": "PASS",
+      "note": "recordings/eab18707-100d-44ae-bf57-2a241d8fd66e.mp4 (SHA-256 verified, read-only)",
+      "seconds": 0.02
+    },
+    {
+      "step": "8",
+      "title": "Metadata extracted correctly (vs. independent ffprobe)",
+      "result": "PASS",
+      "note": "1920x1080 @ 30000/1001, 12012 ms, h264/aac",
+      "seconds": 0.06
+    },
+    {
+      "step": "9",
+      "title": "Thumbnail generated",
+      "result": "PASS",
+      "note": "480x270 JPEG (16:9 preserved)",
+      "seconds": 0.07
+    },
+    {
+      "step": "10",
+      "title": "Recording appears in the dashboard API",
+      "result": "PASS",
+      "note": "1 recording(s) listed",
+      "seconds": 0.04
+    },
+    {
+      "step": "11",
+      "title": "Processing jobs reach COMPLETED",
+      "result": "PASS",
+      "note": "INGEST=COMPLETED, METADATA=COMPLETED, THUMBNAIL=COMPLETED",
+      "seconds": 0.0
+    },
+    {
+      "step": "12",
+      "title": "Restart the application and worker",
+      "result": "PASS",
+      "note": "API and worker restarted (SIGTERM \u2192 start)",
+      "seconds": 2.26
+    },
+    {
+      "step": "13",
+      "title": "Recordings and job history persist",
+      "result": "PASS",
+      "note": "recording + 3 completed jobs persisted",
+      "seconds": 0.06
+    },
+    {
+      "step": "14-15",
+      "title": "Import the same video again \u2192 duplicate detected",
+      "result": "PASS",
+      "note": "HTTP 409 \u2014 This recording was already imported as 'GTA synthetic heist.mp4'.",
+      "seconds": 0.08
+    },
+    {
+      "step": "16-17",
+      "title": "Import an invalid file \u2192 safe rejection, clear error",
+      "result": "PASS",
+      "note": "422 \u2014 Invalid or unsupported media: ffprobe could not read the file: <input>\u2026; .txt \u2192 415",
+      "seconds": 0.13
+    },
+    {
+      "step": "X1",
+      "title": "Interrupted upload is cleaned up safely",
+      "result": "PASS",
+      "note": "client disconnected at 33% \u2192 partial file removed, event logged",
+      "seconds": 0.75
+    },
+    {
+      "step": "X2",
+      "title": "Interrupted processing job recovers (crash + orphan FFmpeg)",
+      "result": "PASS",
+      "note": "worker SIGKILLed mid-THUMBNAIL; orphan FFmpeg killed on restart; job completed on attempt 2; WEBM without audio handled",
+      "seconds": 6.55
+    },
+    {
+      "step": "X3",
+      "title": "Import refused when free space would drop below the floor",
+      "result": "PASS",
+      "note": "HTTP 507 \u2014 Not enough free disk space: importing this file would leave less than the 931322",
+      "seconds": 2.23
+    },
+    {
+      "step": "X4",
+      "title": "Structured logs written",
+      "result": "PASS",
+      "note": "api.log and worker.log are structured JSON",
+      "seconds": 0.0
+    }
+  ]
+}

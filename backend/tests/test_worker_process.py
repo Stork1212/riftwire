@@ -132,6 +132,32 @@ def test_hard_crash_during_finalize_recovers(db, settings, media_dir, point):
         assert ingest.attempt_count == 2  # crashed attempt + recovered attempt
 
 
+@pytest.mark.parametrize("point", ["finalize_copy_midway", "finalize_copy_verified",
+                                   "finalize_after_promote"])
+def test_hard_crash_during_copy_fallback_recovers(db, settings, media_dir, point):
+    """Review finding 2: filesystems without hard links use a staged copy. A hard crash at
+    any point must never leave a partial file at the final path and must recover."""
+    res = import_file(db, settings, media_dir / "basic.mp4")
+    rid, digest = res.recording.id, res.recording.sha256
+    crashed = start_worker(RIFTWIRE_TEST_FORCE_COPY_FALLBACK=1, RIFTWIRE_TEST_CRASH_AT=point)
+    assert crashed.wait(60) == 137
+    final = settings.recordings_dir / f"{rid}.mp4"
+    if final.exists():  # only possible once promoted, and then it must be complete
+        assert point == "finalize_after_promote" and sha(final) == digest
+    w = start_worker(RIFTWIRE_TEST_FORCE_COPY_FALLBACK=1)
+    try:
+        wait_for(lambda: all_done(db, rid))
+    finally:
+        stop(w)
+    files = sorted(p.name for p in settings.recordings_dir.iterdir() if p.is_file())
+    assert files == [f"{rid}.mp4"] and sha(final) == digest
+    staging = settings.recordings_dir / ".staging"
+    leftovers = [p.name for p in staging.iterdir()] if staging.is_dir() else []
+    assert not [n for n in leftovers if n.endswith(".partial")], leftovers
+    assert [p.name for p in settings.temp_dir.iterdir()] == []
+    assert rec_status(db, rid) == ("READY", "READY")
+
+
 def test_crash_between_stage_and_commit_leaves_only_temp(db, settings, media_dir):
     """API process dies after validating/staging but before the DB insert."""
     code = (

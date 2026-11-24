@@ -15,7 +15,7 @@ Runs: Ruff → pytest → ESLint + `tsc --noEmit` → Vitest → `vite build`.
 
 ```bash
 cd backend
-.venv/bin/pytest -q                       # full suite (~35 s)
+.venv/bin/pytest -q                       # full suite: 166 tests (~45 s)
 .venv/bin/pytest tests/test_worker_process.py -v   # real-process crash tests
 .venv/bin/ruff check .
 ```
@@ -26,7 +26,9 @@ cd backend
 | `test_storage_and_db.py` | 60 GiB default floor, configurable data dir, filename sanitizing, path-traversal guard, disk reservations, Alembic upgrade/downgrade, unmigrated DB detection, FK/WAL/busy_timeout pragmas, UTC timestamps, constraints |
 | `test_ingest.py` | full pipeline, all formats, content-decided extension, duplicate, invalid media, unsupported type, size limit, insufficient disk (up-front and mid-stream), incomplete/interrupted uploads, path-traversal names, **64 MiB stream with < 8 MiB peak memory**, crash-matrix states (link-before-unlink, unlink-before-DB, both files missing, existing final file never overwritten, corrupted staged file), reconciler behaviour |
 | `test_queue.py` | state-transition table, backoff, idempotent enqueue, CAS claiming, **8 concurrent claimers × 40 jobs → each exactly once**, retry limits, permanent errors, thumbnail-only failure, manual retry, **zombie attempt fenced out**, lease renewal, orphan killed *before* recovery, foreign-worker recovery, release |
-| `test_worker_process.py` | real worker processes: pipeline + graceful stop, second worker refused (exit 3), unmigrated DB refused (exit 2), jobs survive restart, **hard crash (`os._exit`) at each finalize crash point → recovered, one file, correct hash**, crash between stage and DB commit, **SIGKILL worker → orphaned FFmpeg killed before retry**, PID-reuse guard, graceful shutdown releases the running job |
+| `test_queue.py` (review finding 1) | renewal between scan and recovery → no kill and no takeover; owner fenced out before its child is killed; unkillable child keeps the job fenced; recoverer crash between fence and transition; two concurrent recoverers → exactly one kill; late scan with a live lease |
+| `test_ingest.py` (review finding 2) | forced and real-`errno` copy fallback; interrupted copy never exposes a partial final file and recovers; crash after promote; promote never overwrites and is lock-serialized; reconciler keeps active-token staging files, lists files before reading tokens, and cleans attempt temp outputs by token |
+| `test_worker_process.py` | real worker processes: pipeline + graceful stop, second worker refused (exit 3), unmigrated DB refused (exit 2), jobs survive restart, **hard crash (`os._exit`) at each finalize crash point → recovered, one file, correct hash**, crash between stage and DB commit, **SIGKILL worker → orphaned FFmpeg killed before retry**, **hard crash at `finalize_copy_midway` / `finalize_copy_verified` / `finalize_after_promote` with the copy fallback → recovered**, PID-reuse guard, graceful shutdown releases the running job |
 | `test_api.py` | liveness vs. readiness (unmigrated DB, missing FFmpeg), import flow, 409/413/415/422/507 errors, no server paths in error messages, pagination + validation, search, jobs, retry endpoint, 404s, events, system status, restricted CORS |
 
 ### Test-only hooks
@@ -34,7 +36,9 @@ cd backend
 Only active when `RIFTWIRE_ENV=test`:
 
 - `RIFTWIRE_TEST_CRASH_AT=<point>` — hard-exit (`os._exit(137)`) at `after_stage_rename`,
-  `after_intent_commit`, `finalize_before_link`, `finalize_after_link`, `finalize_after_unlink`.
+  `after_intent_commit`, `finalize_before_link`, `finalize_after_link`, `finalize_after_unlink`,
+  `finalize_copy_midway`, `finalize_copy_verified`, `finalize_after_promote`.
+- `RIFTWIRE_TEST_FORCE_COPY_FALLBACK=1` — INGEST uses the no-hard-link copy path.
 - `RIFTWIRE_TEST_SLOW_FFMPEG_SECONDS=N` — THUMBNAIL jobs first run a real-time FFmpeg child of N
   seconds (to test orphan handling).
 

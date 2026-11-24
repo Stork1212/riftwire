@@ -260,3 +260,129 @@ def test_release_returns_job_immediately(db):
     queue.release(db, c, "shutdown")
     assert job(db, jid).status == "RETRY_WAIT"
     assert claim(db).id == jid
+
+
+# ------------------------------------------------------------------ review finding 1:
+# lease renewal racing with recovery (PR #1 review). All deterministic via hooks.
+
+FUTURE = timedelta(seconds=10)
+
+
+def _running_with_child(db, max_attempts=3, lease=1):
+    jid = make_job(db, max_attempts=max_attempts)
+    c = claim(db, "owner", lease=lease)
+    queue.set_process(db, jid, c.token, 424242, "Mon Nov 23 10:00:00 2026")
+    return jid, c
+
+
+def test_renewal_between_scan_and_recovery_prevents_kill_and_takeover(db):
+    jid, c = _running_with_child(db)
+    kills = []
+
+    def owner_renews(ids):  # runs after the scan, before any destructive step
+        assert ids == [jid]
+        assert queue.renew_lease(db, jid, c.token, 3600)
+
+    rec = queue.recover_stuck_jobs(db, kill_orphan=lambda p, s: kills.append(p) or "killed",
+                                   backoff_base=0, backoff_cap=0, now=utcnow() + FUTURE,
+                                   on_candidates=owner_renews)
+    assert rec == [] and kills == []          # nothing killed, nothing recovered
+    j = job(db, jid)
+    assert j.status == "RUNNING" and j.lease_token == c.token and j.process_pid == 424242
+    queue.complete(db, c)                     # the live owner still owns the job
+    assert job(db, jid).status == "COMPLETED"
+
+
+def test_owner_is_fenced_out_before_its_child_is_killed(db):
+    jid, c = _running_with_child(db)
+    seen = {}
+
+    def kill(pid, started):
+        # At kill time the owner must already be unable to renew or write.
+        seen["renew"] = queue.renew_lease(db, jid, c.token, 3600)
+        try:
+            queue.set_progress(db, jid, c.token, 50)
+            seen["write"] = "allowed"
+        except queue.LeaseLost:
+            seen["write"] = "fenced"
+        seen["pid"] = (pid, started)
+        return "killed"
+
+    rec = queue.recover_stuck_jobs(db, kill_orphan=kill, backoff_base=0, backoff_cap=0,
+                                   now=utcnow() + FUTURE)
+    assert seen == {"renew": False, "write": "fenced",
+                    "pid": (424242, "Mon Nov 23 10:00:00 2026")}
+    assert rec[0].new_status == JobStatus.RETRY_WAIT
+    with pytest.raises(queue.LeaseLost):
+        queue.complete(db, c)
+
+
+def test_unkillable_child_keeps_job_fenced_until_a_later_pass(db):
+    jid, c = _running_with_child(db)
+    first = queue.recover_stuck_jobs(db, kill_orphan=lambda p, s: "kill_failed",
+                                     backoff_base=0, backoff_cap=0, now=utcnow() + FUTURE)
+    assert first == []
+    j = job(db, jid)
+    assert j.status == "RUNNING" and j.lease_token.startswith(queue.RECOVERY_TOKEN_PREFIX)
+    assert not queue.renew_lease(db, jid, c.token, 60)  # old owner stays fenced out
+    assert claim(db) is None                             # and nobody else can claim it
+    # Before the recovery fence expires, another pass leaves it alone.
+    assert queue.recover_stuck_jobs(db, kill_orphan=lambda p, s: "killed", backoff_base=0,
+                                    backoff_cap=0, now=utcnow() + FUTURE) == []
+    later = utcnow() + timedelta(seconds=queue.RECOVERY_FENCE_SECONDS + 60)
+    second = queue.recover_stuck_jobs(db, kill_orphan=lambda p, s: "not_running",
+                                      backoff_base=0, backoff_cap=0, now=later)
+    assert [r.job_id for r in second] == [jid]
+    assert job(db, jid).status == "RETRY_WAIT"
+
+
+def test_recoverer_crash_between_fence_and_transition_is_recoverable(db):
+    jid, c = _running_with_child(db)
+
+    def crash(pid, started):
+        raise RuntimeError("recoverer died here")
+
+    assert queue.recover_stuck_jobs(db, kill_orphan=crash, backoff_base=0, backoff_cap=0,
+                                    now=utcnow() + FUTURE) == []
+    assert job(db, jid).status == "RUNNING"
+    later = utcnow() + timedelta(seconds=queue.RECOVERY_FENCE_SECONDS + 60)
+    rec = queue.recover_stuck_jobs(db, kill_orphan=lambda p, s: "not_running",
+                                   backoff_base=0, backoff_cap=0, now=later)
+    assert [r.job_id for r in rec] == [jid]
+    assert claim(db).id == jid
+
+
+def test_concurrent_recoverers_fence_and_kill_exactly_once(settings, db):
+    jid, c = _running_with_child(db)
+    barrier = threading.Barrier(2)
+    kills, results = [], []
+    lock = threading.Lock()
+    future = utcnow() + FUTURE
+
+    def run(name):
+        own = Database(settings.database_url)
+        r = queue.recover_stuck_jobs(
+            own, kill_orphan=lambda p, s: (lock.acquire(), kills.append(name),
+                                           lock.release(), "killed")[-1],
+            backoff_base=0, backoff_cap=0, now=future, recoverer=name,
+            on_candidates=lambda ids: barrier.wait(10))  # both have scanned before fencing
+        with lock:
+            results.extend(r)
+        own.dispose()
+
+    ts = [threading.Thread(target=run, args=(f"r{i}",)) for i in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(30)
+    assert len(kills) == 1 and len(results) == 1
+    assert job(db, jid).status == "RETRY_WAIT"
+
+
+def test_live_lease_never_recovered_even_when_scanned_late(db):
+    """A scan that saw an expired lease must re-check at fence time with a fresh clock."""
+    jid, c = _running_with_child(db, lease=3600)
+    calls = []
+    rec = queue.recover_stuck_jobs(db, kill_orphan=lambda p, s: calls.append(p) or "killed",
+                                   backoff_base=0, backoff_cap=0)
+    assert rec == [] and calls == [] and job(db, jid).lease_token == c.token

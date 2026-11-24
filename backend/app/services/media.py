@@ -128,7 +128,8 @@ def kill_orphan_if_matches(pid: int, started_at: str | None,
                            allowed_names: tuple[str, ...] = ("ffmpeg", "ffprobe")) -> str:
     """Kill a recorded child of a dead worker only if it is provably the same process.
 
-    Returns one of: "not_running", "killed", "pid_reused".
+    Returns one of: "not_running", "killed", "pid_reused", "kill_failed" (still alive after
+    SIGKILL and the grace period — the caller must not treat the job as free).
     """
     if not pid_alive(pid):
         return "not_running"
@@ -140,6 +141,8 @@ def kill_orphan_if_matches(pid: int, started_at: str | None,
     deadline = time.monotonic() + KILL_GRACE_SECONDS + 2
     while pid_alive(pid) and time.monotonic() < deadline:
         time.sleep(0.05)
+    if pid_alive(pid) and process_start_signature(pid) == started_at:
+        return "kill_failed"
     return "killed"
 
 

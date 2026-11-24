@@ -263,40 +263,95 @@ class Recovered:
     orphan: str  # "none" | "not_running" | "killed" | "pid_reused"
 
 
+# How long a recoverer holds a job it has fenced while it terminates the old attempt's child.
+# If the recoverer itself dies in that window, the job becomes recoverable again afterwards.
+RECOVERY_FENCE_SECONDS = 30
+RECOVERY_TOKEN_PREFIX = "recovery-"
+
+
+def _recoverable(now: datetime, foreign_to_worker: str | None):
+    cond = and_(Job.lease_expires_at.is_not(None), Job.lease_expires_at < now)
+    if foreign_to_worker:
+        cond = or_(cond, or_(Job.claimed_by.is_(None), Job.claimed_by != foreign_to_worker))
+    return cond
+
+
 def recover_stuck_jobs(db: Database, *, kill_orphan: Callable[[int, str | None], str],
                        backoff_base: float, backoff_cap: float,
                        foreign_to_worker: str | None = None,
-                       now: datetime | None = None) -> list[Recovered]:
-    """Recover RUNNING jobs whose lease expired.
+                       now: datetime | None = None,
+                       recoverer: str = "recovery",
+                       on_candidates: Callable[[list[str]], None] | None = None,
+                       ) -> list[Recovered]:
+    """Recover RUNNING jobs whose lease expired (ARCHITECTURE §7.4–7.5).
 
     If ``foreign_to_worker`` is given (the caller holds the single-worker OS lock, so no
     other worker process can be alive), RUNNING jobs claimed by any *other* worker id are
     recovered immediately too, without waiting for lease expiry.
 
-    Any recorded FFmpeg child is killed (if provably the same process) *before* the job is
-    made claimable again. The final transition is a compare-and-set on the observed lease
-    token, so a concurrent renewal by a live owner wins.
+    Per job, in three steps — nothing destructive happens on information read earlier:
+
+    1. **Fence** (one ``BEGIN IMMEDIATE`` transaction): re-evaluate eligibility (status
+       RUNNING *and* lease still expired / foreign) and, only if still eligible, replace the
+       lease token with a recovery token. A concurrent ``renew_lease`` by a live owner either
+       happened before (→ the job is no longer eligible and is skipped untouched) or happens
+       after (→ it fails the token check, the owner sees ``LeaseLost`` and stops its own child).
+       The child's PID/start time are read in this same transaction.
+    2. **Terminate** the old attempt's recorded child (PID-reuse safe). If it cannot be
+       confirmed dead, the job stays fenced and is retried by a later recovery pass.
+    3. **Transition** to RETRY_WAIT / FAILED by compare-and-set on the recovery token.
+
+    ``on_candidates`` is a test hook called after the initial scan.
     """
-    now = now or utcnow()
-    cond = and_(Job.lease_expires_at.is_not(None), Job.lease_expires_at < now)
-    if foreign_to_worker:
-        cond = or_(cond, or_(Job.claimed_by.is_(None), Job.claimed_by != foreign_to_worker))
+    scan_now = now or utcnow()
     with db.session() as s:
-        rows = s.execute(select(Job.id, Job.lease_token, Job.process_pid,
-                                Job.process_started_at)
-                         .where(Job.status == JobStatus.RUNNING.value, cond)).all()
+        ids = list(s.scalars(select(Job.id).where(Job.status == JobStatus.RUNNING.value,
+                                                  _recoverable(scan_now, foreign_to_worker))))
+    if on_candidates:
+        on_candidates(ids)
+
     out: list[Recovered] = []
-    for job_id, token, pid, started in rows:
+    for job_id in ids:
+        t = now or utcnow()
+        fence_token = RECOVERY_TOKEN_PREFIX + secrets.token_hex(12)
+        # 1. Atomically re-check eligibility and fence out the previous owner.
+        with db.session() as s:
+            res = s.execute(update(Job).where(
+                Job.id == job_id, Job.status == JobStatus.RUNNING.value,
+                _recoverable(t, foreign_to_worker),
+            ).values(lease_token=fence_token, claimed_by=f"{recoverer}:recovering",
+                     lease_expires_at=t + timedelta(seconds=RECOVERY_FENCE_SECONDS),
+                     updated_at=utcnow()))
+            if res.rowcount != 1:
+                log.info("recovery skipped: lease renewed or job finished meanwhile",
+                         extra={"job_id": job_id})
+                continue
+            pid, started = s.execute(select(Job.process_pid, Job.process_started_at)
+                                     .where(Job.id == job_id)).one()
+
+        # 2. The old owner can no longer write or renew; terminate its recorded child.
         orphan = "none"
         if pid:
-            orphan = kill_orphan(pid, started)
+            try:
+                orphan = kill_orphan(pid, started)
+            except Exception:
+                log.exception("orphan termination failed; job stays fenced",
+                              extra={"job_id": job_id, "data": {"pid": pid}})
+                continue
+            if orphan == "kill_failed":
+                log.warning("orphaned media process did not exit; job stays fenced",
+                            extra={"job_id": job_id, "data": {"pid": pid}})
+                continue
             if orphan == "killed":
                 log.warning("killed orphaned media process", extra={"job_id": job_id,
                                                                     "data": {"pid": pid}})
+
+        # 3. Make the job claimable again (CAS on our own fence token).
         with db.session() as s:
             job = s.get(Job, job_id)
-            if job is None or job.status != JobStatus.RUNNING.value or job.lease_token != token:
-                continue  # owner renewed/finished meanwhile
+            if job is None or job.status != JobStatus.RUNNING.value \
+                    or job.lease_token != fence_token:
+                continue
             t = utcnow()
             exhausted = job.attempt_count >= job.max_attempts
             if exhausted:
@@ -320,6 +375,13 @@ def recover_stuck_jobs(db: Database, *, kill_orphan: Callable[[int, str | None],
                          job_id=job.id, recording_id=job.recording_id)
             out.append(Recovered(job.id, JobStatus(job.status), orphan))
     return out
+
+
+def active_lease_tokens(db: Database) -> set[str]:
+    """Tokens of attempts that currently own a RUNNING job (used by temp cleanup)."""
+    with db.session() as s:
+        return set(s.scalars(select(Job.lease_token).where(
+            Job.status == JobStatus.RUNNING.value, Job.lease_token.is_not(None))))
 
 
 # ---------------------------------------------------------------------------- manual retry

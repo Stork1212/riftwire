@@ -43,10 +43,11 @@ def startup_checks(app: FastAPI) -> None:
         log.error("database schema not at head; run scripts/migrate.sh",
                   extra={"data": st})
         return
-    rep = reconcile(db, s, "api")
     expired = queue.recover_stuck_jobs(
         db, kill_orphan=media.kill_orphan_if_matches,
-        backoff_base=s.job_backoff_base_seconds, backoff_cap=s.job_backoff_max_seconds)
+        backoff_base=s.job_backoff_base_seconds, backoff_cap=s.job_backoff_max_seconds,
+        recoverer="api")
+    rep = reconcile(db, s, "api")
     ff = media.tool_status(s.ffmpeg_path)
     with db.session() as sess:
         record_event(sess, Severity.INFO, "api", "api_started",

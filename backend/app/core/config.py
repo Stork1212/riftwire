@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     test_crash_at: str | None = None
     # Run an extra real-time FFmpeg child of this many seconds inside THUMBNAIL jobs.
     test_slow_ffmpeg_seconds: float = 0.0
+    # Force the no-hard-link copy fallback in INGEST finalize.
+    test_force_copy_fallback: bool = False
 
     @field_validator("allowed_extensions")
     @classmethod

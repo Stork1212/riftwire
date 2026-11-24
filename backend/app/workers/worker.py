@@ -96,8 +96,10 @@ class WorkerProcess:
             # Holding the lock proves every other worker row is dead.
             s.execute(update(Worker).where(Worker.id != self.id, Worker.status == "RUNNING")
                       .values(status="DEAD"))
-        rep = reconcile(self.db, self.settings, "worker")
+        # Recover first: clearing dead attempts' tokens lets the reconciler remove their
+        # leftover staging/temp files in the same startup pass.
         recovered = self._recover(foreign=True)
+        rep = reconcile(self.db, self.settings, "worker")
         tools = media.tool_status(self.settings.ffmpeg_path)
         with self.db.session() as s:
             record_event(s, Severity.INFO, "worker", "worker_started",
@@ -157,7 +159,7 @@ class WorkerProcess:
             self.db, kill_orphan=media.kill_orphan_if_matches,
             backoff_base=self.settings.job_backoff_base_seconds,
             backoff_cap=self.settings.job_backoff_max_seconds,
-            foreign_to_worker=self.id if foreign else None)
+            foreign_to_worker=self.id if foreign else None, recoverer=self.id)
 
     def _heartbeat_loop(self) -> None:
         interval = min(self.settings.worker_heartbeat_seconds,

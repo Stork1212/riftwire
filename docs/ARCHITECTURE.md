@@ -209,6 +209,19 @@ finally                        → chmod dst 0444 (read-only: no later stage can
 existing file, giving "never overwrite" at the filesystem level. `temp/` and `recordings/`
 are always on the same volume (both inside `RIFTWIRE_DATA_DIR`).
 
+**Fallback for filesystems without hard links** (`EPERM`/`ENOTSUP`/`EXDEV`/`EMLINK` from
+`os.link`; added after review of PR #1). The final path never holds partial data:
+1. Copy into an **attempt-unique staging file** on the destination volume,
+   `recordings/.staging/<rec_id>.<lease_token>.partial` (`open(..., "xb")`), then fsync.
+2. Verify the copy's SHA-256 (a mismatch is a transient error and is retried).
+3. **Promote without overwriting:** under an exclusive `flock` on
+   `recordings/.staging/<rec_id>.lock`, check that the final path does not exist, then
+   `os.rename` (atomic on one volume). If it exists, leave it untouched and verify it.
+4. fsync the directory, then unlink the temp source (same as the link path).
+
+Incomplete staging files from dead attempts are removed by the reconciler (§6.5), because
+their lease token no longer owns a RUNNING job.
+
 ### 6.4 Crash matrix
 
 | Crash point | State left behind | Recovery |
@@ -287,11 +300,20 @@ longer change anything in the database, even if it is still alive (e.g. after a 
   `process_started_at`) before it does any work.
 - If the lease-renewal thread fails a fence check, the worker kills the child group
   immediately and abandons the attempt.
-- **Orphan cleanup:** before any RUNNING job from another worker is recovered, the
-  recovering process checks the recorded PID. It kills it only if the PID is alive **and**
-  its start time and executable (`ps -o lstart=,comm=`) match what was recorded, which
-  protects against PID reuse. Only after the child is confirmed gone does the job move to
-  RETRY_WAIT.
+- **Orphan cleanup (fence → terminate → transition).** Recovery never acts on information
+  read earlier:
+  1. **Fence:** one transaction re-checks eligibility (RUNNING, lease still expired or
+     foreign) and only then replaces the lease token with a recovery token, reading the
+     recorded PID in the same transaction. An owner that renewed first makes the job
+     ineligible (skipped, nothing killed). An owner that renews later fails the token
+     check and stops its own child.
+  2. **Terminate:** kill the recorded child only if the PID is alive **and** its start time
+     and executable (`ps -o lstart=,comm=`) match what was recorded (PID-reuse guard). If
+     it cannot be confirmed dead (`kill_failed`), the job stays fenced and a later pass
+     retries.
+  3. **Transition:** RETRY_WAIT / FAILED by compare-and-set on the recovery token.
+  If the recoverer dies after step 1, the recovery fence expires after 30 s and the job is
+  recovered by a later pass.
 
 ### 7.5 Single worker process + lease recovery
 
@@ -443,5 +465,11 @@ No architectural changes were made. Details added during implementation:
 - **Thumbnail endpoint** returns an SVG placeholder (`X-Thumbnail-Fallback: true`) while the
   thumbnail is pending or after it failed.
 - **Reproducible installs:** `backend/constraints.txt` (pip) and `frontend/package-lock.json`.
+- **Review round 1 (PR #1) fixes:**
+  - recovery is fence → terminate → transition (§7.4);
+  - the copy fallback stages, verifies and promotes without overwriting (§6.3);
+  - attempt-scoped temp and staging files are cleaned by lease token, not by age; files
+    are listed before tokens are read;
+  - startup runs recovery before the reconciler.
 - **Runtime files:** PID files in `data/run/`, raw process output in `data/logs/*.out`.
 

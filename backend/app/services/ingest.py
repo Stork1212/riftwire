@@ -10,8 +10,10 @@ Nothing in recordings/ is ever deleted or overwritten.
 from __future__ import annotations
 
 import errno
+import fcntl
 import hashlib
 import os
+import re
 import stat
 import time
 import uuid
@@ -36,7 +38,7 @@ from app.db.session import Database
 from app.models import Job, JobStatus, JobType, Recording, RecordingStatus, Severity
 from app.services import media
 from app.services.events import record_event
-from app.services.queue import enqueue
+from app.services.queue import active_lease_tokens, enqueue
 from app.services.storage import (
     SpaceReservations,
     file_extension,
@@ -254,24 +256,40 @@ def _make_readonly(path: Path) -> None:
         pass
 
 
-def finalize_recording(settings: Settings, rec: Recording, *, progress=None,
-                       should_stop=None) -> str:
+STAGING_DIRNAME = ".staging"  # inside recordings/: same volume as the final files
+LINK_UNSUPPORTED = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK}
+_PARTIAL_RE = re.compile(r"^(?P<rec>[0-9a-f-]{36})\.(?P<token>[0-9a-z-]+)\.partial$")
+_JOB_TMP_RE = re.compile(r"^job-(?P<job>[0-9a-f-]{36})-(?P<token>[0-9a-z-]+)\.tmp\.")
+
+
+def staging_dir(settings: Settings) -> Path:
+    return settings.recordings_dir / STAGING_DIRNAME
+
+
+def finalize_recording(settings: Settings, rec: Recording, *, attempt_token: str,
+                       progress=None, should_stop=None) -> str:
     """Move a STAGED recording into recordings/ (idempotent; never overwrites).
 
     Performs only filesystem work; the caller records the DB result in a fenced
     transaction. Returns a short description of what happened.
+
+    Primary path: hard link (refuses to replace an existing file) → fsync → unlink temp.
+    Fallback (filesystems without hard links): copy into an attempt-unique staging file
+    on the destination volume, fsync, verify SHA-256, then promote with a no-overwrite
+    rename under a per-recording lock. The final path only ever appears complete.
     """
     dst = safe_join(settings.data_dir, rec.file_path)
     src = (safe_join(settings.temp_dir, rec.staging_filename)
            if rec.staging_filename else None)
     total = max(1, rec.file_size_bytes)
 
-    def prog(done: int) -> None:
+    def prog(done: int, base: int = 0, span: int = 45) -> None:
         if progress:
-            progress(int(done * 90 / total))
+            progress(base + int(done * span / total))
 
-    def verify(path: Path) -> None:
-        digest = sha256_file(path, progress=prog, should_stop=should_stop)
+    def verify(path: Path, base: int = 0, span: int = 45) -> None:
+        digest = sha256_file(path, progress=lambda d: prog(d, base, span),
+                             should_stop=should_stop)
         if digest != rec.sha256:
             raise FinalizeError(f"SHA-256 mismatch for {path.name}: file is corrupt",
                                 permanent=True)
@@ -282,18 +300,30 @@ def finalize_recording(settings: Settings, rec: Recording, *, progress=None,
     if src_exists and not dst_exists:
         verify(src)
         crashpoint("finalize_before_link")
+        force_copy = settings.env == "test" and settings.test_force_copy_fallback
+        linked = False
         try:
+            if force_copy:
+                raise OSError(errno.ENOTSUP, "hard links disabled for test")
             os.link(src, dst)  # refuses to replace an existing file
+            linked = True
         except FileExistsError:
             dst_exists = True
         except OSError as e:
-            if e.errno in (errno.EPERM, errno.ENOTSUP, errno.EXDEV):
-                # Filesystem without hard links: exclusive-create copy fallback.
-                _copy_exclusive(src, dst)
-                dst_exists = True
-            else:
+            if e.errno not in LINK_UNSUPPORTED:
                 raise
-        else:
+            # Filesystem without hard links: crash-safe staged copy.
+            if _copy_via_staging(settings, rec, src, dst, attempt_token,
+                                 progress=lambda d: prog(d, 45, 45),
+                                 should_stop=should_stop):
+                fsync_dir(dst.parent)
+                crashpoint("finalize_after_promote")
+                src.unlink()
+                fsync_dir(src.parent)
+                _make_readonly(dst)
+                return "copied"
+            dst_exists = True  # another attempt promoted first; verified below
+        if linked:
             fsync_file(dst)
             fsync_dir(dst.parent)
             crashpoint("finalize_after_link")
@@ -303,7 +333,7 @@ def finalize_recording(settings: Settings, rec: Recording, *, progress=None,
             _make_readonly(dst)
             return "moved"
     if src_exists and dst_exists:
-        verify(dst)
+        verify(dst, 45, 45)
         try:
             src.unlink()
         except FileNotFoundError:
@@ -312,20 +342,67 @@ def finalize_recording(settings: Settings, rec: Recording, *, progress=None,
         _make_readonly(dst)
         return "deduplicated_temp_copy"
     if dst_exists:
-        verify(dst)
+        verify(dst, 45, 45)
         _make_readonly(dst)
         return "already_final"
     raise FinalizeError("recording file is missing from both temp and recordings directories",
                         permanent=True)
 
 
-def _copy_exclusive(src: Path, dst: Path) -> None:
-    with open(src, "rb") as fi, open(dst, "xb") as fo:
-        while chunk := fi.read(1024 * 1024):
-            fo.write(chunk)
-        fo.flush()
-        os.fsync(fo.fileno())
-    fsync_dir(dst.parent)
+def _copy_via_staging(settings: Settings, rec: Recording, src: Path, dst: Path,
+                      attempt_token: str, *, progress=None, should_stop=None) -> bool:
+    """Copy ``src`` to ``dst`` without ever exposing a partial file at ``dst``.
+
+    Returns True if this attempt promoted the file, False if ``dst`` already existed at
+    promotion time (left untouched; the caller verifies it). The attempt-unique staging
+    file is always removed unless it was promoted.
+    """
+    sdir = staging_dir(settings)
+    sdir.mkdir(exist_ok=True)
+    part = sdir / f"{rec.id}.{attempt_token}.partial"
+    h = hashlib.sha256()
+    done = 0
+    try:
+        with open(src, "rb") as fi, open(part, "xb") as fo:
+            while chunk := fi.read(1024 * 1024):
+                fo.write(chunk)
+                h.update(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(done)
+                crashpoint("finalize_copy_midway")
+                if should_stop and should_stop():
+                    raise InterruptedError("copy cancelled")
+            fo.flush()
+            os.fsync(fo.fileno())
+        if h.hexdigest() != rec.sha256:
+            # Source was verified moments ago, so this is a copy/I-O fault: retryable.
+            raise FinalizeError("SHA-256 mismatch in staged copy; will retry", permanent=False)
+        fsync_dir(sdir)
+        crashpoint("finalize_copy_verified")
+        return promote_no_replace(part, dst, sdir / f"{rec.id}.lock")
+    finally:
+        part.unlink(missing_ok=True)  # no-op once promoted (renamed away)
+
+
+def promote_no_replace(staged: Path, dst: Path, lock_path: Path) -> bool:
+    """Atomically rename ``staged`` to ``dst`` unless ``dst`` exists.
+
+    All RIFTWIRE attempts that may promote to ``dst`` serialize on an exclusive ``flock`` of
+    ``lock_path`` (same directory tree, released by the OS if the process dies), so the
+    existence check and the rename cannot interleave with another attempt. Returns False
+    (and leaves ``dst`` untouched) if ``dst`` already exists.
+    """
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        if dst.exists():
+            return False
+        os.rename(staged, dst)  # atomic within one volume
+        return True
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 # ============================================================================ reconcile
@@ -340,26 +417,52 @@ class ReconcileReport:
 
 def reconcile(db: Database, settings: Settings, component: str,
               now_ts: float | None = None) -> ReconcileReport:
-    """Startup reconciler (§6.5). Deletes only stale files in temp/."""
+    """Startup reconciler (§6.5). Deletes only RIFTWIRE's own temporary/staging files.
+
+    * ``temp/*.part`` and row-less ``temp/*.staged``: removed once older than
+      ``RIFTWIRE_STALE_TEMP_SECONDS`` (uploads carry no lease token).
+    * Attempt-scoped files — ``temp/job-<job>-<token>.tmp.*`` and
+      ``recordings/.staging/<rec>.<token>.partial`` — removed when their token no longer owns
+      a RUNNING job (that attempt can never resume). Files are listed *before* tokens are
+      read, so a file created by a just-claimed attempt is never mistaken for stale.
+    * ``recordings/.staging/<rec>.lock``: removed once the recording is no longer STAGED.
+    * Nothing else in recordings/ is ever deleted.
+    """
     now_ts = now_ts or time.time()
     report = ReconcileReport([], [], [], [])
+    sdir = staging_dir(settings)
+    temp_files = sorted(p for p in settings.temp_dir.iterdir() if p.is_file())
+    staging_files = sorted(p for p in sdir.iterdir() if p.is_file()) if sdir.is_dir() else []
+    active = active_lease_tokens(db)  # read AFTER listing files (see docstring)
     with db.session() as s:
         staged_names = set(s.scalars(select(Recording.staging_filename)
                                      .where(Recording.staging_filename.is_not(None))))
         known_files = set(s.scalars(select(Recording.stored_filename)))
+        staged_ids = set(s.scalars(select(Recording.id).where(
+            Recording.status == RecordingStatus.STAGED.value)))
 
-    for p in sorted(settings.temp_dir.iterdir()):
-        if not p.is_file():
-            continue
-        age = now_ts - p.stat().st_mtime
-        if age < settings.stale_temp_seconds:
-            continue
-        stale_kind = (p.suffix == ".part"
-                      or (p.suffix == ".staged" and p.name not in staged_names)
-                      or ".tmp." in p.name)
-        if stale_kind:
+    for p in temp_files:
+        m = _JOB_TMP_RE.match(p.name)
+        if m:
+            stale = m["token"] not in active
+        else:
+            try:
+                age = now_ts - p.stat().st_mtime
+            except FileNotFoundError:
+                continue
+            stale = age >= settings.stale_temp_seconds and (
+                p.suffix == ".part" or (p.suffix == ".staged" and p.name not in staged_names))
+        if stale:
             p.unlink(missing_ok=True)
             report.removed_temp.append(p.name)
+
+    for p in staging_files:
+        m = _PARTIAL_RE.match(p.name)
+        if m and m["token"] not in active:
+            p.unlink(missing_ok=True)
+            report.removed_temp.append(f"{STAGING_DIRNAME}/{p.name}")
+        elif p.suffix == ".lock" and p.stem not in staged_ids:
+            p.unlink(missing_ok=True)
 
     with db.session() as s:
         for rec in s.scalars(select(Recording).where(

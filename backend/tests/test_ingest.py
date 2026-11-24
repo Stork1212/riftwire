@@ -287,3 +287,170 @@ def test_reconcile_reports_but_keeps_orphan_recording(db, settings):
     with db.session() as s:
         assert s.scalar(select(SystemEvent).where(
             SystemEvent.event_type == "orphan_recording_file")) is not None
+
+
+# ------------------------------------------------------------------ review finding 2:
+# crash-safe copy fallback for filesystems without hard links (PR #1 review)
+
+import errno  # noqa: E402
+import fcntl  # noqa: E402
+import hashlib  # noqa: E402
+import threading  # noqa: E402
+
+from app.services import queue  # noqa: E402
+from app.services.ingest import STAGING_DIRNAME, promote_no_replace  # noqa: E402
+
+
+def recordings_files(settings):
+    return sorted(p.name for p in settings.recordings_dir.iterdir() if p.is_file())
+
+
+def staging_files(settings):
+    d = settings.recordings_dir / STAGING_DIRNAME
+    return sorted(p.name for p in d.iterdir()) if d.is_dir() else []
+
+
+def sha_file(p):
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def test_copy_fallback_promotes_complete_verified_file(db, settings, media_dir):
+    settings.test_force_copy_fallback = True
+    rec, src, dst = _stage(db, settings, media_dir)
+    drain(db, settings)
+    r = get_rec(db, rec.id)
+    assert r.status == "READY", r.error_message
+    assert recordings_files(settings) == [dst.name] and sha_file(dst) == rec.sha256
+    assert not (dst.stat().st_mode & stat.S_IWUSR)
+    assert not src.exists()
+    assert [n for n in staging_files(settings) if n.endswith(".partial")] == []
+    reconcile(db, settings, "test")  # lock file no longer needed once not STAGED
+    assert staging_files(settings) == []
+
+
+def test_real_link_errno_triggers_fallback(db, settings, media_dir, monkeypatch):
+    def no_links(*a, **k):
+        raise OSError(errno.EPERM, "Operation not permitted")
+    monkeypatch.setattr(ingest.os, "link", no_links)
+    rec, src, dst = _stage(db, settings, media_dir)
+    drain(db, settings)
+    assert get_rec(db, rec.id).status == "READY" and sha_file(dst) == rec.sha256
+
+
+def test_interrupted_copy_never_exposes_partial_final_file(db, settings, media_dir,
+                                                           monkeypatch):
+    """A copy interrupted mid-way leaves only an attempt-scoped staging file, never dst."""
+    settings.test_force_copy_fallback = True
+    rec, src, dst = _stage(db, settings, media_dir)
+
+    class Interrupted(BaseException):
+        pass
+
+    def crash_midway(name):
+        if name == "finalize_copy_midway":
+            raise Interrupted  # BaseException: bypasses normal error handling, like a crash
+
+    monkeypatch.setattr(ingest, "crashpoint", crash_midway)
+    w = WorkerProcess(settings, db)
+    c = queue.claim_next(db, w.id, settings.job_lease_seconds)
+    from app.workers.handlers import JobContext, handle_ingest
+    with pytest.raises(Interrupted):
+        handle_ingest(JobContext(db, settings, c))
+    assert not dst.exists()                   # final path never holds partial data
+    assert src.exists()                       # original upload untouched
+    monkeypatch.undo()
+    settings.test_force_copy_fallback = True
+    # Recovery: the dead attempt's lease is recovered, its staging file cleaned, retry copies.
+    from datetime import timedelta
+
+    from app.db.base import utcnow
+    queue.recover_stuck_jobs(db, kill_orphan=lambda p, s: "not_running", backoff_base=0,
+                             backoff_cap=0, now=utcnow() + timedelta(seconds=3600))
+    reconcile(db, settings, "test")
+    assert [n for n in staging_files(settings) if n.endswith(".partial")] == []
+    drain(db, settings)
+    assert get_rec(db, rec.id).status == "READY"
+    assert recordings_files(settings) == [dst.name] and sha_file(dst) == rec.sha256
+
+
+def test_crash_after_promote_before_temp_unlink(db, settings, media_dir):
+    settings.test_force_copy_fallback = True
+    rec, src, dst = _stage(db, settings, media_dir)
+    dst.write_bytes(src.read_bytes())  # state left by a crash right after promotion
+    drain(db, settings)
+    assert get_rec(db, rec.id).status == "READY" and not src.exists()
+    assert sha_file(dst) == rec.sha256
+
+
+def test_promote_never_overwrites(tmp_path):
+    staged, dst = tmp_path / "s.partial", tmp_path / "final.mp4"
+    staged.write_bytes(b"new")
+    dst.write_bytes(b"existing")
+    ino = dst.stat().st_ino
+    assert promote_no_replace(staged, dst, tmp_path / "x.lock") is False
+    assert dst.read_bytes() == b"existing" and dst.stat().st_ino == ino
+    assert staged.exists()  # caller removes its own staging file
+
+
+def test_promote_is_serialized_with_other_attempts(tmp_path):
+    """The existence check and rename happen under the lock, so an attempt that was
+    waiting for the lock sees a destination created meanwhile and does not overwrite it."""
+    staged, dst, lock = tmp_path / "s.partial", tmp_path / "final.mp4", tmp_path / "x.lock"
+    staged.write_bytes(b"from zombie attempt")
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT)
+    fcntl.flock(fd, fcntl.LOCK_EX)           # another attempt is promoting
+    result = {}
+    t = threading.Thread(target=lambda: result.setdefault(
+        "r", promote_no_replace(staged, dst, lock)))
+    t.start()
+    t.join(0.5)
+    assert t.is_alive()                       # blocked on the lock
+    dst.write_bytes(b"promoted by the other attempt")
+    fcntl.flock(fd, fcntl.LOCK_UN)
+    os.close(fd)
+    t.join(5)
+    assert result["r"] is False and dst.read_bytes() == b"promoted by the other attempt"
+
+
+def test_reconcile_keeps_staging_file_of_active_attempt(db, settings, media_dir):
+    rec, _, _ = _stage(db, settings, media_dir)
+    c = queue.claim_next(db, "w", 60)
+    sdir = settings.recordings_dir / STAGING_DIRNAME
+    sdir.mkdir()
+    live = sdir / f"{rec.id}.{c.token}.partial"
+    dead = sdir / f"{rec.id}.{'0' * 32}.partial"
+    live.write_bytes(b"x")
+    dead.write_bytes(b"x")
+    reconcile(db, settings, "test")
+    assert live.exists() and not dead.exists()
+
+
+def test_reconcile_lists_files_before_reading_tokens(db, settings, media_dir, monkeypatch):
+    """A staging file created by an attempt claimed *during* reconcile is never deleted."""
+    rec, _, _ = _stage(db, settings, media_dir)
+    sdir = settings.recordings_dir / STAGING_DIRNAME
+    sdir.mkdir()
+    real = ingest.active_lease_tokens
+    created = {}
+
+    def claim_during_reconcile(database):
+        c = queue.claim_next(database, "w", 60)
+        p = sdir / f"{rec.id}.{c.token}.partial"
+        p.write_bytes(b"x")
+        created["p"] = p
+        return real(database)
+
+    monkeypatch.setattr(ingest, "active_lease_tokens", claim_during_reconcile)
+    reconcile(db, settings, "test")
+    assert created["p"].exists()
+
+
+def test_job_temp_outputs_cleaned_by_token_not_age(db, settings, media_dir):
+    rec, _, _ = _stage(db, settings, media_dir)
+    c = queue.claim_next(db, "w", 60)
+    live = settings.temp_dir / f"job-{c.id}-{c.token}.tmp.jpg"
+    dead = settings.temp_dir / f"job-{c.id}-{'f' * 32}.tmp.jpg"
+    live.write_bytes(b"x")
+    dead.write_bytes(b"x")
+    reconcile(db, settings, "test")
+    assert live.exists() and not dead.exists()

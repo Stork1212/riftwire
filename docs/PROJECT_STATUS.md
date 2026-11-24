@@ -3,8 +3,8 @@
 _Last updated: 2026-11-24_
 
 ## Current phase
-**Phase 1 — Foundation: implemented and verified on the target Mac; ready for final owner
-review.** Code is on branch `phase1/foundation`, pull request #1 to `main`. Details:
+**Phase 1 — Foundation: review-round-1 fixes implemented and verified in the dev container;
+macOS re-run pending; then second independent review.** Code is on branch `phase1/foundation`, pull request #1 to `main`. Details:
 `docs/PHASE1_REPORT.md`. Phase 2 has **not** started and needs approval.
 
 ## Completed
@@ -97,7 +97,13 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
       `docs/acceptance/2026-11-23-macos-m3pro-9d1e8c5*`.
 - [x] Fixed the React `act(...)` test warning from the Mac log (test-only change; suite
       re-run: 148 + 13 passed, build OK).
-- [ ] Owner final review and squash-merge of PR #1 `phase1/foundation` → `main`.
+- [x] Independent review round 1 (ChatGPT, PR #1 at `6d16b85`): 2 findings.
+- [x] Fixed: recovery race (fence → terminate → transition) and crash-safe copy fallback
+      (staging + verify + no-overwrite promote), plus 3 related cleanup/ordering issues.
+      18 new deterministic tests; 166 + 13 tests pass; build OK; acceptance 19/19 (dev).
+- [ ] **macOS acceptance re-run at the 60 GiB floor** on the fixed commit (owner runs; agent records).
+- [ ] Reply to the review on PR #1; second independent review (ChatGPT).
+- [ ] Owner authorization and squash-merge of PR #1 `phase1/foundation` → `main`.
 
 ## Blockers
 None for Phase 1. Before importing **real footage**, decide the data location: only ~9 GiB is
