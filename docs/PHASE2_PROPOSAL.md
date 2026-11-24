@@ -32,7 +32,8 @@ renumbered to match.
    download.
 3. Decide on the **local LLM** (Ollama, a system-wide install plus a 2–5 GB model). This is
    **optional**: the pipeline works without it (heuristic tier), and it can wait for the SSD.
-4. SSD timing. Phase 2 can be built and tested without it, but real VOD workloads need it.
+4. SSD arrival (ordered: SanDisk 1 TB Portable SSD). Phase 2 can be built and tested without
+   it, but real VOD workloads need it.
 
 Nothing is installed, downloaded or purchased until the relevant approval is given.
 
@@ -224,14 +225,29 @@ explicitly). Per-item progress and failure are shown; there is no all-or-nothing
 
 ---
 
-## 8. Storage architecture — external 2 TB SSD (D4)
+## 8. Storage architecture: external SSD (D4)
+
+The owner has ordered a **SanDisk 1 TB Portable SSD** (Pokémon Mewtwo Edition). The design is
+**capacity-independent**:
+
+- No code, default or test assumes a drive size, and volumes are identified by their marker
+  UUID, not by name or capacity.
+- Every admission decision (import, acquisition, proxy/WAV creation, model download, render)
+  uses the **measured** free space of the target volume against that volume's floor.
+- The dashboard shows measured capacity, usage per category and headroom per volume.
+- Replacing the drive, or adding a larger one, is a configuration change plus the migration
+  tool.
+
+For orientation only: 1 TB is about 931 GiB, so about 870 GiB is usable above a 60 GiB
+floor. Actual capacity for recordings depends on their measured bitrates, which the
+dashboard reports.
 
 ### 8.1 Locations and placement
 
-| Location | Default (now) | With 2 TB SSD (planned) | Expected footprint |
+| Location | Default (now) | With the external SSD (ordered: SanDisk 1 TB) | Expected footprint |
 |---|---|---|---|
 | Database + logs | `data/` (internal) | internal (unchanged) | < 1 GB |
-| Recordings | `data/recordings` | `/Volumes/<SSD>/riftwire/recordings` | bulk (TBs) |
+| Recordings | `data/recordings` | `/Volumes/<SSD>/riftwire/recordings` | bulk (most of the drive) |
 | Temp (uploads, downloads, proxies, WAVs) | `data/temp` | SSD `…/temp` (same volume as recordings) | up to largest file × 2 |
 | Models | `data/models` | SSD `…/models` | 0.1–6 GB |
 | Exports | `data/exports` | SSD `…/exports` | GBs |
@@ -589,7 +605,7 @@ Every run records commit, versions and the machine.
 | Alignment model (wav2vec2) | model download | ≈ 0.3–1.2 GB | only if timing targets are missed | Later, if needed |
 | **Ollama** | **system-wide install** | ~0.5 GB app | Tier-1 LLM | **Optional; required for Tier 1** |
 | Local LLM (≤ 8B, 4-bit) | model download | ≈ 2–5 GB | Tier 1 | Optional; recommend after SSD |
-| 2 TB external APFS SSD | hardware (owner) | — | real VOD workloads | Owner decision |
+| External SSD: SanDisk 1 TB Portable SSD, to be formatted APFS | hardware (owner) | — | real VOD workloads | **Ordered** |
 
 **Disk note:** internal headroom above the 60 GiB floor is ≈ 9 GiB, so whisper-small plus a
 4–5 GB LLM would consume most of it. Recommendation: Whisper small models now; the LLM after
@@ -637,5 +653,5 @@ existing React.
    evaluation set (A9), stored outside git?
 4. Which YouTube/Twitch channels will be the first authorized sources (for the rights
    templates)?
-5. SSD timing, and should exFAT be blocked entirely or allowed with an override (proposal:
-   allowed with an override)?
+5. When the ordered 1 TB SSD arrives: should exFAT be blocked entirely or allowed with an
+   override? (Proposal: allowed with an override; APFS recommended.)
