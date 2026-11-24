@@ -23,8 +23,7 @@ _Last updated: 2026-11-24_
 | #3 | Phase 2 technical proposal (M0–M7) | `c53a9cb` | `6502a52` |
 | #5 | M0 benchmark harness + results | `20184ca` | `a7554b3` |
 
-Tags: `v0.1.0` → `7ed5be7` (pushed by the owner). `v0.2.0-m0` → the verified `main` after
-this close-out (see below).
+Tags (both annotated, pushed by the owner): `v0.1.0` → `7ed5be7`; `v0.2.0-m0` → `0399a5a`.
 
 ### Combined verification before merging PR #5 (`main` @ `6502a52` + `20184ca`)
 The merged tree was byte-identical to the verified tree (`e768cea`).
@@ -200,7 +199,8 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
   - Official Mac run 2026-11-24 04:04 UTC: 24/24 transcription runs plus signals.
     Reproduced by the 03:47 run.
   - Approved by the owner as a completed benchmarking milestone.
-- [ ] Tag `v0.2.0-m0` on verified `main`.
+- [x] Tag `v0.2.0-m0` (annotated) → `0399a5a`, verified `main`; pushed by the owner
+      2026-11-24 05:32 UTC.
 - [ ] **M1 Storage Architecture**: checklist prepared, awaiting approval.
 
 ## Blockers
