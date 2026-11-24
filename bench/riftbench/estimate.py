@@ -88,7 +88,8 @@ def signals_bytes(spec: signals.VideoSpec | None = None) -> int:
     return int((src + proxy) * 1.3)
 
 
-def components(model_keys: list[str], out_dir: Path, quick: bool = False) -> list[Component]:
+def components(model_keys: list[str], out_dir: Path, quick: bool = False,
+               signals_only: bool = False) -> list[Component]:
     venv = ROOT / "bench" / ".venv"
     tmp = Path(os.environ.get("TMPDIR", "/tmp"))
     hf_home = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
@@ -108,6 +109,11 @@ def components(model_keys: list[str], out_dir: Path, quick: bool = False) -> lis
     for k in model_keys:
         spec = models.REGISTRY[k]
         comps.append(Component(f"model whisper-{k}", models_dir(), models.missing_bytes(spec)))
+    if signals_only:
+        sig_spec = signals.VideoSpec(seconds=60, width=1280, height=720) if quick \
+            else signals.VideoSpec()
+        return [Component("signals video + proxy", bench_dir(), signals_bytes(sig_spec)),
+                Component("results", out_dir, RESULTS)]
     comps += [
         Component("speech datasets (WAV)", bench_dir(), ds_final),
         Component("TTS clip cache", bench_dir(), tts_cache, ds_transient,

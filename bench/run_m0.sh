@@ -15,13 +15,21 @@
 # * The estimated PEAK disk use must be ≤ RIFTWIRE_BENCH_BUDGET_GB (default 1.9, the approved
 #   figure). The run refuses otherwise.
 #
+# Resume only the signals step of an earlier run (same safety checks, no downloads):
+#   bench/run_m0.sh --signals-only ~/Claude/riftwire-env/bench-<UTC>
+#
 # Exit codes: 0 ok · 1 step failed · 3 floor breach during run · 4 git tree not clean/changed
 #             10 refused: free-space floor · 11 refused: over approved disk budget
 set -uo pipefail
+SIGNALS_ONLY=""
+if [ "${1:-}" = "--signals-only" ]; then
+  [ -f "${2:-}/results.json" ] || { echo "✗ --signals-only needs an earlier results dir"; exit 1; }
+  SIGNALS_ONLY="$(cd "$2" && pwd -P)"
+fi
 cd "$(dirname "$0")/.." || exit 1
 ROOT="$(pwd -P)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-OUT="${RIFTWIRE_BENCH_OUT:-$ROOT/../riftwire-env/bench-$STAMP}"
+OUT="${SIGNALS_ONLY:-${RIFTWIRE_BENCH_OUT:-$ROOT/../riftwire-env/bench-$STAMP}}"
 mkdir -p "$OUT" && OUT="$(cd "$OUT" && pwd -P)"
 BUDGET_GB="${RIFTWIRE_BENCH_BUDGET_GB:-1.9}"
 FLOOR_GIB=60
@@ -65,7 +73,7 @@ free_kb() {
 }
 log "watching volumes:$VOLS (floor ${FLOOR_GIB} GiB each)"
 
-echo "utc,volume,free_kb,free_gib,phase" > "$OUT/free_space.csv"
+[ -f "$OUT/free_space.csv" ] || echo "utc,volume,free_kb,free_gib,phase" > "$OUT/free_space.csv"
 echo "before" > "$OUT/.phase"
 sample_all() {
   for m in $VOLS; do
@@ -116,6 +124,24 @@ for c in "$PY313" python3.13 /Library/Frameworks/Python.framework/Versions/3.13/
   [ -n "$c" ] && command -v "$c" >/dev/null 2>&1 && { PY313="$(command -v "$c")"; break; }
 done
 [ -n "$PY313" ] || die 1 "python3.13 not found (set RIFTWIRE_PYTHON)"
+
+# ---- resume: signals only -----------------------------------------------------------------
+if [ -n "$SIGNALS_ONLY" ]; then
+  [ -x "$VENV_PY" ] || die 1 "bench/.venv missing; run the full benchmark first"
+  phase "plan (signals only; budget ${BUDGET_GB} GB)"
+  run_step "$PY313" bench/run.py plan --signals-only --models tiny --out "$OUT" \
+    --budget-gb "$BUDGET_GB"
+  after_step $? "signals plan"
+  phase "signals (resume into $OUT)"
+  run_step "$VENV_PY" bench/run.py all --resume --skip-transcription --out "$OUT"
+  after_step $? "signals benchmark"
+  phase "after"
+  [ "$(git -C "$ROOT" rev-parse HEAD)" = "$HEAD0" ] || die 4 "HEAD changed during the run"
+  [ -z "$(git -C "$ROOT" status --porcelain --untracked-files=normal)" ] \
+    || die 4 "git tree changed during the run"
+  log "git tree unchanged · results: $OUT/results.md"
+  exit 0
+fi
 
 # ---- 1. plan: per-volume PEAK estimate vs floor and approved budget -----------------------
 phase "plan (tiny,base,small; budget ${BUDGET_GB} GB)"

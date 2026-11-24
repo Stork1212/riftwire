@@ -76,3 +76,24 @@ def test_all_quick_pipeline_without_models(tmp_path, monkeypatch):
     assert res["signals"]["scene_cuts"]["truth"] > 0
     assert (out / "results.md").read_text().startswith("# RIFTWIRE M0")
 
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg required")
+def test_resume_signals_keeps_earlier_transcription(tmp_path, monkeypatch):
+    du = namedtuple("du", "total used free")
+    real = shutil.disk_usage
+    monkeypatch.setattr(config.shutil, "disk_usage",
+                        lambda p: du(*real(p)[:2], 500 * config.GIB))
+    small = run.signals.VideoSpec(seconds=20, width=320, height=180, fps=30)
+    monkeypatch.setattr(run.signals, "VideoSpec", lambda **k: small)
+    out = tmp_path / "res"
+    out.mkdir()
+    earlier = {"started_utc": "x", "machine": {}, "transcription": [
+        {"model": "base", "dataset": "n", "kind": "natural", "variant": "clean",
+         "audio_s": 600, "returncode": 0, "rtf": 0.01, "scores": {"wer": 0.01}}]}
+    (out / "results.json").write_text(json.dumps(earlier))
+    assert run.main(["all", "--resume", "--skip-transcription", "--out", str(out)]) == 0
+    res = json.loads((out / "results.json").read_text())
+    assert len(res["transcription"]) == 1 and res["signals"]["scene_cuts"]["truth"] > 0
+    assert res["resumed"] and "base" in res["evaluation"]
+    assert run.main(["all", "--resume", "--out", str(out)]) == 2  # would duplicate runs

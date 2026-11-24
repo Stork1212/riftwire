@@ -21,6 +21,7 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None or shutil.which("pgr
 STUB_PY = r"""#!/bin/bash
 echo "$*" >> "$STUB_LOG"
 case "$*" in
+  *"plan --signals-only"*)           exit "${STUB_PLAN_SIG_RC:-0}" ;;
   *"plan --models tiny,base,small"*) exit "${STUB_PLAN_FULL_RC:-0}" ;;
   *"plan --models tiny,base "*)      exit "${STUB_PLAN_TB_RC:-0}" ;;
   *"fetch-models --models tiny,base"*) exit "${STUB_FETCH_TB_RC:-0}" ;;
@@ -178,3 +179,48 @@ def test_watchdog_monitors_second_volume_and_stops_children(repo, tmp_path):
         assert not any(c.startswith("fetch") or "fetch-models" in c for c in calls)
     finally:
         shutil.rmtree(data, ignore_errors=True)
+
+
+def test_signals_only_resume_plans_and_runs_only_signals(repo, tmp_path):
+    prev = tmp_path / "prev"
+    prev.mkdir()
+    (prev / "results.json").write_text('{"transcription": [1]}')
+    log = tmp_path / "calls.log"
+    log.write_text("")
+    env_args = ["--signals-only", str(prev)]
+    p = subprocess.run(
+        ["bash", str(repo / "bench" / "run_m0.sh"), *env_args],
+        env={"PATH": os.environ["PATH"], "HOME": str(tmp_path),
+             "RIFTWIRE_PYTHON": str(repo / "bench" / ".venv" / "bin" / "python"),
+             "STUB_LOG": str(log), "STUB_REPO": str(repo),
+             "RIFTWIRE_BENCH_TEST_FREE_DIR": str(_hooks(tmp_path))},
+        capture_output=True, text=True, timeout=60)
+    calls = log.read_text().splitlines()
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert len(calls) == 2 and "plan --signals-only" in calls[0]
+    assert "all --resume --skip-transcription --out " + str(prev) in calls[1]
+    assert not any("fetch" in c or c.startswith("setup") for c in calls)
+
+
+def test_signals_only_floor_refusal_stops(repo, tmp_path):
+    prev = tmp_path / "prev"
+    prev.mkdir()
+    (prev / "results.json").write_text("{}")
+    log = tmp_path / "calls.log"
+    log.write_text("")
+    p = subprocess.run(
+        ["bash", str(repo / "bench" / "run_m0.sh"), "--signals-only", str(prev)],
+        env={"PATH": os.environ["PATH"], "HOME": str(tmp_path),
+             "RIFTWIRE_PYTHON": str(repo / "bench" / ".venv" / "bin" / "python"),
+             "STUB_LOG": str(log), "STUB_REPO": str(repo), "STUB_PLAN_SIG_RC": "10",
+             "RIFTWIRE_BENCH_TEST_FREE_DIR": str(_hooks(tmp_path))},
+        capture_output=True, text=True, timeout=60)
+    assert p.returncode == 10
+    assert len(log.read_text().splitlines()) == 1
+
+
+def _hooks(tmp_path: Path) -> Path:
+    h = tmp_path / "free"
+    h.mkdir(exist_ok=True)
+    (h / "_default").write_text(str(70 * 1024 * 1024))
+    return h

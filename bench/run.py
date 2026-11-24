@@ -77,7 +77,7 @@ def cmd_plan(a: argparse.Namespace) -> int:
         for f in spec.files:
             print(f"      https://huggingface.co/{spec.repo}/resolve/main/{f.name}"
                   f"  {f.size:>11,} B  sha256={f.sha256 or '(size-checked only)'}")
-    comps = estimate.components(keys, out, quick=a.quick)
+    comps = estimate.components(keys, out, quick=a.quick, signals_only=a.signals_only)
     all_ok = True
     total_final = total_peak = 0
     for vol in estimate.by_volume(comps):
@@ -229,8 +229,18 @@ def default_out() -> Path:
 def cmd_all(a: argparse.Namespace) -> int:
     out = Path(a.out).expanduser() if a.out else default_out()
     out.mkdir(parents=True, exist_ok=True)
-    res: dict = {"started_utc": now(), "machine": sysinfo.machine(), "transcription": [],
-                 "args": {k: v for k, v in vars(a).items() if k != "func"}}
+    args = {k: v for k, v in vars(a).items() if k != "func"}
+    prev = out / "results.json"
+    if a.resume and prev.exists():
+        # Resume: keep the earlier run's measurements; only add the steps run now.
+        res = json.loads(prev.read_text())
+        res.setdefault("resumed", []).append({"utc": now(), "args": args})
+        if not a.skip_transcription and res.get("transcription"):
+            print("✗ --resume with transcription would duplicate runs; use --skip-transcription")
+            return 2
+    else:
+        res = {"started_utc": now(), "machine": sysinfo.machine(), "transcription": [],
+               "args": args}
     save(out, res)
     if not a.skip_transcription:
         print("▸ Datasets")
@@ -275,6 +285,8 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--out")
     pl.add_argument("--quick", action="store_true")
     pl.add_argument("--budget-gb", type=float, help="refuse if the estimated peak exceeds this")
+    pl.add_argument("--signals-only", action="store_true",
+                    help="estimate only the signals step (resume of an earlier run)")
     pl.set_defaults(func=cmd_plan)
     f = sub.add_parser("fetch-models")
     f.add_argument("--models", default="tiny,base")
@@ -288,6 +300,8 @@ def main(argv: list[str] | None = None) -> int:
     al.add_argument("--tone", action="store_true", help=argparse.SUPPRESS)  # tests only
     al.add_argument("--skip-transcription", action="store_true")
     al.add_argument("--skip-signals", action="store_true")
+    al.add_argument("--resume", action="store_true",
+                    help="add to an existing results.json in --out instead of starting over")
     al.set_defaults(func=cmd_all)
     r = sub.add_parser("report")
     r.add_argument("results_dir")

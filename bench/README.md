@@ -60,6 +60,14 @@ Samples go to `free_space.csv`. If any volume drops below 60 GiB, the watchdog s
 child process (exit 3). Hugging Face Xet transfers and its chunk cache are disabled, and pip
 runs with `--no-cache-dir`, so no cache is written outside the monitored places.
 
+To finish **only the signals step** of an earlier run, for example after it was refused by
+the floor, use the same results directory. It runs with the same plan, watchdog and git
+checks, and downloads nothing:
+
+```bash
+bench/run_m0.sh --signals-only ~/Claude/riftwire-env/bench-<UTC>
+```
+
 Exit codes: 0 ok · 1 step failed · 3 floor breach · 4 git safety · 10 floor refusal ·
 11 over budget.
 
