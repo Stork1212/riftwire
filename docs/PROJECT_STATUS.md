@@ -235,8 +235,17 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
     filesystem from `mount`, and the volume UUID from `diskutil` on the mount point. A probe
     failure now leaves that location offline and never crashes startup. Tests use real macOS
     output formats.
+  - **Second Mac run (owner, 2026-11-24 06:22 UTC, `29f612e`):**
+    - smoke **30/30**; acceptance 21/22; pytest 207 passed, 1 failed, 2 skipped.
+    - Both failures were test-side, and the product behaved correctly:
+      - a simulated probe reported a different UUID for the real internal disk, which was
+        correctly refused as a swapped drive;
+      - M3 compared against the `/var` spelling of a path the tool had correctly stored as
+        `/private/var`.
+    - Fixed in the tests. The 2 skips are the real second-filesystem tests (macOS has no
+      `/dev/shm`); they run on Linux and are covered by the SSD checks.
   - **Not yet verified:**
-    - Mac re-run on the internal disk;
+    - Mac re-run of the fixed tests;
     - every physical-SSD check (checklist §11).
 
 ## Blockers

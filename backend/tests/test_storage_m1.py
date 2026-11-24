@@ -67,12 +67,14 @@ def vol2(tmp_path):
 
 
 class FakeProbe(volumes.VolumeProbe):
-    """Simulates macOS volumes: maps path prefixes to (fs_type, hw_uuid)."""
+    """Simulates extra drives: maps path prefixes to (fs_type, hw_uuid). Every other path
+    is answered by the real platform probe, so the actual internal disk keeps its real
+    identity (on macOS its real VolumeUUID was recorded when the layout was loaded)."""
 
     cacheable = False
 
-    def __init__(self, default=("apfs", "INTERNAL-UUID")):
-        self.default = default
+    def __init__(self):
+        self.real = volumes.default_probe()
         self.rules: list[tuple[str, tuple[str, str | None]]] = []
 
     def set(self, prefix: Path, fs: str, hw: str | None) -> None:
@@ -84,7 +86,7 @@ class FakeProbe(volumes.VolumeProbe):
         for prefix, (fs, hw) in self.rules:
             if p == prefix or p.startswith(prefix.rstrip("/") + "/"):
                 return volumes.VolumeInfo(prefix, fs, hw, "TestDrive")
-        return volumes.VolumeInfo("/", *self.default, "Internal")
+        return self.real.info(path)
 
 
 @pytest.fixture

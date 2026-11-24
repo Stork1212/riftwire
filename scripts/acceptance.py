@@ -500,8 +500,9 @@ def run(args) -> int:
         stack.start_api()
         stack.start_worker()
         st = {x["kind"]: x for x in stack.get("/api/v1/storage").json()["locations"]}
-        check(st["recordings"]["online"] and st["recordings"]["path"] == str(dest),
-              str(st["recordings"]))
+        # The tool stores the canonical path (macOS: /var -> /private/var).
+        check(st["recordings"]["online"]
+              and st["recordings"]["path"] == os.path.realpath(dest), str(st["recordings"]))
         r = upload(stack, extra_clip("after-move.mp4", 2), "after-move.mp4")
         check(r.status_code == 201, f"HTTP {r.status_code}")
         rid = r.json()["recording"]["id"]
