@@ -1,0 +1,7 @@
+RIFTWIRE smoke test  20261124T144834Z
+commit:   25a2734 (phase2/m1-storage)
+platform: Darwin arm64 26.5.2
+data dir: /Users/gregstork/Claude/riftwire-env/smoke-data-20261124T144834Z (isolated)
+port:     8000
+
+FAIL  port 8000 is free (something is already listening; stop it or set RIFTWIRE_SMOKE_PORT)

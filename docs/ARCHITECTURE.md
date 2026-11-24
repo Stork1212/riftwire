@@ -550,8 +550,14 @@ Owner decisions (2026-11-24):
        internal defaults inside the data directory get their UUID recorded at startup,
        because the internal disk cannot be swapped. External locations are never adopted
        this way.
-     - Identity is **probed afresh on every check**, with no device-number cache, so a
-       remount that reuses a device number cannot return a previous drive's UUID.
+     - **Identity caching (macOS).** Probing costs three subprocesses, so results are
+       cached for up to 10 s. The key is the volume root's identity: device, root path,
+       root inode and root creation time, never the device number alone.
+     - A different drive mounted at the same path with a reused device number has a
+       different root creation time. It misses the cache and is probed afresh.
+     - On Linux, which has no creation time, nothing is cached.
+     - The first fix for the review removed caching altogether. That made a full Mac test
+       run 7× slower, so the cache came back with this key.
   5. the filesystem is allowed (`apfs` on macOS);
   6. the root is writable.
 - **Nothing falls back.** An offline location raises `StorageOffline` (HTTP 503

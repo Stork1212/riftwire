@@ -143,7 +143,7 @@ To check this, the test file was run against an untouched checkout of `4703e22`:
 | # | Sev. | Validated in source (`4703e22`) | Correction | Regression tests |
 |---|---|---|---|---|
 | 1 | High | **Confirmed.** `migration.py` `dest_guard()` compared only the marker's location UUID, and the switch recorded whatever drive was mounted at that moment. A copy of the destination folder on another drive at the same mount path would resume and switch | Journal column `dest_hw_volume_uuid` (Alembic **0003**). It is recorded when the destination is first identified and compared against a fresh probe on resume (`plan` and `execute`), before each file, promotion, cleanup and final re-hash, and immediately before the switch. The switch records the approved UUID | `test_f1_copied_marker_on_replacement_drive_never_resumes`, `test_f1_drive_swap_mid_copy_stops_before_promotion`, `test_f1_swap_after_final_rehash_never_switches`, `test_f1_switch_records_the_approved_drive` |
-| 2 | High | **Confirmed.** `DarwinProbe` returned `hw_volume_uuid=None` when diskutil failed. `register_root` accepted it, and `verify` skipped the UUID check for such rows permanently. **Cache confirmed:** a 10 s cache keyed by `st_dev` could return a previous drive's UUID after a remount that reuses the device number | On macOS a valid VolumeUUID is required: `IdentityUnavailable` makes registration fail, the location report `probe_failed`, and migration refuse. Rows without a UUID report `identity_unrecorded`. Internal defaults get their UUID recorded at startup; external locations are never adopted. UUIDs are validated and normalised. **The identity cache is removed**, so every check probes afresh | `test_f2_no_registration_without_os_volume_uuid`, `test_f2_registered_without_identity_fails_closed`, `test_f2_identity_is_never_served_from_a_cache`, `test_darwin_probe_fails_closed_without_a_valid_volume_uuid`, `test_f2_real_macos_disk_has_a_valid_volume_uuid` (macOS only) |
+| 2 | High | **Confirmed.** `DarwinProbe` returned `hw_volume_uuid=None` when diskutil failed. `register_root` accepted it, and `verify` skipped the UUID check for such rows permanently. **Cache confirmed:** a 10 s cache keyed by `st_dev` could return a previous drive's UUID after a remount that reuses the device number | On macOS a valid VolumeUUID is required: `IdentityUnavailable` makes registration fail, the location report `probe_failed`, and migration refuse. Rows without a UUID report `identity_unrecorded`. Internal defaults get their UUID recorded at startup; external locations are never adopted. UUIDs are validated and normalised. The device-number cache is replaced by one keyed by the **volume root's identity** (device, root path, root inode, root creation time; 10 s; macOS only), so a replacement drive at the same path always misses it. Removing the cache entirely was tried first, but made the Mac test run 7× slower (61 s → 472 s) | `test_f2_no_registration_without_os_volume_uuid`, `test_f2_registered_without_identity_fails_closed`, `test_f2_identity_is_never_served_from_a_cache`, `test_f2_cache_is_keyed_by_volume_root_identity`, `test_f2_volume_root_key_walks_to_the_mount_root`, `test_darwin_probe_fails_closed_without_a_valid_volume_uuid`, `test_f2_real_macos_disk_has_a_valid_volume_uuid` (macOS only) |
 | 3 | High | **Confirmed.** Unknown-length uploads reserved 0 bytes. The floor was re-checked only *after* writing, every 256 MB or 60 s, so uploads shorter than that were never checked. Concurrent uploads could each overshoot | Admission **before** every write: the full length up front if known, otherwise 256 MiB windows admitted before the bytes are written. Leases are renewed before the next write, and an expired lease must be re-admitted first. Final floor check at `finish()` | `test_f3_concurrent_unknown_length_uploads_never_cross_the_floor` (3 threads), `test_f3_short_unknown_upload_needs_admission_before_any_byte`, `test_f3_floor_enforced_at_finish`, `test_f3_no_write_after_the_lease_expired_without_readmission` |
 | 4 | Medium | **Confirmed.** `plan()` used `need = total` even when resuming | `remaining_need()`: only files without a full-size copy at the destination count (those copies are still verified by hash), minus the run's own stale partials. Peak usage never exceeds that figure, because each partial is removed before its file is copied. The reservation uses the same per-file figures | `test_f4_resume_needs_only_the_remaining_bytes`: 1.6 MiB headroom finishes the resume; 1.4 MiB is refused; the full 3 MiB is no longer required |
 | 5 | Medium | **Confirmed.** `read_marker()` returned any JSON value, and `verify()` called `.get` on it. A marker containing `[]` raised `AttributeError` at startup, in readiness and in the worker | Strict validation: exact keys, `format == 1` as an integer, a known kind, UUID fields, `hw_volume_uuid` null or a valid volume UUID, a ≤ 64 KiB cap, UTF-8 JSON. Invalid markers report `marker_unreadable` and never raise. Registration and migration refuse cleanly, and markers are validated before writing | `test_f5_invalid_markers_report_offline_without_crashing` (18 malformed variants × startup, readiness, storage API, upload, reconcile), `test_f5_invalid_marker_refused_by_registration_and_migration` |
@@ -163,13 +163,25 @@ No finding was disputed.
 
 | Check | Result |
 |---|---|
-| `scripts/test.sh` (exit 0) | ruff clean; backend **239 passed, 1 skipped** (macOS-only test), 1 third-party warning; bench **48 passed**; frontend lint/typecheck clean, **17/17**; build OK |
+| `scripts/test.sh` (exit 0) | ruff clean; backend **241 passed, 1 skipped** (macOS-only test), 1 third-party warning; bench **48 passed**; frontend lint/typecheck clean, **17/17**; build OK |
 | Alembic | upgrade → downgrade 0002 → upgrade; `alembic check`: no drift; head `0003` |
 | Acceptance (`--min-free-gib 1`, test-only floor: the container has 28 GiB free) | **22/22** (exit 0) |
 | Smoke at the **production 60 GiB floor** | imports refused with 507 as designed (only 28 GiB free) |
 | Smoke with a test-only 1 GiB floor | **28 PASS, 0 FAIL, 1 SKIP** (caffeinate, macOS only), exit 0 |
 
+**Mac run of `25a2734`** (evidence: `docs/acceptance/2026-11-24-macos-m1-25a2734/`):
+- **Tests:** exit 0. Backend **237 passed, 3 skipped** (second filesystem), including the
+  macOS-only identity test. Bench 47 passed, 1 skipped. Frontend 17/17. Build OK.
+- **Acceptance:** **22/22** at the 60 GiB floor.
+- **Problems it exposed:**
+  - **Speed regression:** the test suite took **472 s** instead of 61 s. Removing the
+    identity cache meant every check ran `df`, `mount` and `diskutil`. The root-keyed cache
+    in the next commit fixes it.
+  - **Smoke test:** exit 1 in 0 s. Port 8000 was still held by the smoke instance the
+    previous run had left running for its dashboard check. This was environmental, not a
+    test result.
+
 **Not yet verified:**
-- a **Mac re-run of the corrected commit**: the Mac evidence in `docs/acceptance/2026-11-24-macos-m1-4703e22/` covers `4703e22` only;
+- a **Mac re-run of the commit that contains the cache fix**;
 - the macOS-only identity test;
 - the physical-SSD gate (§5).

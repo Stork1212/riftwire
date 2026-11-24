@@ -4,10 +4,15 @@ Read-only. On macOS this uses ``df``, ``mount`` and ``diskutil info -plist <moun
 (no administrator rights needed); on Linux (development/CI) it parses
 ``/proc/self/mountinfo``.
 
-Every call probes afresh. There is deliberately no cache: a cache keyed by device number
-could return a previous drive's identity after an unplug/replug that reuses the number
-(review finding 2). Callers that need cheap repeated checks cache whole verification
-results briefly (``Layout.state(max_age=...)``), never identity used before a write.
+Caching (macOS only, where probing costs three subprocesses). A cache keyed by device
+number alone could return a previous drive's identity after an unplug/replug that reuses
+the number (review finding 2). The key is therefore the identity of the *volume root
+directory*: (device, root path, root inode, root creation time). Another drive mounted at
+the same path with a reused device number has a different root creation time (set when the
+volume was formatted), so it misses the cache and is probed afresh. Entries also expire
+after ``CACHE_SECONDS``. Where no creation time exists (Linux), nothing is cached; the Linux
+probe is cheap. Residual: a block-level clone shares the root creation time and the
+VolumeUUID; it is accepted as the same drive anyway (ARCHITECTURE §19.9).
 
 On macOS the OS volume UUID is **required**: if it cannot be established the probe raises
 ``IdentityUnavailable`` and every caller fails closed (location offline, registration and
@@ -24,6 +29,8 @@ import platform
 import plistlib
 import re
 import subprocess
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +40,7 @@ from app.core.logging import get_logger
 log = get_logger("volumes")
 
 DISKUTIL = "/usr/sbin/diskutil"
+CACHE_SECONDS = 10.0
 UUID_RE = re.compile(r"^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$")
 
 
@@ -60,6 +68,9 @@ class VolumeProbe:
     # True where the platform gives every volume a stable OS UUID (macOS). Storage then
     # requires it: no location is registered, verified or migrated without it.
     requires_hw_uuid = False
+    # True if results may be cached under a volume-root key (real probes on macOS only;
+    # simulated drives in tests share one real directory tree, so they never cache).
+    cache_identity = False
 
     def info(self, path: Path) -> VolumeInfo:  # pragma: no cover - interface
         raise NotImplementedError
@@ -102,6 +113,7 @@ class DarwinProbe(VolumeProbe):
     devices, not arbitrary folders). All read-only; no administrator rights needed."""
 
     requires_hw_uuid = True
+    cache_identity = True
 
     def __init__(self, run: Runner | None = None):
         self.run = run or _run
@@ -161,12 +173,35 @@ def default_probe() -> VolumeProbe:
 
 
 _probe: VolumeProbe = default_probe()
+_cache: dict[tuple, tuple[float, VolumeInfo]] = {}
+_lock = threading.Lock()
 
 
 def set_probe(probe: VolumeProbe | None) -> None:
     """Replace the probe (tests). ``None`` restores the platform default."""
     global _probe
-    _probe = probe or default_probe()
+    with _lock:
+        _probe = probe or default_probe()
+        _cache.clear()
+
+
+def volume_root_key(path: Path) -> tuple | None:
+    """(device, root path, root inode, root creation time) of the volume holding ``path``,
+    found by walking up while the device stays the same. None if the platform records no
+    creation time (then nothing is cached)."""
+    p = Path(os.path.realpath(path))
+    st = os.stat(p)
+    dev = st.st_dev
+    root, root_st = p, st
+    while root.parent != root:
+        pst = os.stat(root.parent)
+        if pst.st_dev != dev:
+            break
+        root, root_st = root.parent, pst
+    birth = getattr(root_st, "st_birthtime", None)
+    if birth is None:
+        return None
+    return (dev, str(root), root_st.st_ino, birth)
 
 
 def identity_required() -> bool:
@@ -179,14 +214,28 @@ def volume_info(path: Path) -> VolumeInfo:
 
     Where identity is required, the result always carries a valid ``hw_volume_uuid``;
     otherwise ``IdentityUnavailable`` is raised."""
-    os.stat(path)  # raises if the path is gone
-    info = _probe.info(path)
-    if _probe.requires_hw_uuid:
+    probe = _probe
+    key = volume_root_key(path) if probe.cache_identity else None   # raises if gone
+    if key is None:
+        os.stat(path)
+    now = time.monotonic()
+    if key is not None:
+        with _lock:
+            hit = _cache.get(key)
+        if hit and now - hit[0] < CACHE_SECONDS and probe is _probe:
+            return hit[1]
+    info = probe.info(path)
+    if probe.requires_hw_uuid:
         hw = valid_volume_uuid(info.hw_volume_uuid)
         if hw is None:
             raise IdentityUnavailable(f"no valid volume UUID for {info.mount_point}")
         if hw != info.hw_volume_uuid:
             info = VolumeInfo(info.mount_point, info.fs_type, hw, info.label)
+    if key is not None:
+        with _lock:
+            if len(_cache) > 256:
+                _cache.clear()
+            _cache[key] = (now, info)
     return info
 
 

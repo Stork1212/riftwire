@@ -1,0 +1,48 @@
+From https://github.com/Stork1212/riftwire
+ * branch            phase2/m1-storage -> FETCH_HEAD
+   4703e22..25a2734  phase2/m1-storage -> origin/phase2/m1-storage
+Already on 'phase2/m1-storage'
+Your branch is behind 'origin/phase2/m1-storage' by 2 commits, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+Updating 4703e22..25a2734
+Fast-forward
+ .../versions/0003_migration_dest_identity.py       |  25 ++
+ backend/app/models/entities.py                     |   2 +
+ backend/app/services/ingest.py                     |  66 ++-
+ backend/app/services/locations.py                  |  88 +++-
+ backend/app/services/migration.py                  | 173 ++++++--
+ backend/app/services/volumes.py                    |  90 ++--
+ backend/tests/test_storage_m1.py                   |  57 ++-
+ backend/tests/test_storage_m1_review.py            | 478 +++++++++++++++++++++
+ docs/ARCHITECTURE.md                               |  88 +++-
+ docs/M1_REVIEW.md                                  |  71 ++-
+ docs/PROJECT_STATUS.md                             |  14 +-
+ .../2026-11-24-macos-m1-4703e22/README.md          |  15 +
+ .../2026-11-24-macos-m1-4703e22/acceptance.json    | 165 +++++++
+ .../2026-11-24-macos-m1-4703e22/acceptance.txt     |  26 ++
+ .../2026-11-24-macos-m1-4703e22/df-after.txt       |   2 +
+ .../2026-11-24-macos-m1-4703e22/df-before.txt      |   2 +
+ .../2026-11-24-macos-m1-4703e22/environment.txt    |  17 +
+ .../acceptance/2026-11-24-macos-m1-4703e22/git.txt |  31 ++
+ .../2026-11-24-macos-m1-4703e22/smoke.txt          |  69 +++
+ .../2026-11-24-macos-m1-4703e22/summary.txt        |  35 ++
+ .../2026-11-24-macos-m1-4703e22/test.txt           |  48 +++
+ .../2026-11-24-macos-m1-4703e22/tree-after.txt     |   0
+ .../2026-11-24-macos-m1-4703e22/verify-script.sh   |  77 ++++
+ .../2026-11-24-macos-m1-4703e22/warnings.txt       |   4 +
+ 24 files changed, 1510 insertions(+), 133 deletions(-)
+ create mode 100644 backend/alembic/versions/0003_migration_dest_identity.py
+ create mode 100644 backend/tests/test_storage_m1_review.py
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/README.md
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/acceptance.json
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/acceptance.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/df-after.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/df-before.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/environment.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/git.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/smoke.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/summary.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/test.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/tree-after.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/verify-script.sh
+ create mode 100644 docs/acceptance/2026-11-24-macos-m1-4703e22/warnings.txt

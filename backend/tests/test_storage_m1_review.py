@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -224,6 +225,57 @@ def test_f2_identity_is_never_served_from_a_cache(tmp_path):
         assert volumes.volume_info(tmp_path).hw_volume_uuid == SSD_ONE
     finally:
         volumes.set_probe(None)
+
+
+class CachingProbe(volumes.VolumeProbe):
+    requires_hw_uuid = True
+    cache_identity = True
+
+    def __init__(self, hw: str):
+        self.hw, self.calls = hw, 0
+
+    def info(self, path):
+        self.calls += 1
+        return volumes.VolumeInfo("/", "apfs", self.hw, "Data")
+
+
+def test_f2_cache_is_keyed_by_volume_root_identity(tmp_path, monkeypatch):
+    """The speed cache (macOS) never serves a previous drive: a different volume root
+    (same device number and path, different creation time or inode) misses the cache."""
+    cp = CachingProbe(SSD_ONE)
+    volumes.set_probe(cp)
+    key = {"v": (1, "/Volumes/SSD", 2, 1000.0)}
+    monkeypatch.setattr(volumes, "volume_root_key", lambda _p: key["v"])
+    try:
+        assert volumes.volume_info(tmp_path).hw_volume_uuid == SSD_ONE
+        assert volumes.volume_info(tmp_path).hw_volume_uuid == SSD_ONE
+        assert cp.calls == 1                                     # served from the cache
+        cp.hw = SSD_TWO                                          # replacement drive:
+        key["v"] = (1, "/Volumes/SSD", 2, 2000.0)                # same dev, path, inode
+        assert volumes.volume_info(tmp_path).hw_volume_uuid == SSD_TWO
+        assert cp.calls == 2
+        key["v"] = None                                          # no creation time: no cache
+        volumes.volume_info(tmp_path)
+        volumes.volume_info(tmp_path)
+        assert cp.calls == 4
+        key["v"] = (1, "/Volumes/SSD", 3, 2000.0)
+        monkeypatch.setattr(volumes, "CACHE_SECONDS", 0.0)       # expiry
+        volumes.volume_info(tmp_path)
+        volumes.volume_info(tmp_path)
+        assert cp.calls == 6
+    finally:
+        volumes.set_probe(None)
+
+
+def test_f2_volume_root_key_walks_to_the_mount_root(tmp_path):
+    key = volumes.volume_root_key(tmp_path)
+    if not hasattr(os.stat(tmp_path), "st_birthtime"):
+        assert key is None                                       # Linux: never cached
+    else:
+        dev, root, ino, _birth = key
+        assert dev == os.stat(tmp_path).st_dev
+        assert os.stat(root).st_ino == ino
+        assert os.stat(Path(root).parent).st_dev != dev or Path(root).parent == Path(root)
 
 
 @pytest.mark.skipif(os.uname().sysname != "Darwin", reason="macOS only")
