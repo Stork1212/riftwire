@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RIFTWIRE Phase 1 end-to-end acceptance test (synthetic media only).
+"""RIFTWIRE end-to-end acceptance test (synthetic media only): Phase 1, M1 storage, M2 rights.
 
 Runs a real API process (uvicorn), a real worker process and the built dashboard against an
 ISOLATED temporary data directory (your real data dir is never touched), then walks through the
@@ -159,7 +159,8 @@ def sha256(p: Path) -> str:
     return h.hexdigest()
 
 
-def upload(stack: Stack, path: Path, name: str | None = None, progress: list | None = None):
+def upload(stack: Stack, path: Path, name: str | None = None, progress: list | None = None,
+           params: dict | None = None):
     size = path.stat().st_size
 
     def body():
@@ -171,7 +172,8 @@ def upload(stack: Stack, path: Path, name: str | None = None, progress: list | N
                     progress.append(round(sent * 100 / size))
                 yield chunk
 
-    return stack.post("/api/v1/recordings/import", params={"filename": name or path.name},
+    return stack.post("/api/v1/recordings/import",
+                      params={"filename": name or path.name, **(params or {})},
                       content=body(), headers={"Content-Length": str(size),
                                                "Content-Type": "application/octet-stream"})
 
@@ -513,6 +515,143 @@ def run(args) -> int:
         return (f"dry run wrote nothing; refused while running; moved {len(files)} file(s) "
                 "byte-identical; originals kept; new imports land in the new location")
     step("M3", "Verified migration of the recordings location", s_migration)
+
+    # ------------------------------------------------------------------ M2 rights & sources
+    clip = "https://www.twitch.tv/acceptancestreamer/clip/HeistFinale-Xy_9?filter=clips"
+    attest = "Acceptance test: synthetic licence for a fictional creator."
+    scope = {"v": 1, "uses": ["acquire", "analyze", "edit", "publish"],
+             "acquisition_methods": ["local_recording", "creator_file", "platform_export"],
+             "publish_platforms": ["youtube_shorts"], "brand_channels": "*"}
+    m2: dict = {}
+
+    def ok(r, code=200):
+        check(r.status_code == code, f"HTTP {r.status_code}: {r.text[:300]}")
+        return r.json()
+
+    def s_m2_setup():
+        m2["game"] = ok(stack.post("/api/v1/games", json={"slug": "test-game",
+                                                          "name": "Test Game"}), 201)["id"]
+        m2["brand"] = ok(stack.post("/api/v1/brand-channels", json={
+            "slug": "test-brand", "name": "Test Brand", "platform": "youtube_shorts"}),
+            201)["id"]
+        cr = ok(stack.post("/api/v1/creators", json={"display_name": "Acceptance Streamer",
+                                                     "relationship": "partner"}), 201)
+        m2["creator"] = cr["id"]
+        m2["twitch"] = ok(stack.post(f"/api/v1/creators/{cr['id']}/channels", json={
+            "platform": "twitch", "handle": "AcceptanceStreamer"}), 201)["id"]
+        m2["local"] = ok(stack.post(f"/api/v1/creators/{cr['id']}/channels",
+                                    json={"platform": "local"}), 201)["id"]
+        lic = ok(stack.post("/api/v1/rights", json={
+            "creator_id": cr["id"], "basis": "licence", "coverage": "creator", "scope": scope,
+            "attestation_text": attest}), 201)
+        check(lic["state"] == "ok" and lic["version"] == 1, str(lic))
+        m2["licence"] = lic["id"]
+        return "game, brand channel, creator with 2 channels, standing licence (v1, attested)"
+    step("M2-1", "Configure catalog, creator and a standing licence", s_m2_setup)
+
+    def s_m2_paste():
+        res = ok(stack.post("/api/v1/sources/resolve", json={"url": clip}))
+        check(res["match"]["status"] == "matched"
+              and res["channel"]["id"] == m2["twitch"] and res["covered"], str(res))
+        src = ok(stack.post("/api/v1/sources", json={
+            "url": clip, "game_id": m2["game"], "brand_channel_ids": [m2["brand"]]}), 201)
+        check(src["rights_status"] == "active" and src["creator_channel_id"] == m2["twitch"],
+              str(src))
+        dup = stack.post("/api/v1/sources",
+                         json={"url": "https://clips.twitch.tv/HeistFinale-Xy_9"})
+        check(dup.status_code == 409
+              and dup.json()["error"]["details"]["source_id"] == src["id"], dup.text)
+        m2["clip_source"] = src["id"]
+        return "creator matched from the link; covered by the licence; variant URL deduplicated"
+    step("M2-2", "Paste a URL: automatic match, rights shown, duplicates refused", s_m2_paste)
+
+    def s_m2_import():
+        ids = []
+        for i in (1, 2):
+            p = extra_clip(f"licensed-{i}.mp4", 2 + i / 10)  # unique bytes
+            r = ok(upload(stack, p, p.name, params={"creator_channel_id": m2["local"]}), 201)
+            check(r["source_id"] and r["source_error"] is None, str(r))
+            ids.append(r["source_id"])
+            wait_ready(stack, r["recording"]["id"], timeout=60)
+        d = ok(stack.get(f"/api/v1/sources/{ids[0]}"))
+        check(d["analyze"]["allowed"] and d["recording_count"] == 1, str(d["analyze"]))
+        prov = ok(stack.get(f"/api/v1/sources/{ids[0]}/provenance"))
+        acts = {(p["entity"], p["action"]) for p in prov}
+        for need in [("creator", "created"), ("rights", "attested"), ("source", "created"),
+                     ("recording", "attached_to_source")]:
+            check(need in acts, f"missing provenance {need}")
+        recs = ok(stack.get(f"/api/v1/creators/{m2['creator']}/rights"))
+        check(len(recs) == 1, f"{len(recs)} rights records")
+        return ("2 imports linked automatically under one standing licence (no new "
+                "attestation); provenance chain creator → rights → source → recording")
+    step("M2-3", "Import under a standing licence: linked with provenance", s_m2_import)
+
+    def s_m2_revoke():
+        rv = ok(stack.post(f"/api/v1/rights/{m2['licence']}/revoke",
+                           json={"reason": "acceptance: creator withdrew"}))
+        check(rv["state"] == "revoked", str(rv))
+        d = ok(stack.get(f"/api/v1/sources/{m2['clip_source']}"))
+        check(not d["analyze"]["allowed"] and d["analyze"]["reason"] == "revoked",
+              str(d["analyze"]))
+        before = ok(stack.get("/api/v1/recordings"))["total"]
+        p = extra_clip("after-revoke.mp4", 2.5)
+        r = upload(stack, p, p.name, params={"creator_channel_id": m2["local"]})
+        check(r.status_code == 403 and r.json()["error"]["code"] == "rights_refused", r.text)
+        check(ok(stack.get("/api/v1/recordings"))["total"] == before, "recording created")
+        h = ok(upload(stack, extra_clip("housekeeping.mp4", 2.7), "housekeeping.mp4"), 201)
+        wait_ready(stack, h["recording"]["id"], timeout=60)
+        check(h["recording"]["source_id"] is None, "unlinked import got a source")
+        return ("revoked immediately: analysis refused, licensed import refused before any "
+                "byte; plain imports (housekeeping) still work, unlinked")
+    step("M2-4", "Revocation: refused everywhere, housekeeping continues", s_m2_revoke)
+
+    def s_m2_second():
+        lic = ok(stack.post("/api/v1/rights", json={
+            "creator_id": m2["creator"], "basis": "licence", "coverage": "creator",
+            "scope": scope, "attestation_text": attest + " (renewed)"}), 201)
+        m2["licence2"] = lic["id"]
+        vod = ok(stack.post("/api/v1/sources", json={
+            "url": "https://www.twitch.tv/videos/987654321",
+            "creator_channel_id": m2["twitch"]}), 201)
+        check(vod["rights_status"] == "active" and "analyze" in vod["authorized_uses"], str(vod))
+        clip_now = ok(stack.get(f"/api/v1/sources/{m2['clip_source']}"))
+        check(clip_now["analyze"]["allowed"]
+              and clip_now["analyze"]["record_id"] == lic["id"], str(clip_now["analyze"]))
+        n = len(ok(stack.get(f"/api/v1/creators/{m2['creator']}/rights")))
+        check(n == 2, f"{n} records")
+        return "one new licence covers the existing and a new source; no per-source attestation"
+    step("M2-5", "A standing licence covers further sources automatically", s_m2_second)
+
+    def s_m2_history():
+        new = ok(stack.post(f"/api/v1/rights/{m2['licence2']}/supersede", json={
+            "scope": {**scope, "uses": ["acquire", "analyze"]},
+            "attestation_text": attest + " (narrowed)"}), 201)
+        check(new["version"] == 2, str(new))
+        old = ok(stack.get(f"/api/v1/rights/{m2['licence2']}"))
+        check(old["state"] == "superseded", old["state"])
+        chk = ok(stack.get(f"/api/v1/sources/{m2['clip_source']}/rights-check",
+                           params={"use": "edit", "clip_ms": 1000}))
+        check(not chk["allowed"] and chk["reason"] == "use_not_in_scope", str(chk))
+        import sqlite3
+        con = sqlite3.connect(str(data_dir / "riftwire.db"), timeout=10)
+        refused = 0
+        lid = (m2["licence"],)
+        for sql, args in (("UPDATE rights_records SET scope_json='{}' WHERE id=?", lid),
+                          ("DELETE FROM rights_records WHERE id=?", lid),
+                          ("UPDATE rights_records SET revoked_at=NULL WHERE id=?", lid),
+                          ("DELETE FROM provenance_events", ()),
+                          ("UPDATE provenance_events SET action='x'", ())):
+            try:
+                con.execute(sql, args)
+                con.commit()
+            except sqlite3.DatabaseError:
+                con.rollback()
+                refused += 1
+        con.close()
+        check(refused == 5, f"only {refused}/5 tampering attempts refused by the database")
+        return ("edit = new version (v2), old one superseded and powerless; direct database "
+                "edits/deletes of attested rights and provenance refused (5/5)")
+    step("M2-6", "Supersession and immutable history", s_m2_history)
 
     stack.stop()
     passed = sum(r["result"] == "PASS" for r in results)

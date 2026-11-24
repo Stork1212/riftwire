@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import __version__
+from app.api.rights_routes import m2
 from app.api.routes import api, health_router
 from app.core.config import REPO_ROOT, Settings, get_settings
 from app.core.errors import AppError
@@ -112,6 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(api)
+    app.include_router(m2)
     _mount_frontend(app, REPO_ROOT / "frontend" / "dist")
     return app
 

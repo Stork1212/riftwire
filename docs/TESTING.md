@@ -64,7 +64,7 @@ backend/.venv/bin/python scripts/acceptance.py --report acceptance.json
 ```
 
 Starts a real API, worker and the built dashboard against an **isolated temporary data
-directory** (port 8765) and walks the acceptance scenario (22 steps).
+directory** (port 8765) and walks the acceptance scenario (28 steps: Phase 1, M1 storage, M2 rights).
 
 **Phase 1:** start, readiness, dashboard served, import, progress, stored + hash +
 read-only, metadata vs. independent ffprobe, thumbnail size, listing, jobs COMPLETED,

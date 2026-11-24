@@ -84,3 +84,20 @@ class StorageOfflineJobError(TransientJobError):
     without consuming an attempt."""
 
     permanent = False
+
+
+# ---- Rights (M2) ----------------------------------------------------------
+
+class RightsRefused(AppError):
+    """The action is not authorized by a current rights record (fail-closed). ``details``
+    carries the stable ``reason`` code."""
+
+    status_code = 403
+    code = "rights_refused"
+
+
+class RightsRefusedJobError(PermanentJobError):
+    """A rights-gated job is not (or no longer) authorized. Never retried automatically:
+    once the rights are fixed the owner retries it."""
+
+    permanent = True

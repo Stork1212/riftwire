@@ -58,6 +58,9 @@ export interface Recording {
   thumbnail_status: ThumbnailStatus;
   error_message: string | null;
   thumbnail_url: string;
+  source_id?: string | null;
+  /** How linked media was obtained; null = not on record (rights-gated uses refused). */
+  acquisition_method?: string | null;
 }
 
 export interface RecordingDetail extends Recording {
@@ -78,6 +81,8 @@ export interface SystemEvent {
 export interface ImportResponse {
   recording: Recording;
   job_id: string;
+  source_id?: string | null;
+  source_error?: string | null;
 }
 
 export type WorkerState =

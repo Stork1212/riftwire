@@ -38,7 +38,7 @@ function parseError(status: number, text: string): ApiError {
   return new ApiError(status, "http_error", `Request failed (HTTP ${status})`);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, { headers: { Accept: "application/json" }, ...init });
@@ -50,7 +50,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return JSON.parse(text) as T;
 }
 
-function qs(params: Record<string, string | number | undefined | null>): string {
+export function qs(params: Record<string, string | number | undefined | null>): string {
   const u = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== "") u.set(k, String(v));
@@ -97,10 +97,11 @@ export interface UploadHandle {
 export function uploadRecording(
   file: File,
   onProgress: (loaded: number, total: number) => void,
+  link: { source_id?: string; creator_channel_id?: string; acquisition_method?: string } = {},
 ): UploadHandle {
   const xhr = new XMLHttpRequest();
   const promise = new Promise<ImportResponse>((resolve, reject) => {
-    xhr.open("POST", `/api/v1/recordings/import${qs({ filename: file.name })}`);
+    xhr.open("POST", `/api/v1/recordings/import${qs({ filename: file.name, ...link })}`);
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded, e.total);

@@ -1,0 +1,4 @@
+[1;36m▸[0m Stopping worker (pid 57904)
+[1;32m✓[0m worker stopped
+[1;36m▸[0m Stopping api (pid 57903)
+[1;32m✓[0m api stopped

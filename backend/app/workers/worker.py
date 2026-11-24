@@ -19,18 +19,19 @@ import socket
 import sys
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from sqlalchemy import update
 
 from app.core.config import Settings, get_settings
-from app.core.errors import JobError, StorageOfflineJobError
+from app.core.errors import JobError, RightsRefusedJobError, StorageOfflineJobError
 from app.core.logging import configure_logging, get_logger
 from app.db.base import utcnow
 from app.db.migrations import schema_status
 from app.db.session import Database
 from app.models import Severity, Worker
-from app.services import media, queue
+from app.services import media, queue, rights
 from app.services.events import record_event
 from app.services.ingest import reconcile
 from app.services.locations import (
@@ -134,6 +135,7 @@ class WorkerProcess:
             self.threads.append(t)
         hb = threading.Thread(target=self._heartbeat_loop, name="heartbeat", daemon=True)
         hb.start()
+        self._heartbeat_thread = hb
         next_recovery = 0.0
         while not self.stop_event.is_set():
             if time.monotonic() >= next_recovery:
@@ -159,6 +161,11 @@ class WorkerProcess:
                 ctx.cancel.set()
         for t in self.threads:
             t.join(15)
+        # The heartbeat thread's final beat writes STOPPING: it must finish before the final
+        # STOPPED write, or it can overwrite it (smoke test, 2026-11-24).
+        hb = getattr(self, "_heartbeat_thread", None)
+        if hb is not None:
+            hb.join(15)
         try:
             with self.db.session() as s:
                 s.execute(update(Worker).where(Worker.id == self.id)
@@ -253,14 +260,29 @@ class WorkerProcess:
                 continue
             self._execute(claimed)
 
+    def _authorize(self, claimed: queue.ClaimedJob) -> queue.ClaimedJob:
+        """Rights gate before a gated job runs (M2): the decision travels with the job so
+        its completion is fenced against it. Raises ``RightsRefusedJobError``."""
+        use = rights.JOB_USE[claimed.job_type]
+        if use is None:
+            return claimed
+        with self.db.session() as s:
+            d = rights.evaluate_recording(s, claimed.recording_id, use)
+        if not d.allowed:
+            raise RightsRefusedJobError(f"not authorized for {use}: {d.message} "
+                                        f"[{d.reason}]")
+        return replace(claimed, decision=d)
+
     def _execute(self, claimed: queue.ClaimedJob) -> None:
-        ctx = JobContext(self.db, self.settings, claimed)
         extra = {"job_id": claimed.id, "recording_id": claimed.recording_id,
                  "worker_id": self.id}
+        ctx = JobContext(self.db, self.settings, claimed)
         with self._active_lock:
             self.active[claimed.id] = ctx
         log.info(f"running {claimed.job_type.value} (attempt {claimed.attempt})", extra=extra)
         try:
+            claimed = self._authorize(claimed)
+            ctx.claimed = claimed
             HANDLERS[claimed.job_type](ctx)
             log.info(f"{claimed.job_type.value} completed", extra=extra)
         except queue.LeaseLost:
@@ -270,6 +292,14 @@ class WorkerProcess:
                 log.warning("attempt abandoned: lease lost", extra=extra)
             else:
                 self._safe(lambda: queue.release(self.db, claimed, "released on shutdown"))
+        except RightsRefusedJobError as e:
+            msg = f"RightsRefused: {e}"
+            log.warning(f"{claimed.job_type.value} refused: {e}", extra=extra)
+            self._safe(lambda: self._record_refusal(claimed, msg))
+            self._safe(lambda: queue.fail(
+                self.db, claimed, msg, permanent=True,
+                backoff_base=self.settings.job_backoff_base_seconds,
+                backoff_cap=self.settings.job_backoff_max_seconds))
         except StorageOfflineJobError as e:
             why = str(e)
             log.warning(f"storage offline; deferring: {why}", extra=extra)
@@ -293,6 +323,14 @@ class WorkerProcess:
         finally:
             with self._active_lock:
                 self.active.pop(claimed.id, None)
+
+    def _record_refusal(self, claimed: queue.ClaimedJob, msg: str) -> None:
+        with self.db.session() as s:
+            record_event(s, Severity.WARNING, "worker", "rights_refused", msg,
+                         job_id=claimed.id, recording_id=claimed.recording_id)
+            rights.provenance(s, "job", claimed.id, "rights_refused", actor="system",
+                              job_type=claimed.job_type.value,
+                              recording_id=claimed.recording_id, message=msg)
 
     def _safe(self, fn) -> None:
         try:

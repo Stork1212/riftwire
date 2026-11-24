@@ -746,3 +746,129 @@ windows between them; it does not claim to close them. The remaining windows:
 - **Physical behaviour is not yet exercised:** real I/O errors on unplug, sleep/wake
   unmounts and multi-GB throughput are pending the physical-SSD acceptance gate (checklist
   §11).
+
+## 20. Rights & source management (M2, implemented)
+
+Design approved in [`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) (owner decisions
+R1–R6, §12). Review package: [`M2_REVIEW.md`](M2_REVIEW.md).
+
+### 20.1 Data model (migration `0004`)
+- **Catalog:** `games`, `brand_channels` (RIFTWIRE output channels, with a `monetized` flag).
+  Both are configured in the dashboard; nothing is seeded (R5).
+- **Creators and channels:** `creators` (self, partner or licensor), `creator_channels`
+  (youtube, twitch or local; unique per platform and id or handle).
+- **Sources:** `sources` (one per external video or local origin; the canonical URL is
+  unique; `acquisition_method` per R1) and `source_assignments` (to brand channels).
+  `recordings.source_id` links media to its source; NULL means rights are not attested.
+  `recordings.acquisition_method` (migration `0005`) records how the media was actually
+  obtained; analysis, editing and publishing are checked against it. NULL on linked media
+  means "not on record" and refuses every rights-gated use (`acquisition_method_unknown`)
+  until the owner records it once; the source's declared method is never substituted.
+- **Rights:**
+  - `rights_records`: versioned by `lineage_id` and `version`; draft until `attested_at`.
+  - Coverage is one of `creator` (a standing licence for every channel), `channels`
+    (`rights_record_channels`) or `sources` (`rights_source_links`).
+  - `rights_evidence`: supporting documentation.
+- **`provenance_events`:** append-only history of everything above.
+- **Fourteen SQLite triggers** (`0004`, plus `0006` for UPDATE) enforce immutability in the
+  database itself:
+  - attested content can never change;
+  - `superseded_by_id` and `revoked_at` can each be set once;
+  - attested rows can't be deleted;
+  - coverage links of attested records are frozen (no insert, delete or update, checked
+    against both the old and the new parent record);
+  - evidence and provenance reject UPDATE and DELETE.
+
+  A future `batch_alter_table` on these tables must recreate the triggers.
+
+### 20.2 Evaluation (`services/rights.py`)
+`evaluate(session, source, use, platform?, brand_channel?, clip_ms?, method?)` is a pure read
+that returns a `Decision` with a stable reason code.
+- **Current version only:** a record authorizes only if it is attested, not superseded, not
+  revoked and inside its validity window.
+- **Ordering:** the most specific coverage wins (sources, then channels, then creator).
+- **Strict scope** (`Scope`, `extra="forbid"`, `v == 1`). Unknown fields or versions make
+  the record unusable (`scope_unsupported`).
+- **Each constraint is enforced or fails closed:**
+  - uses and acquisition method, with `url_fetch` additionally needing written platform
+    permission evidence and the global switch;
+  - analyse, edit and publish also require the source's acquisition method to be
+    permitted;
+  - brand-channel assignment and scope;
+  - monetization;
+  - maximum clip length (a clip length is required when the scope limits it);
+  - platform;
+  - territories, which can't be enforced, so they always refuse publishing.
+- **Badges:** `status_summary` reports the licence state only (`active`, `unusable`,
+  `expired` and so on); `authorized_uses` reports what is allowed now. Every refusal carries
+  an `action` (`REASON_ACTION`).
+- **Source-specific coverage:** accepted only for the creator's own sources.
+- **Attribution** is returned as an obligation. `require_obligations` refuses unless the
+  consumer confirms every obligation type, including types it doesn't recognise.
+
+### 20.3 Enforcement
+| Point | Mechanism |
+|---|---|
+| API | `rights.require` / `acquisition.check_acquire`; refusals are 403 `rights_refused` with the reason code |
+| Job enqueue | `queue.enqueue` refuses gated types (`rights.JOB_USE`) for media whose rights don't allow the use. When a next stage is refused, the refusal is recorded as an event and the stage is not queued |
+| Worker start | `WorkerProcess._authorize` evaluates before the handler runs. A refusal is a **permanent** failure (no automatic retry), with a `rights_refused` event and provenance |
+| Output boundary | The `Decision` travels with the claimed job. `queue.complete` runs `rights.fence` inside the same `BEGIN IMMEDIATE` fenced transaction as the output, so no handler can forget it. `rights.authorize_output` does the same for file promotions |
+| Revocation and supersession | `BEGIN IMMEDIATE` writes, so SQLite serializes them with the fence: an output either commits before the revocation or is refused. A job authorized under a superseded version is refused at its fence (`rights_changed`) |
+
+- **Job types are declared:** `JOB_USE` must declare every job type, which a test checks.
+  Phase 1 housekeeping (INGEST, METADATA, THUMBNAIL) is ungated (R2).
+- **Publishing (Phase 5) is not transactional with the platform:** the remaining window
+  around the upload is documented in plan §12.5.
+
+### 20.4 Acquisition and matching
+- **`services/acquisition.py`:** one provider per method (R1).
+  - M2 implements only the providers fed by the existing upload path: `local_recording`,
+    `creator_file`, `platform_export`.
+  - `direct_link`, `platform_api`, `watch_folder` and `url_fetch` are declared and refuse
+    with `acquisition_unavailable` (501).
+  - `attach_media` re-checks both permissions (content rights and method), and never moves
+    media to a different source.
+- **`services/matching.py`:** `SourceMatcher` chain, offline only. A result is `matched`,
+  `ambiguous` or `unmatched`; matchers never guess.
+  - Matchers: an existing source with the same canonical URL, the login in a Twitch clip
+    URL, or a file hash of an already-linked recording.
+  - YouTube video URLs don't name their channel offline. The owner picks it, and an
+    official-API matcher (M3) will plug into the same chain.
+- **Imports:** `POST /recordings/import` accepts `source_id`, or `creator_channel_id`,
+  which creates a local source covered by the channel's standing licence.
+  - Both permissions are checked before a byte is accepted, as a dry run in a
+    rolled-back transaction.
+  - They are checked again when linking. If the rights changed during the upload, the
+    recording is kept but stays unlinked, and the response explains why.
+
+### 20.5 Evidence (`services/evidence.py`)
+- **Never proof:** evidence never changes a record's status.
+- **Storage:** files go on the internal disk at `<data_dir>/evidence/<uuid>.<ext>`.
+  - Allowed types: pdf, png, jpg, webp, txt, md, eml.
+  - Files are read-only, never overwritten and never deleted automatically.
+- **Limits:**
+  - 25 MB per file, refused before reading.
+  - An aggregate limit (`RIFTWIRE_EVIDENCE_MAX_TOTAL_BYTES`, default 1 GiB), checked
+    before receiving and again inside the `BEGIN IMMEDIATE` transaction that records the
+    file, so concurrent uploads can't jointly exceed it.
+- **Write path:**
+  1. a persistent disk reservation (60 GiB floor);
+  2. a temporary file in the same folder;
+  3. promotion with `link(2)` inside that transaction.
+- **Residual:** if the commit itself fails after `link`, an orphan file without a row can
+  remain. It overwrites nothing.
+
+### 20.6 API and dashboard
+- **API:** `/api/v1/games`, `/brand-channels`, `/creators` (+ `/channels`, `/rights`),
+  `/rights` (+ `/attest`, `/supersede`, `/revoke`, `/evidence`), `/sources` (+ `/resolve`,
+  `/assignments`, `/recordings`, `/rights-check`, `/provenance`), `/acquisition-methods`,
+  `/creator-channels/{id}/coverage`.
+- **Dashboard pages:**
+  - **Sources:** paste a link, see the automatic match and rights, create the source with
+    one click.
+  - **Source detail:** rights decisions, covering licences, brand channels, media and
+    provenance timeline.
+  - **Creators & Rights:** channels, licences (attest, edit as a new version, revoke) and
+    evidence.
+  - **Games & Channels.**
+  - **Import:** gains an optional rights link.

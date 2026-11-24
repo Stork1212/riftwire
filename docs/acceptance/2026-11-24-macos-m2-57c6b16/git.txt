@@ -1,0 +1,5 @@
+From https://github.com/Stork1212/riftwire
+ * branch            phase2/m2-rights-sources -> FETCH_HEAD
+Already on 'phase2/m2-rights-sources'
+Your branch is up to date with 'origin/phase2/m2-rights-sources'.
+Already up to date.

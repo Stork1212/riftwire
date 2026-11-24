@@ -73,6 +73,14 @@ class Settings(BaseSettings):
     ffprobe_timeout_seconds: float = Field(default=30.0, gt=0)
     ffmpeg_timeout_seconds: float = Field(default=120.0, gt=0)
 
+    # ---- M2 rights & sources -------------------------------------------------
+    # Evidence files (supporting documentation for rights records), internal disk.
+    evidence_max_file_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    evidence_max_total_bytes: int = Field(default=1 * GIB, gt=0)
+    # Global switch for generic URL fetching (acquisition method url_fetch). Off by default
+    # (owner decision R1); M2 implements no fetcher either way.
+    url_acquisition_enabled: bool = False
+
     thumbnail_width: int = Field(default=480, ge=16, le=3840)
     thumbnail_height: int = Field(default=270, ge=16, le=2160)
 
@@ -177,9 +185,15 @@ class Settings(BaseSettings):
     def logs_dir(self) -> Path:
         return self.data_dir / "logs"
 
+    @property
+    def evidence_dir(self) -> Path:
+        return self.data_dir / "evidence"
+
     def internal_dirs(self) -> list[Path]:
-        """Directories that always live on the internal disk (database, logs, thumbnails)."""
-        return [self.data_dir, self.thumbnails_dir, self.logs_dir, self.db_path.parent]
+        """Directories that always live on the internal disk (database, logs, thumbnails,
+        rights evidence)."""
+        return [self.data_dir, self.thumbnails_dir, self.logs_dir, self.evidence_dir,
+                self.db_path.parent]
 
     def required_dirs(self) -> list[Path]:
         return self.internal_dirs()

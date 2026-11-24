@@ -1,4 +1,4 @@
-import { EmptyState, ErrorBanner, Loading, Panel, StatusBadge } from "../components/ui";
+import { EmptyState, ErrorBanner, Loading, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
 import { formatBytes, formatDate } from "../services/format";
 import { usePolling } from "../services/usePolling";
@@ -75,12 +75,7 @@ export function StoragePage() {
   const offline = d?.locations.filter((l) => !l.online) ?? [];
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Storage</h1>
-          <p>Where RIFTWIRE keeps its files, and the drives behind them.</p>
-        </div>
-      </div>
+      <PageHeader title="Storage" description="Where RIFTWIRE keeps its files, and the drives behind them." />
       {st.error && <ErrorBanner error={st.error} title="Cannot load storage status" />}
       {st.loading && !d && <Loading />}
       {d && offline.length > 0 && (

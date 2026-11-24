@@ -1,0 +1,6 @@
+From https://github.com/Stork1212/riftwire
+ * branch            phase2/m2-rights-sources -> FETCH_HEAD
+ * [new branch]      phase2/m2-rights-sources -> origin/phase2/m2-rights-sources
+Switched to a new branch 'phase2/m2-rights-sources'
+branch 'phase2/m2-rights-sources' set up to track 'origin/phase2/m2-rights-sources'.
+Already up to date.

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Panel, StatCard, StatusBadge, ErrorBanner, Loading, EmptyState } from "../components/ui";
+import { EmptyState, ErrorBanner, Loading, PageHeader, Panel, StatCard, StatusBadge } from "../components/ui";
 import { StorageBar } from "../components/StorageBar";
 import { api } from "../services/api";
 import { formatBytes, formatTotalDuration } from "../services/format";
@@ -10,13 +10,8 @@ export function OverviewPage() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Overview</h1>
-          <p>Library, processing queue and storage at a glance.</p>
-        </div>
-        <Link to="/import" className="btn btn-primary">Import recording</Link>
-      </div>
+      <PageHeader title="Overview" description="Library, processing queue and storage at a glance."
+        actions={<Link to="/import" className="btn btn-primary">Import recording</Link>} />
       {error && <ErrorBanner error={error} title="Cannot load status" />}
       {loading && !data && <Loading />}
       {data && (

@@ -25,7 +25,7 @@ from app.schemas.api import (
     RecordingDetail,
     RecordingOut,
 )
-from app.services import media, queue, system
+from app.services import media, queue, rights_import, system
 from app.services.events import record_event
 from app.services.ingest import UploadSession, complete_upload
 from app.services.storage import safe_join
@@ -153,8 +153,21 @@ def get_recording(recording_id: str, db: DB):
 @api.post("/recordings/import", status_code=201, response_model=ImportResponse,
           dependencies=[Depends(require_schema)])
 async def import_recording(request: Request, db: DB, cfg: CFG,
-                           filename: Annotated[str, Query(min_length=1, max_length=1024)]):
-    """Streamed upload: the request body is the raw file (no multipart)."""
+                           filename: Annotated[str, Query(min_length=1, max_length=1024)],
+                           source_id: str | None = None,
+                           creator_channel_id: str | None = None,
+                           acquisition_method: str | None = None):
+    """Streamed upload: the request body is the raw file (no multipart).
+
+    M2: ``source_id`` links the import to an existing source; ``creator_channel_id``
+    creates a local source on that channel (covered by its standing licence). Both
+    permissions (rights + acquisition method) are checked before a byte is accepted and
+    again when linking."""
+    if source_id and creator_channel_id:
+        raise ValidationFailed("Give either source_id or creator_channel_id, not both")
+    if source_id or creator_channel_id:
+        await run_in_threadpool(rights_import.precheck, db, cfg, source_id,
+                                creator_channel_id, acquisition_method, filename)
     raw_len = request.headers.get("content-length")
     try:
         content_length = int(raw_len) if raw_len is not None else None
@@ -184,7 +197,13 @@ async def import_recording(request: Request, db: DB, cfg: CFG,
         await run_in_threadpool(up.abort)
         raise
     result = await run_in_threadpool(complete_upload, db, cfg, up, digest)
-    return ImportResponse(recording=rec_out(result.recording), job_id=result.job_id)
+    linked, error = None, None
+    if source_id or creator_channel_id:
+        linked, error = await run_in_threadpool(
+            rights_import.link, db, cfg, result.recording.id, source_id, creator_channel_id,
+            acquisition_method, filename)
+    return ImportResponse(recording=rec_out(result.recording, source_id=linked),
+                          job_id=result.job_id, source_id=linked, source_error=error)
 
 
 @api.get("/recordings/{recording_id}/thumbnail", dependencies=[Depends(require_schema)])

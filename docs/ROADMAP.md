@@ -32,7 +32,7 @@ independently reviewed, and needs the owner's approval before it starts.
 |---|---|---|---|
 | M0 | 2 | Benchmark spike (transcription engine/model, signal throughput) | **Complete**: [`BENCHMARKS.md`](BENCHMARKS.md), tag `v0.2.0-m0` |
 | M1 | 2 | Storage architecture: locations, volume identity, offline handling, persistent per-volume reservations, cross-volume transfers, verified migration | **Merged** (PR #9) after independent review; verified on the Mac (internal disk); [physical-SSD acceptance pending](M1_STORAGE_CHECKLIST.md#11-acceptance-checks-that-depend-on-the-external-ssd-deferred) |
-| M2 | 2 | Rights & sources | **Approved (R1–R6), in progress** on `phase2/m2-rights-sources` |
+| M2 | 2 | Rights & sources | **Implemented, in review** (PR #12; R1–R6) |
 | M3 | 2 | Permitted acquisition | Not started |
 | M4 | 2 | Transcription & signals (MLX Whisper `base` default; `small` optional after chunked memory testing; raw timestamps preserved) | Not started |
 | M5 | 3 | AI providers & prompts ($0 budget; Ollama deferred) | Not started |

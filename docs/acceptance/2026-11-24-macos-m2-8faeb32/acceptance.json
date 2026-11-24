@@ -1,0 +1,207 @@
+{
+  "passed": 28,
+  "failed": 0,
+  "total": 28,
+  "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "python": "3.13.2",
+  "ffmpeg": "ffmpeg version 9.1 Copyright (c) 2000-2026 the FFmpeg developers",
+  "min_free_gib": 60.0,
+  "results": [
+    {
+      "step": "1",
+      "title": "Start the backend",
+      "result": "PASS",
+      "note": "API healthy",
+      "seconds": 0.69
+    },
+    {
+      "step": "2",
+      "title": "Start the worker",
+      "result": "PASS",
+      "note": "worker process running",
+      "seconds": 1.01
+    },
+    {
+      "step": "3",
+      "title": "Backend ready and worker reporting heartbeats",
+      "result": "PASS",
+      "note": "ready; ffmpeg: ffmpeg version 9.1; videotoolbox=True",
+      "seconds": 0.09
+    },
+    {
+      "step": "4",
+      "title": "Open the local dashboard (served by the API)",
+      "result": "PASS",
+      "note": "dashboard + 1 asset(s) served",
+      "seconds": 0.05
+    },
+    {
+      "step": "5",
+      "title": "Import a valid test video",
+      "result": "PASS",
+      "note": "HTTP 201, recording b41cc3b3\u2026, 8626082 bytes",
+      "seconds": 0.18
+    },
+    {
+      "step": "6",
+      "title": "Observe import + processing progress",
+      "result": "PASS",
+      "note": "upload streamed in 33 chunks; processing states observed: ['COMPLETED', 'PENDING']",
+      "seconds": 0.33
+    },
+    {
+      "step": "7",
+      "title": "Recording is stored",
+      "result": "PASS",
+      "note": "recordings/b41cc3b3-3d61-41f6-a9db-554d7885f548.mp4 (SHA-256 verified, read-only)",
+      "seconds": 0.01
+    },
+    {
+      "step": "8",
+      "title": "Metadata extracted correctly (vs. independent ffprobe)",
+      "result": "PASS",
+      "note": "1920x1080 @ 30000/1001, 12012 ms, h264/aac",
+      "seconds": 0.03
+    },
+    {
+      "step": "9",
+      "title": "Thumbnail generated",
+      "result": "PASS",
+      "note": "480x270 JPEG (16:9 preserved)",
+      "seconds": 0.03
+    },
+    {
+      "step": "10",
+      "title": "Recording appears in the dashboard API",
+      "result": "PASS",
+      "note": "1 recording(s) listed",
+      "seconds": 0.01
+    },
+    {
+      "step": "11",
+      "title": "Processing jobs reach COMPLETED",
+      "result": "PASS",
+      "note": "INGEST=COMPLETED, METADATA=COMPLETED, THUMBNAIL=COMPLETED",
+      "seconds": 0.0
+    },
+    {
+      "step": "12",
+      "title": "Restart the application and worker",
+      "result": "PASS",
+      "note": "API and worker restarted (SIGTERM \u2192 start)",
+      "seconds": 2.1
+    },
+    {
+      "step": "13",
+      "title": "Recordings and job history persist",
+      "result": "PASS",
+      "note": "recording + 3 completed jobs persisted",
+      "seconds": 0.04
+    },
+    {
+      "step": "14-15",
+      "title": "Import the same video again \u2192 duplicate detected",
+      "result": "PASS",
+      "note": "HTTP 409 \u2014 This recording was already imported as 'GTA synthetic heist.mp4'.",
+      "seconds": 0.04
+    },
+    {
+      "step": "16-17",
+      "title": "Import an invalid file \u2192 safe rejection, clear error",
+      "result": "PASS",
+      "note": "422 \u2014 Invalid or unsupported media: ffprobe could not read the file: <input>\u2026; .txt \u2192 415",
+      "seconds": 0.08
+    },
+    {
+      "step": "X1",
+      "title": "Interrupted upload is cleaned up safely",
+      "result": "PASS",
+      "note": "client disconnected at 33% \u2192 partial file removed, event logged",
+      "seconds": 0.74
+    },
+    {
+      "step": "X2",
+      "title": "Interrupted processing job recovers (crash + orphan FFmpeg)",
+      "result": "PASS",
+      "note": "worker SIGKILLed mid-THUMBNAIL; orphan FFmpeg killed on restart; job completed on attempt 2; WEBM without audio handled",
+      "seconds": 4.08
+    },
+    {
+      "step": "X3",
+      "title": "Import refused when free space would drop below the floor",
+      "result": "PASS",
+      "note": "HTTP 507 \u2014 Not enough free disk space on the temp drive: this would leave less than the 931",
+      "seconds": 1.76
+    },
+    {
+      "step": "X4",
+      "title": "Structured logs written",
+      "result": "PASS",
+      "note": "api.log and worker.log are structured JSON",
+      "seconds": 0.0
+    },
+    {
+      "step": "M1",
+      "title": "Storage locations registered and verified",
+      "result": "PASS",
+      "note": "5 locations online with identity markers; 1 volume(s)",
+      "seconds": 0.1
+    },
+    {
+      "step": "M2",
+      "title": "Offline location: writes refused, jobs wait, recovery on return",
+      "result": "PASS",
+      "note": "upload refused (503) with nothing written; INGEST waited with 0 attempts, then completed on attempt 1 after the drive returned",
+      "seconds": 7.31
+    },
+    {
+      "step": "M3",
+      "title": "Verified migration of the recordings location",
+      "result": "PASS",
+      "note": "dry run wrote nothing; refused while running; moved 3 file(s) byte-identical; originals kept; new imports land in the new location",
+      "seconds": 3.91
+    },
+    {
+      "step": "M2-1",
+      "title": "Configure catalog, creator and a standing licence",
+      "result": "PASS",
+      "note": "game, brand channel, creator with 2 channels, standing licence (v1, attested)",
+      "seconds": 0.09
+    },
+    {
+      "step": "M2-2",
+      "title": "Paste a URL: automatic match, rights shown, duplicates refused",
+      "result": "PASS",
+      "note": "creator matched from the link; covered by the licence; variant URL deduplicated",
+      "seconds": 0.04
+    },
+    {
+      "step": "M2-3",
+      "title": "Import under a standing licence: linked with provenance",
+      "result": "PASS",
+      "note": "2 imports linked automatically under one standing licence (no new attestation); provenance chain creator \u2192 rights \u2192 source \u2192 recording",
+      "seconds": 1.08
+    },
+    {
+      "step": "M2-4",
+      "title": "Revocation: refused everywhere, housekeeping continues",
+      "result": "PASS",
+      "note": "revoked immediately: analysis refused, licensed import refused before any byte; plain imports (housekeeping) still work, unlinked",
+      "seconds": 0.66
+    },
+    {
+      "step": "M2-5",
+      "title": "A standing licence covers further sources automatically",
+      "result": "PASS",
+      "note": "one new licence covers the existing and a new source; no per-source attestation",
+      "seconds": 0.06
+    },
+    {
+      "step": "M2-6",
+      "title": "Supersession and immutable history",
+      "result": "PASS",
+      "note": "edit = new version (v2), old one superseded and powerless; direct database edits/deletes of attested rights and provenance refused (5/5)",
+      "seconds": 0.04
+    }
+  ]
+}

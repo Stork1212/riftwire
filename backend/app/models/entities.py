@@ -102,6 +102,13 @@ class Recording(Base):
         String(16), default=ThumbnailStatus.PENDING.value
     )
     error_message: Mapped[str | None] = mapped_column(Text)
+    # M2: where this media came from (NULL = rights not attested yet) and its offset on the
+    # source's timeline (section recordings in M3 map timestamps back to the source).
+    source_id: Mapped[str | None] = mapped_column(UUIDStr, ForeignKey("sources.id"))
+    source_offset_ms: Mapped[int] = mapped_column(BigInteger, default=0)
+    # How this media was actually obtained (set when linked to its source). Rights checks
+    # use it, not only the source's declared method (M2 review finding A).
+    acquisition_method: Mapped[str | None] = mapped_column(String(32))
 
     jobs: Mapped[list[Job]] = relationship(back_populates="recording")
 

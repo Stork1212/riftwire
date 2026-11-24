@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { JobStages } from "../components/JobStages";
-import { ErrorBanner, Loading, Panel, StatusBadge } from "../components/ui";
+import { ErrorBanner, Loading, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
 import { formatBytes, formatDate, formatDuration, formatFps, formatResolution } from "../services/format";
 import { usePolling } from "../services/usePolling";
@@ -11,13 +11,8 @@ export function RecordingDetailPage() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <Link to="/recordings" className="muted">← Recordings</Link>
-          <h1 style={{ marginTop: 6 }}>{r?.original_filename ?? "Recording"}</h1>
-        </div>
-        {r && <StatusBadge status={r.status} />}
-      </div>
+      <PageHeader eyebrow={<Link to="/recordings" className="muted">← Recordings</Link>}
+        title={r?.original_filename ?? "Recording"} actions={r && <StatusBadge status={r.status} />} />
       {error && <ErrorBanner error={error} title="Cannot load recording" />}
       {loading && !r && <Loading />}
       {r && (

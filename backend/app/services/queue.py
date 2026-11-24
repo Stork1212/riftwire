@@ -20,11 +20,12 @@ from datetime import datetime, timedelta
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, NotFoundError, RightsRefused, RightsRefusedJobError
 from app.core.logging import get_logger
 from app.db.base import utcnow
 from app.db.session import Database
 from app.models import Job, JobStatus, JobType, Recording, RecordingStatus, Severity
+from app.services import rights
 from app.services.events import record_event
 
 log = get_logger("queue")
@@ -69,16 +70,27 @@ class ClaimedJob:
     token: str
     attempt: int
     max_attempts: int
+    # Set by the worker for rights-gated job types (M2): the decision the job runs under.
+    # Completion re-checks it inside the same transaction (rights fence).
+    decision: rights.Decision | None = None
 
 
 # ---------------------------------------------------------------------------- enqueue
 
 def enqueue(session: Session, recording_id: str, job_type: JobType, max_attempts: int) -> Job:
-    """Idempotent: returns the existing job of this type for the recording if present."""
+    """Idempotent: returns the existing job of this type for the recording if present.
+
+    Rights-gated job types (``rights.JOB_USE``) are never created for media whose rights
+    do not allow the use: ``RightsRefused`` is raised instead (M2)."""
     existing = session.scalar(select(Job).where(Job.recording_id == recording_id,
                                                 Job.job_type == job_type.value))
     if existing is not None:
         return existing
+    use = rights.JOB_USE[job_type]
+    if use is not None:
+        d = rights.evaluate_recording(session, recording_id, use)
+        if not d.allowed:
+            raise d.refuse()
     now = utcnow()
     job = Job(recording_id=recording_id, job_type=job_type.value,
               status=JobStatus.PENDING.value, max_attempts=max_attempts,
@@ -187,13 +199,26 @@ def complete(db: Database, claimed: ClaimedJob,
              apply: Callable[[Session], None] | None = None) -> None:
     """Fenced completion: apply side effects, mark COMPLETED, enqueue the next stage."""
     with fenced(db, claimed.id, claimed.token) as s:
+        if claimed.decision is not None:
+            # Final-output authorization (M2 §12.5): same BEGIN IMMEDIATE transaction as
+            # the output, so a revocation either commits before (refused) or after.
+            try:
+                rights.fence(s, claimed.decision)
+            except RightsRefused as e:
+                raise RightsRefusedJobError(e.message) from e
         if apply:
             apply(s)
         mark_completed(s, claimed.id)
         nxt = NEXT_STAGE.get(claimed.job_type)
         if nxt is not None:
             job = s.get(Job, claimed.id)
-            enqueue(s, claimed.recording_id, nxt, job.max_attempts)
+            try:
+                with s.begin_nested():
+                    enqueue(s, claimed.recording_id, nxt, job.max_attempts)
+            except RightsRefused as e:
+                record_event(s, Severity.WARNING, "queue", "rights_refused",
+                             f"{nxt.value} not queued for recording {claimed.recording_id}: "
+                             f"{e.message}", recording_id=claimed.recording_id)
 
 
 def _apply_terminal_failure(s: Session, job: Job, error: str) -> None:

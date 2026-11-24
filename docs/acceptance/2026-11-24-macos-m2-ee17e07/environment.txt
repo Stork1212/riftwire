@@ -1,0 +1,17 @@
+== machine
+ProductName:		macOS
+ProductVersion:		26.5.2
+BuildVersion:		25F84
+arm64
+Apple M3 Pro
+19327352832
+== tools
+Python 3.13.2
+ffmpeg version 9.1 Copyright (c) 2000-2026 the FFmpeg developers
+v24.17.0
+11.13.0
+git version 2.39.3 (Apple Git-146)
+== volume of repo
+   Mount Point:               /System/Volumes/Data
+   File System Personality:   APFS
+   Volume UUID:               8EC78228-715D-4039-B15E-0F6A8CA34C02

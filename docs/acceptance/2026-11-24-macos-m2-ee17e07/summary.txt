@@ -1,0 +1,36 @@
+RIFTWIRE M2 Mac verification  started 2026-11-24T19:10:29Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m2-verify-ee17e07-20261124T191029Z
+working tree: clean
+HEAD: ee17e07800bd98c1a93ca2b0fab9ea48a82d3974 (matches)
+free space before: 132.52 GiB (floor 60 GiB, abort below 62 GiB)
+
+== test: scripts/test.sh
+   exit code 0  (81 s)  free now 132.52 GiB
+
+== acceptance: backend/.venv/bin/python scripts/acceptance.py --min-free-gib 60 --report /Users/gregstork/Claude/riftwire-env/m2-verify-ee17e07-20261124T191029Z/acceptance.json
+   exit code 0  (27 s)  free now 132.53 GiB
+stopping leftover smoke-test instance: smoke-data-20261124T171425Z
+
+== smoke: scripts/smoke_test.sh /Users/gregstork/Claude/riftwire-env/m2-verify-ee17e07-20261124T191029Z/smoke-report.txt
+   exit code 0  (10 s)  free now 132.52 GiB
+
+free space after: 132.52 GiB (before 132.52 GiB)
+
+== counts
+374 passed, 3 skipped, 1 warning in 56.22s
+47 passed, 1 skipped in 17.36s
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m35 passed[39m[22m[90m (35)[39m
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m35 passed[39m[22m[90m (35)[39m
+28/28 steps passed
+smoke PASS lines: 30
+smoke FAIL lines: 0
+smoke SKIP lines: 0
+
+== warnings (all logs)
+warning lines: 4  (details in warnings.txt)
+working tree after: clean
+
+RESULT  test=0  acceptance=0  smoke=0
+ALL PASSED

@@ -108,6 +108,14 @@ Order of preference:
    the owner has accepted that this method is permitted for that source under the applicable
    platform terms. This is recorded per source as `acquisition_method_confirmed`.
 
+> **Owner decision R1 (2026-11-24, M2).** Acquisition is modular and provider-independent:
+> local recordings, creator files, the owner's platform exports, authorized direct media links,
+> platform-authorized acquisition and future watch folders. Each source needs valid content
+> rights **and** permission for the specific method. YouTube's terms (15 Dec 2023) require
+> YouTube's own prior written permission for downloading outside its features, so generic URL
+> fetching (method 3) requires a recorded `platform_permission` document and stays globally off
+> by default. See `M2_RIGHTS_SOURCES_PLAN.md` §12.
+>
 > **Review note.** YouTube's and Twitch's terms restrict downloading outside their own features
 > without permission. Method 3 is therefore opt-in per source, gated by the rights confirmation,
 > and can be disabled globally (`RIFTWIRE_URL_ACQUISITION_ENABLED=false`). The owner remains

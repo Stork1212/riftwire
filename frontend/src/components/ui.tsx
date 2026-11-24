@@ -56,6 +56,34 @@ export function StatCard({ label, value, hint, tone }: { label: string; value: R
   );
 }
 
+/** Page title row: title, optional description and eyebrow (e.g. a back link), and
+ *  actions aligned to the right. Every page uses it, so spacing is identical everywhere. */
+export function PageHeader({ title, description, eyebrow, actions }: {
+  title: ReactNode; description?: ReactNode; eyebrow?: ReactNode; actions?: ReactNode;
+}) {
+  return (
+    <div className="page-head">
+      <div>
+        {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+        <h1 className="wrap-anywhere">{title}</h1>
+        {description && <p>{description}</p>}
+      </div>
+      {actions && <div className="toolbar">{actions}</div>}
+    </div>
+  );
+}
+
+/** A labelled form control with optional help text underneath. */
+export function Field({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <label className="field">
+      <span className="field-label">{label}</span>
+      {children}
+      {hint && <span className="muted small">{hint}</span>}
+    </label>
+  );
+}
+
 export function Panel({ title, actions, children }: { title?: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <section className="panel">

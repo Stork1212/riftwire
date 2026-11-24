@@ -21,6 +21,60 @@ _Last updated: 2026-11-24_
 - **M2, Rights & Source Management: approved** (owner decisions R1–R6,
   [`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12). In progress on branch
   `phase2/m2-rights-sources`.
+  - **Implemented (2026-11-24), draft PR #12, ready for independent review.** Review
+    package: [`M2_REVIEW.md`](M2_REVIEW.md); design: ARCHITECTURE §20.
+    - Schema `0004` with 12 database triggers for immutable rights and provenance.
+    - Fail-closed rights evaluation; revocation and supersession; enforcement at the API,
+      enqueue, worker start and the output fence.
+    - Acquisition contract: upload-fed providers only; no network.
+    - Offline matching; evidence storage with limits.
+    - API, dashboard pages, acceptance steps M2-1 to M2-6.
+    - Container: backend 367 + 1 macOS-only skip, bench 48, frontend 28, build,
+      acceptance 28/28, smoke 28 + 1 macOS-only skip.
+    - Also fixed a pre-existing Phase 1 shutdown race: the final heartbeat could overwrite
+      STOPPED.
+  - **Mac verification of `9cbe705`** (2026-11-24): all stages exit 0. Backend 365 + 3
+    skipped, bench 47 + 1, frontend 28, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
+    Evidence: `docs/acceptance/2026-11-24-macos-m2-9cbe705/`.
+  - **Independent review of `9cbe705`** (2026-11-24): five reproduced defects fixed with
+    regression tests ([`M2_REVIEW.md`](M2_REVIEW.md) §7):
+    - the actual acquisition method was not enforced (migration `0005`);
+    - another creator's sources could be licensed;
+    - "Rights OK" mixed up licence state and authorization;
+    - refusals had no next step;
+    - ambiguous YouTube ids were accepted.
+
+    Frontend:
+    - Import has Local file and Video URL modes;
+    - inline creator setup;
+    - stale-response guard;
+    - one URL validator;
+    - actionable errors;
+    - grouped navigation.
+
+    Interface direction document for review.
+  - **Mac verification of `55ae624`** (2026-11-24): all stages exit 0. Backend 374 + 3
+    skipped, bench 47 + 1, frontend 35, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
+  - **Dashboard layout refinement** (frontend only, M2 review §8): global spacing and
+    type tokens, reusable layout components, and a fixed sidebar (the regression from the
+    `55ae624` nav grouping). The browser layout check at 1440×900, 1280×800 and
+    1920×1080 went from 39 page views with issues to 0.
+  - **Mac verification of `ee17e07`** (2026-11-24): all stages exit 0. Backend 374 + 3
+    skipped, bench 47 + 1, frontend 35, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
+  - **Independent audit of `63a2e5e`** (2026-11-24): four reproduced defects fixed with
+    regression tests ([`M2_REVIEW.md`](M2_REVIEW.md) §9):
+    - migrations deleted job history (foreign keys were on during table rebuilds; migrations
+      are now also atomic);
+    - the `0005` backfill used the declared method instead of the recorded one, and an
+      unknown method now fails closed;
+    - attested coverage could be changed by UPDATE (migration `0006`);
+    - a malformed URL returned HTTP 500.
+  - **Mac verification of `57c6b16`** (2026-11-24): all stages exit 0. Backend 391 + 3
+    skipped, bench 47 + 1, frontend 36, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
+  - **Pending:**
+    - updated independent review;
+    - merge (owner).
+    M3 is not started.
 
 ### Merged state of `main` (2026-11-24)
 | PR | Content | Reviewed head | Squash commit on `main` |
@@ -30,7 +84,7 @@ _Last updated: 2026-11-24_
 | #4 | Storage lifecycle & retention manager (D10), docs only | `f6c1219` | `1b84d80` |
 | #3 | Phase 2 technical proposal (M0–M7) | `c53a9cb` | `6502a52` |
 | #5 | M0 benchmark harness + results | `20184ca` | `a7554b3` |
-| #9 | M1 Storage Architecture (SSD acceptance pending) | `53bece7` code (evidence head below) | squash on `main` |
+| #9 | M1 Storage Architecture (SSD acceptance pending) | `c47d1de` (code verified on the Mac at `53bece7`) | `8e5b5e3` |
 
 Tags (both annotated, pushed by the owner): `v0.1.0` → `7ed5be7`; `v0.2.0-m0` → `0399a5a`.
 
@@ -288,8 +342,7 @@ None for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB 
   un-deferred, Higgsfield use cases, brand assets).
 
 ## Next steps
-1. M2 implementation on `phase2/m2-rights-sources` (draft PR), following the plan's §9
-   sequence and §12 decisions.
+1. Mac verification and independent review of M2 (PR #12); merge after approval.
 2. When the SSD arrives: physical-SSD acceptance (checklist §11), then tag `v0.3.0-m1`
    (owner).
 
