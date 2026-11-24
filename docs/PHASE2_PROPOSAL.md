@@ -191,6 +191,10 @@ M0. M5 → M6 → M7 are sequential.
 | 2 | Platform's own export/download (owner's account) → local import | Own content |
 | 3 | yt-dlp, **public and unrestricted** media only | Rights confirmed **and** `acquisition_method = yt_dlp_public` set by the owner for that source; global switch `RIFTWIRE_URL_ACQUISITION_ENABLED` |
 
+> **Superseded in part by owner decision R1 (2026-11-24):** method 3 additionally requires a
+> recorded `platform_permission` document, and acquisition is a provider-independent layer
+> (`M2_RIGHTS_SOURCES_PLAN.md` §12.2).
+
 **Refused (permanent failure, no retry, no workaround):** DRM, private/unlisted without
 permission, members-only/subscriber-only, age-gated, geo-blocked, login-required, paywalled,
 live streams still in progress (Phase 2), and anything needing cookies or credentials.
