@@ -1,11 +1,11 @@
 # RIFTWIRE — Project Status
 
-_Last updated: 2026-11-23_
+_Last updated: 2026-11-24_
 
 ## Current phase
-**Phase 1 — Foundation: implemented; verified in the dev container; macOS verification pending.**
-Architecture approved and implementation authorized 2026-11-23. Code is on branch
-`phase1/foundation` (pull request to `main` pending). Details: `docs/PHASE1_REPORT.md`.
+**Phase 1 — Foundation: implemented and verified on the target Mac; ready for final owner
+review.** Code is on branch `phase1/foundation`, pull request #1 to `main`. Details:
+`docs/PHASE1_REPORT.md`. Phase 2 has **not** started and needs approval.
 
 ## Completed
 - [x] GitHub repository `Stork1212/riftwire` connected; `main` verified (initial commit `faf765e`).
@@ -91,16 +91,17 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
       tests, lint/typecheck, build, **19/19 acceptance steps**, real-browser UI check.
 - [x] Re-verified from a **fresh GitHub clone** of `f49f7fa`: 148 + 13 tests, build, 19/19
       acceptance steps, no failures.
-- [ ] **macOS verification** (owner runs PHASE1_REPORT §9; agent records results). As of
-      23:40 UTC, `~/Claude/riftwire` on the Mac contains only an empty `.git` skeleton (76 KB, no
-      objects): the clone did not complete, probably GitHub sign-in for the private repo.
-- [ ] Pull request `phase1/foundation` → `main` (squash merge recommended).
+- [x] **macOS verification** (owner-run, 2026-11-24 01:46 UTC, commit `9d1e8c5`): macOS 26.5.2,
+      M3 Pro, Python 3.13.2, FFmpeg 9.1 — ruff clean, **148/148** pytest, **13/13** Vitest, build
+      OK, **19/19 acceptance at the 60 GiB floor**, VideoToolbox detected. Evidence in
+      `docs/acceptance/2026-11-23-macos-m3pro-9d1e8c5*`.
+- [x] Fixed the React `act(...)` test warning from the Mac log (test-only change; suite
+      re-run: 148 + 13 passed, build OK).
+- [ ] Owner final review and squash-merge of PR #1 `phase1/foundation` → `main`.
 
 ## Blockers
-1. **macOS run** of `scripts/test.sh` and `scripts/acceptance.py`. The agent cannot run
-   commands on the Mac; the commands are in PHASE1_REPORT §9.
-2. **Data location decision** before real footage: ~9 GiB importable above the 60 GiB floor on
-   the internal SSD; an external APFS SSD is recommended.
+None for Phase 1. Before importing **real footage**, decide the data location: only ~9 GiB is
+importable above the 60 GiB floor on the internal SSD; an external APFS SSD is recommended.
 
 ## Decisions pending
 - Merge strategy for the PR (squash recommended; it also keeps an accidentally committed
@@ -109,10 +110,11 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
 - Phase 2 scope (proposal in PHASE1_REPORT §10). It will not start without approval.
 
 ## Next steps
-1. Owner: clone, bootstrap, run tests + acceptance on the Mac (PHASE1_REPORT §9).
-2. Agent: record macOS results in PHASE1_REPORT; fix any macOS / FFmpeg 9.1 differences.
-3. Owner/reviewer: review and merge the PR.
-4. Owner: decide on the data location and the Phase 2 scope.
+1. Owner/reviewer: final review of PR #1; squash-merge into `main`.
+2. Optional owner smoke test on the Mac: `scripts/start.sh`, open http://127.0.0.1:8000,
+   import a small synthetic clip, `scripts/stop.sh` (the only Phase 1 items not yet run on macOS).
+3. Owner: decide on the data location (external SSD) before real footage.
+4. Owner: approve or amend the Phase 2 proposal (PHASE1_REPORT §10). Not started.
 
 ## Review notes for external reviewers
 - Source of truth is this repository's `main` branch.

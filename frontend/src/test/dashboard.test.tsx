@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -124,11 +124,11 @@ describe("Import workflow", () => {
     expect(uploadRecording).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Uploading…" })).toBeDisabled();
 
-    progress(1024, 2048);
+    act(() => progress(1024, 2048));
     expect(await screen.findByText(/1.0 KB of 2.0 KB uploaded/)).toBeInTheDocument();
     expect(screen.getByLabelText("Upload progress")).toHaveAttribute("aria-valuenow", "50");
 
-    resolve({ recording: recording({ status: "STAGED" }), job_id: "job-1" });
+    await act(async () => resolve({ recording: recording({ status: "STAGED" }), job_id: "job-1" }));
     expect(await screen.findByText("3 · Background processing")).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText("Store & verify progress")).toHaveAttribute("aria-valuenow", "55"));

@@ -1,0 +1,51 @@
+▸ Backend: ruff
+All checks passed!
+▸ Backend: pytest
+........................................................................ [ 48%]
+........................................................................ [ 97%]
+....                                                                     [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastapi/testclient.py:1
+  ~/Claude/riftwire/backend/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+148 passed, 1 warning in 26.48s
+▸ Frontend: lint + typecheck
+▸ Frontend: tests
+
+ RUN  v5.1.1 ~/Claude/riftwire/frontend
+
+stderr | src/test/dashboard.test.tsx > Import workflow > uploads once, shows upload progress, then background processing
+An update to ImportPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/test/dashboard.test.tsx (13 tests) 574ms
+   ✓ Recordings (4)
+     ✓ searches by filename 336ms
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  20:46:14
+   Duration  1.09s (tests 56%, environment 28%, transform 6%, import 5%, setup 5%)
+
+▸ Frontend: production build
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 36 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.68 kB │ gzip:  0.43 kB
+dist/assets/index-CE2zkYty.css    7.75 kB │ gzip:  2.45 kB
+dist/assets/index-BmmTx3Ea.js   283.92 kB │ gzip: 89.37 kB │ map: 1,566.84 kB
+
+✓ built in 85ms
+✓ All checks passed

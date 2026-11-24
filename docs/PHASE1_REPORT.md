@@ -1,17 +1,31 @@
 # RIFTWIRE — Phase 1 Report (v0.1.0)
 
-_Date: 2026-11-23 · Branch: `phase1/foundation` · Author: Claude (AI engineer), for owner review_
+_Date: 2026-11-23 (macOS results added 2026-11-24) · Branch: `phase1/foundation` · Author: Claude (AI engineer), for owner review_
 
 ## 0. Bottom line
 
-The Phase 1 foundation is implemented and **verified in the Linux development container**:
-148 backend tests, 13 frontend tests, lint/typecheck, production build, a 19-step
-real-process acceptance run and a real-browser UI check all pass.
+**Phase 1 is implemented and verified on the target Mac.** The owner ran the verification on
+the development MacBook Pro (Apple M3 Pro, macOS 26.5.2, Python 3.13.2, FFmpeg 9.1 with
+VideoToolbox) against commit `9d1e8c5`:
 
-**Not yet verified on the target Mac.** The agent can read and write files on the Mac but
-cannot run macOS commands. The Mac has FFmpeg **9.1**, while the container has FFmpeg
-**6.1**. Phase 1 should be considered complete only after the owner runs the macOS
-verification in §9 and the results are recorded here.
+| Check (macOS, owner-run 2026-11-24 01:46 UTC) | Result |
+|---|---|
+| `scripts/bootstrap.sh` from a fresh clone | ✅ completed |
+| Ruff | ✅ clean |
+| pytest | ✅ **148 passed**, 0 failed (26.5 s) |
+| ESLint + `tsc --noEmit` | ✅ clean |
+| Vitest | ✅ **13 passed**, 0 failed |
+| `vite build` | ✅ 283.9 kB JS (89.4 kB gzip) |
+| `scripts/acceptance.py` at the **production 60 GiB floor** | ✅ **19/19 steps**, including SIGKILLed worker → orphaned FFmpeg killed via macOS `ps` → job completed on attempt 2 |
+
+Evidence: [`acceptance/2026-11-23-macos-m3pro-9d1e8c5.json`](acceptance/2026-11-23-macos-m3pro-9d1e8c5.json),
+[`acceptance/2026-11-23-macos-m3pro-9d1e8c5-tests.txt`](acceptance/2026-11-23-macos-m3pro-9d1e8c5-tests.txt).
+
+The same checks also pass in the Linux dev container (FFmpeg 6.1) and from a fresh GitHub clone.
+
+**Change after the Mac run (test-only):** the Mac log showed a React `act(...)` warning in one
+dashboard test. It was fixed in the test file only (no application code changed); the full
+suite was re-run in the dev container with 148 + 13 passed and a clean build.
 
 ### Re-verification from a fresh GitHub clone (2026-11-23, 23:40 UTC)
 
@@ -123,16 +137,28 @@ Using a real headless Chrome against the running stack (`scripts/start.sh`):
   underlined link-buttons, FFmpeg copyright text in version strings, and an absolute temp
   path leaking into an error message.
 
-## 6. Implemented but NOT yet verified
+## 6. Verified on macOS / still unverified
 
-| Item | Why not verified | How it will be verified |
+Verified on the Mac by the owner's run (previously open items):
+
+| Item | Evidence |
+|---|---|
+| Whole backend + frontend suite on macOS / Apple Silicon | 148 + 13 passed |
+| Behaviour with **FFmpeg 9.1** (metadata, validation, truncation check, thumbnails, rotation fixture) | `test_media.py`, `test_ingest.py` and acceptance steps 8–9 pass |
+| macOS `ps -o lstart=` / `comm=` orphan detection and PID-reuse guard | `test_worker_process.py` + acceptance X2 pass |
+| `flock` single-worker lock, `os.link` + fsync on APFS | `test_worker_process.py`, acceptance step 7 |
+| 60 GiB production free-space floor with ~69 GiB free | acceptance ran at `min_free_gib: 60.0`; X3 refusal also passes |
+| VideoToolbox detection | step 3: `videotoolbox=True` |
+
+Still not verified:
+
+| Item | Why | Suggested check |
 |---|---|---|
-| Everything on **macOS / Apple Silicon** | Agent cannot execute macOS commands | Owner runs §9 |
-| Behaviour with **FFmpeg 9.1** | Container has 6.1. Output formats used (`-print_format json`, `framecrc`, `-display_rotation` in fixtures, `force_divisible_by`) are long-standing, but untested on 9.x | §9 test suite + acceptance on the Mac |
-| `ps -o lstart=` / `comm=` output on macOS (orphan detection) | BSD `ps` differs from procps | `test_worker_process.py` + acceptance X2 on the Mac |
-| `RIFTWIRE_CAFFEINATE=1` | macOS-only | Manual check on the Mac |
-| Recordings larger than ~120 MB | Disk limits in the container; owner instruction to use small files | Streaming is memory-bounded by test (64 MiB with < 8 MiB peak); multi-GB files are deferred until an external SSD is available |
-| Hard-link fallback copy path (filesystems without hard links) | APFS and ext4 both support links | Code path reviewed; not exercised |
+| `scripts/start.sh` / `stop.sh` / `status.sh` **on macOS** (bash 3.2) | The acceptance test launches processes directly; the scripts were exercised in the dev container only | `scripts/start.sh`, open http://127.0.0.1:8000, `scripts/stop.sh` |
+| Dashboard in a real browser **on the Mac** | Browser check was done with headless Chrome in the dev container | Open the dashboard, import a small synthetic clip |
+| `RIFTWIRE_CAFFEINATE=1` | macOS-only, not exercised | `RIFTWIRE_CAFFEINATE=1 scripts/start.sh` |
+| Recordings larger than ~120 MB on the Mac; multi-GB files | Owner instruction to use small synthetic files; ~9 GiB headroom | Streaming is memory-bounded by test; test multi-GB once an external SSD exists |
+| Hard-link fallback copy path | APFS supports hard links | Code reviewed; not exercised |
 
 ## 7. Known issues
 
@@ -144,7 +170,7 @@ Using a real headless Chrome against the running stack (`scripts/start.sh`):
 3. A stray 3.8 MB build file (`shellcheck_py…whl`) was committed in `f6e2644` and removed in
    `c828a53`. It stays in this branch's history; a **squash merge** keeps it out of `main`.
 4. The Starlette test client prints a deprecation notice about `httpx`. This is harmless
-   and only affects tests.
+   and only affects tests. (A React `act(...)` warning seen in the Mac log was fixed.)
 5. The thumbnail frame is taken at 10% of the duration (max 30 s). It is representative
    but not "best-frame"; smart selection belongs to Phase 2.
 6. There is no authentication. That is intended for a localhost-only Phase 1; the API is
@@ -160,7 +186,7 @@ Using a real headless Chrome against the running stack (`scripts/start.sh`):
 | FFmpeg behaviour differences across versions | content-based checks, generous timeouts | Pending Mac verification (§9) |
 | Very large originals × 2 copies | — | External SSD + import-by-move (Phase 2) |
 
-## 9. Instructions to launch RIFTWIRE (and finish macOS verification)
+## 9. Instructions to launch RIFTWIRE
 
 ```bash
 git clone https://github.com/Stork1212/riftwire.git ~/Claude/riftwire
@@ -172,7 +198,8 @@ backend/.venv/bin/python scripts/acceptance.py --report ~/Claude/riftwire-env/ma
 scripts/start.sh                         # open http://127.0.0.1:8000
 ```
 
-The two output files land in a folder the agent can read; it will record the results here.
+The verification commands were run on the Mac on 2026-11-24 (results in §0). To use
+RIFTWIRE, only `scripts/start.sh` / `scripts/stop.sh` are needed after bootstrapping.
 
 ## 10. Recommended Phase 2 plan (requires owner approval)
 
