@@ -8,7 +8,8 @@ Verified on the target Mac (169/169 backend, 13/13 frontend, build, 19/19 accept
 and accepted after two independent reviews. The roadmap and product spec (PR #2) are merged
 (`0ccf674`).
 
-**Released:** `v0.1.0` (launch scripts and dashboard verified on the Mac).
+**Release candidate:** `v0.1.0` = `main` @ `7ed5be7` (launch scripts and dashboard verified
+on the Mac). The tag is pushed by the owner.
 **Next:** review of the Phase 2 technical proposal (PR #3). **Phase 2 is not authorized.**
 
 ## Completed
@@ -119,7 +120,8 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
       status.sh, stop.sh, restart persistence, caffeinate, localhost-only, dashboard serving).
 - [x] Dashboard checked in the built-in browser on the Mac: all pages render with real data,
       thumbnails load, no console errors (`docs/acceptance/2026-11-24-macos-dashboard-check.md`).
-- [x] Tag `v0.1.0` on the verified `main` commit (this commit).
+- [ ] Tag `v0.1.0` on `7ed5be7` (verified `main`). Pushing tags is blocked for the agent's
+      session (proxy policy 403); the owner pushes the tag from the Mac.
 - [x] Phase 2 technical implementation proposal: PR #3 (`docs/PHASE2_PROPOSAL.md`), awaiting review and approval. No Phase 2 code.
 
 ## Blockers
