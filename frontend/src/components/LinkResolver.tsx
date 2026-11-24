@@ -8,6 +8,48 @@ import type { CreatorChannel, Resolved } from "../types/rights";
 import { RightsBadge } from "./rights";
 import { ActionableError } from "./ActionableError";
 
+function VideoPreview({ video }: { video: Resolved }) {
+  const [loaded, setLoaded] = useState(false);
+  const platform = video.platform === "youtube" ? "YouTube" : "Twitch";
+  const params = new URLSearchParams();
+  let player: string;
+  if (video.platform === "youtube") {
+    player = `https://www.youtube.com/embed/${encodeURIComponent(video.video_id)}`;
+    const start = Math.floor((video.start_ms ?? 0) / 1000);
+    if (start > 0) params.set("start", String(start));
+  } else {
+    params.set("parent", window.location.hostname);
+    params.set("autoplay", "false");
+    if (video.media === "clip") {
+      player = "https://clips.twitch.tv/embed";
+      params.set("clip", video.video_id);
+    } else {
+      player = "https://player.twitch.tv/";
+      params.set("video", `v${video.video_id}`);
+      const start = Math.floor((video.start_ms ?? 0) / 1000);
+      if (start > 0) params.set("time", `${start}s`);
+    }
+  }
+  const query = params.toString();
+
+  return (
+    <div className="video-preview">
+      {loaded && <iframe title={`${platform} video preview`}
+        src={query ? `${player}?${query}` : player}
+        referrerPolicy="strict-origin-when-cross-origin" allow="encrypted-media; fullscreen; picture-in-picture"
+        allowFullScreen />}
+      <div className="toolbar">
+        {!loaded && <button type="button" className="btn btn-primary" onClick={() => setLoaded(true)}>
+          Load {platform} preview
+        </button>}
+        <a href={video.canonical_url} target="_blank" rel="noopener noreferrer">
+          Open on {platform}
+        </a>
+      </div>
+    </div>
+  );
+}
+
 /** Paste a link → offline check → existing source / automatic creator match / inline
  *  creator setup → create the source. Only the backend validates links (one rule set).
  *  Responses for an older link are ignored, so a slow reply can never overwrite a newer one. */
@@ -75,20 +117,37 @@ export function LinkResolver({ onSource, submitLabel = "Create source" }: {
     <div>
       <form className="toolbar" onSubmit={resolve} aria-label="Paste a video link">
         <input type="text" inputMode="url" autoComplete="off" spellCheck={false} className="grow"
-          aria-label="Video link" value={url} placeholder="Paste a YouTube or Twitch video link"
+          aria-label="Video link" value={url} placeholder="Paste or drop a YouTube or Twitch link"
+          onPaste={(event) => {
+            const link = event.clipboardData.getData("text/plain").trim();
+            if (!link) return;
+            event.preventDefault();
+            setUrl(link);
+            void resolveNow(link);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            const link = event.dataTransfer.getData("text/uri-list")
+              || event.dataTransfer.getData("text/plain");
+            const first = link.split(/\r?\n/).map((line) => line.trim())
+              .find((line) => line && !line.startsWith("#"));
+            if (!first) return;
+            setUrl(first);
+            void resolveNow(first);
+          }}
           onChange={(e) => {
             generation.current += 1;   // editing invalidates any reply still in flight
             setUrl(e.target.value); setRes(undefined); setErr(undefined); setBusy(false);
           }} />
         <button className="btn btn-primary" type="submit" disabled={busy || !url.trim()}>Check link</button>
       </form>
-      <p className="hint">Checked offline; nothing is downloaded. Footage arrives through a
-        permitted method: your import of the creator's file or your own platform download.</p>
+      <p className="hint">Links are checked offline. Loading a preview opens the platform's player.</p>
       {err !== undefined && <ActionableError error={err} title="Link not accepted" />}
       {res && (
         <div className="resolve" data-testid="resolve-result">
+          <VideoPreview video={res} />
           <dl className="kv">
-            <dt>Video</dt><dd><a href={res.canonical_url} target="_blank" rel="noreferrer noopener">{res.canonical_url}</a></dd>
             <dt>Creator</dt>
             <dd>{res.match.status === "matched" && res.creator_name
               ? <>{res.creator_name} <span className="muted">(matched automatically)</span></>

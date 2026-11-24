@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -90,9 +90,16 @@ describe("Sources", () => {
       records: [], recordings: [] } as SourceDetail);
     r.provenance.mockResolvedValue([]);
     renderAt("/sources");
-    await userEvent.type(screen.getByLabelText("Video link"), "https://www.twitch.tv/somestreamer/clip/Clip");
-    await userEvent.click(screen.getByRole("button", { name: "Check link" }));
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("Video link"));
+    await user.paste("https://www.twitch.tv/somestreamer/clip/Clip");
     const box = await screen.findByTestId("resolve-result");
+    expect(within(box).queryByTitle("Twitch video preview")).not.toBeInTheDocument();
+    await user.click(within(box).getByRole("button", { name: "Load Twitch preview" }));
+    const player = new URL(within(box).getByTitle("Twitch video preview").getAttribute("src")!);
+    expect(player.origin).toBe("https://clips.twitch.tv");
+    expect(player.searchParams.get("clip")).toBe("Clip");
+    expect(player.searchParams.get("parent")).toBe(window.location.hostname);
     expect(within(box).getByText("Some Streamer")).toBeInTheDocument();
     expect(within(box).getByText("(matched automatically)")).toBeInTheDocument();
     expect(box.querySelector('[data-rights="active"]')).not.toBeNull();
@@ -102,17 +109,22 @@ describe("Sources", () => {
     expect(await screen.findByText("History (provenance)")).toBeInTheDocument();
   });
 
-  it("accepts scheme-less links (only the backend validates)", async () => {
+  it("checks a dropped scheme-less link and preserves the preview start time", async () => {
     r.resolve.mockResolvedValue({
       platform: "youtube", media: "video", video_id: "dQw4w9WgXcQ", canonical_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      start_ms: null, channel_login: null, existing_source: null,
+      start_ms: 30000, channel_login: null, existing_source: null,
       match: { status: "unmatched", matcher: null, reason: "choose", creator_channel_id: null, candidates: [] },
       channel: null, creator_name: null, covered: false, covering_record_ids: [],
     });
     renderAt("/sources");
-    await userEvent.type(screen.getByLabelText("Video link"), "youtu.be/dQw4w9WgXcQ");
-    await userEvent.click(screen.getByRole("button", { name: "Check link" }));
-    await waitFor(() => expect(r.resolve).toHaveBeenCalledWith("youtu.be/dQw4w9WgXcQ"));
+    fireEvent.drop(screen.getByLabelText("Video link"), {
+      dataTransfer: { getData: (type: string) => type === "text/uri-list"
+        ? "# source URL\r\nyoutu.be/dQw4w9WgXcQ?t=30" : "" },
+    });
+    await waitFor(() => expect(r.resolve).toHaveBeenCalledWith("youtu.be/dQw4w9WgXcQ?t=30"));
+    await userEvent.click(await screen.findByRole("button", { name: "Load YouTube preview" }));
+    expect(screen.getByTitle("YouTube video preview")).toHaveAttribute(
+      "src", "https://www.youtube.com/embed/dQw4w9WgXcQ?start=30");
   });
 
   it("never shows a stale resolution for an older link", async () => {
