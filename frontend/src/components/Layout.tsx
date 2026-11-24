@@ -5,6 +5,7 @@ const NAV = [
   { to: "/recordings", label: "Recordings" },
   { to: "/import", label: "Import" },
   { to: "/queue", label: "Processing Queue" },
+  { to: "/storage", label: "Storage" },
   { to: "/system", label: "System" },
 ];
 
@@ -33,7 +34,7 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="sidebar-foot">Phase 1 · Foundation</div>
+        <div className="sidebar-foot">Phase 2 · Sources &amp; Signals</div>
       </aside>
       <main className="main">
         <Outlet />

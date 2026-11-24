@@ -25,6 +25,7 @@ from app.models import Severity
 from app.services import media, queue
 from app.services.events import record_event
 from app.services.ingest import reconcile
+from app.services.locations import load_layout
 
 log = get_logger("api")
 
@@ -43,6 +44,8 @@ def startup_checks(app: FastAPI) -> None:
         log.error("database schema not at head; run scripts/migrate.sh",
                   extra={"data": st})
         return
+    # Storage layout first: nothing touches a file before every location is resolved.
+    load_layout(db, s, "api")
     expired = queue.recover_stuck_jobs(
         db, kill_orphan=media.kill_orphan_if_matches,
         backoff_base=s.job_backoff_base_seconds, backoff_cap=s.job_backoff_max_seconds,
@@ -61,7 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        settings.ensure_dirs()
+        settings.ensure_internal_dirs()  # locations are resolved/created by load_layout
         configure_logging("api", settings.logs_dir, settings.log_level,
                           settings.log_max_bytes, settings.log_backup_count)
         app.state.db = Database(settings.database_url)

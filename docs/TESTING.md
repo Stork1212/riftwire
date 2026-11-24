@@ -64,10 +64,24 @@ backend/.venv/bin/python scripts/acceptance.py --report acceptance.json
 ```
 
 Starts a real API, worker and the built dashboard against an **isolated temporary data
-directory** (port 8765) and walks the Phase 1 acceptance scenario (19 steps): start, readiness,
-dashboard served, import, progress, stored + hash + read-only, metadata vs. independent ffprobe,
-thumbnail size, listing, jobs COMPLETED, restart, persistence, duplicate, invalid file,
-**interrupted upload**, **SIGKILLed worker with orphaned FFmpeg**, disk floor, structured logs.
+directory** (port 8765) and walks the acceptance scenario (22 steps).
+
+**Phase 1:** start, readiness, dashboard served, import, progress, stored + hash +
+read-only, metadata vs. independent ffprobe, thumbnail size, listing, jobs COMPLETED,
+restart, persistence, duplicate, invalid file, **interrupted upload**, **SIGKILLed worker
+with orphaned FFmpeg**, disk floor, structured logs.
+
+**Phase 2 · M1 storage:**
+- **M1:** every location registered with an identity marker.
+- **M2:** with the recordings location offline, uploads get 503 with nothing written, a
+  queued job waits with 0 attempts, and it completes once the location is back.
+- **M3:** the migration tool. A dry run writes nothing; `--execute` is refused while
+  RIFTWIRE runs; once stopped it moves the files byte-identical and keeps the originals;
+  new imports land in the new location.
+
+Storage unit and integration tests are in `backend/tests/test_storage_m1.py`. They use a
+second real filesystem (`/dev/shm`) when available, so cross-volume copies run for real, and
+a simulated macOS volume probe for APFS, exFAT and swapped-drive cases.
 
 `--min-free-gib` defaults to the production 60 GiB. On a machine with less free space use a
 smaller value (the dev container run used `--min-free-gib 1`).

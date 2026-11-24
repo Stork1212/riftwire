@@ -24,7 +24,7 @@ from pathlib import Path
 from sqlalchemy import update
 
 from app.core.config import Settings, get_settings
-from app.core.errors import JobError
+from app.core.errors import JobError, StorageOfflineJobError
 from app.core.logging import configure_logging, get_logger
 from app.db.base import utcnow
 from app.db.migrations import schema_status
@@ -33,13 +33,21 @@ from app.models import Severity, Worker
 from app.services import media, queue
 from app.services.events import record_event
 from app.services.ingest import reconcile
-from app.workers.handlers import HANDLERS, JobContext
+from app.services.locations import (
+    MAINTENANCE_LOCK,
+    Layout,
+    get_layout,
+    load_layout,
+    maintenance_active,
+)
+from app.workers.handlers import HANDLERS, REQUIRED_KINDS, JobContext
 
 log = get_logger("worker")
 
 EXIT_OK = 0
 EXIT_SCHEMA = 2
 EXIT_LOCKED = 3
+STORAGE_RETRY_SECONDS = 30.0
 
 
 class WorkerLockedError(RuntimeError):
@@ -81,6 +89,8 @@ class WorkerProcess:
         self._active_lock = threading.Lock()
         self.lock = WorkerLock(settings.data_dir / "worker.lock")
         self.threads: list[threading.Thread] = []
+        self._offline_kinds: set[str] = set()
+        self._offline_lock = threading.Lock()
 
     # ---------------------------------------------------------------- lifecycle
     def startup(self) -> None:
@@ -88,6 +98,12 @@ class WorkerProcess:
         if not st["ok"]:
             raise RuntimeError(f"database schema not at head ({st}); run scripts/migrate.sh")
         self.lock.acquire()
+        if maintenance_active(self.settings):
+            self.lock.release()
+            raise WorkerLockedError("a storage migration is in progress "
+                                    f"({MAINTENANCE_LOCK} is held)")
+        # Storage layout first: no file is touched before every location is resolved.
+        load_layout(self.db, self.settings, "worker")
         with self.db.session() as s:
             now = utcnow()
             s.merge(Worker(id=self.id, hostname=socket.gethostname(), pid=os.getpid(),
@@ -190,10 +206,44 @@ class WorkerProcess:
         except Exception:
             log.exception("heartbeat write failed")
 
+    # ---------------------------------------------------------------- storage
+    def blocked_job_types(self) -> set:
+        """Job types that must not start because a location they need is offline.
+        Records an event whenever a location goes offline or comes back."""
+        layout: Layout = get_layout(self.settings)
+        age = self.settings.storage_check_seconds
+        states = {k: layout.state(k, max_age=age)
+                  for k in {k for kinds in REQUIRED_KINDS.values() for k in kinds}}
+        offline = {k for k, st in states.items() if not st.online}
+        with self._offline_lock:
+            went_off = offline - self._offline_kinds
+            came_back = self._offline_kinds - offline
+            self._offline_kinds = offline
+        if went_off or came_back:
+            try:
+                with self.db.session() as s:
+                    for k in sorted(went_off):
+                        record_event(s, Severity.WARNING, "worker", "storage_offline",
+                                     f"Storage location '{k}' went offline "
+                                     f"({states[k].message}); jobs that need it are waiting")
+                    for k in sorted(came_back):
+                        record_event(s, Severity.INFO, "worker", "storage_online",
+                                     f"Storage location '{k}' is back online; resuming")
+            except Exception:
+                log.exception("could not record storage event")
+            if came_back:
+                # Remount: clean up the returning location before resuming its jobs.
+                try:
+                    reconcile(self.db, self.settings, "worker")
+                except Exception:
+                    log.exception("reconcile after remount failed")
+        return {t for t, kinds in REQUIRED_KINDS.items() if offline.intersection(kinds)}
+
     def _claim_loop(self) -> None:
         while not self.stop_event.is_set():
             try:
-                claimed = queue.claim_next(self.db, self.id, self.settings.job_lease_seconds)
+                claimed = queue.claim_next(self.db, self.id, self.settings.job_lease_seconds,
+                                           exclude_types=self.blocked_job_types())
             except Exception:
                 log.exception("claim failed")
                 self.stop_event.wait(self.settings.worker_poll_seconds)
@@ -220,7 +270,18 @@ class WorkerProcess:
                 log.warning("attempt abandoned: lease lost", extra=extra)
             else:
                 self._safe(lambda: queue.release(self.db, claimed, "released on shutdown"))
+        except StorageOfflineJobError as e:
+            why = str(e)
+            log.warning(f"storage offline; deferring: {why}", extra=extra)
+            self._safe(lambda: queue.defer(self.db, claimed, why, STORAGE_RETRY_SECONDS))
         except Exception as e:
+            offline = get_layout(self.settings).offline(REQUIRED_KINDS[claimed.job_type])
+            if offline:  # the drive vanished mid-job: not the job's fault
+                why = "; ".join(f"{st.kind}: {st.message}" for st in offline)
+                log.warning(f"storage offline after error ({type(e).__name__}: {e}); "
+                            "deferring", extra=extra)
+                self._safe(lambda: queue.defer(self.db, claimed, why, STORAGE_RETRY_SECONDS))
+                return
             permanent = isinstance(e, (JobError, media.MediaError)) and e.permanent
             msg = f"{type(e).__name__}: {e}"
             log.error(f"{claimed.job_type.value} failed: {msg}", extra=extra,
@@ -244,7 +305,7 @@ class WorkerProcess:
 
 def main() -> int:
     settings = get_settings()
-    settings.ensure_dirs()
+    settings.ensure_internal_dirs()  # locations are resolved/created by load_layout
     configure_logging("worker", settings.logs_dir, settings.log_level,
                       settings.log_max_bytes, settings.log_backup_count)
     db = Database(settings.database_url)

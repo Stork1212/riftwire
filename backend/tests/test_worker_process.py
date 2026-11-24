@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.models import Job, Recording, SystemEvent, Worker
 from app.services import media
 from tests.conftest import BACKEND_DIR, requires_ffmpeg
-from tests.helpers import import_file
+from tests.helpers import import_file, user_files
 
 pytestmark = requires_ffmpeg
 
@@ -122,39 +122,41 @@ def test_hard_crash_during_finalize_recovers(db, settings, media_dir, point):
         wait_for(lambda: all_done(db, rid))
     finally:
         stop(w)
-    files = list(settings.recordings_dir.iterdir())
-    assert [f.name for f in files] == [f"{rid}.mp4"]
-    assert sha(files[0]) == digest
-    assert [p.name for p in settings.temp_dir.iterdir()] == []
+    assert user_files(settings.recordings_dir) == [f"{rid}.mp4"]
+    assert sha(settings.recordings_dir / f"{rid}.mp4") == digest
+    assert user_files(settings.temp_dir) == []
     assert rec_status(db, rid) == ("READY", "READY")
     with db.session() as s:
         ingest = s.scalar(select(Job).where(Job.recording_id == rid, Job.job_type == "INGEST"))
         assert ingest.attempt_count == 2  # crashed attempt + recovered attempt
 
 
-@pytest.mark.parametrize("point", ["finalize_copy_midway", "finalize_copy_verified",
+@pytest.mark.parametrize("point", ["transfer_copy_midway", "transfer_before_verify",
+                                   "transfer_verified", "transfer_after_promote",
                                    "finalize_after_promote"])
 def test_hard_crash_during_copy_fallback_recovers(db, settings, media_dir, point):
-    """Review finding 2: filesystems without hard links use a staged copy. A hard crash at
-    any point must never leave a partial file at the final path and must recover."""
+    """Cross-volume finalize (temp and recordings on different drives) uses the verified
+    staged transfer. A hard crash at any point must never leave a partial file at the
+    final path and must recover."""
     res = import_file(db, settings, media_dir / "basic.mp4")
     rid, digest = res.recording.id, res.recording.sha256
     crashed = start_worker(RIFTWIRE_TEST_FORCE_COPY_FALLBACK=1, RIFTWIRE_TEST_CRASH_AT=point)
     assert crashed.wait(60) == 137
     final = settings.recordings_dir / f"{rid}.mp4"
     if final.exists():  # only possible once promoted, and then it must be complete
-        assert point == "finalize_after_promote" and sha(final) == digest
+        assert point in ("transfer_after_promote", "finalize_after_promote")
+        assert sha(final) == digest
     w = start_worker(RIFTWIRE_TEST_FORCE_COPY_FALLBACK=1)
     try:
         wait_for(lambda: all_done(db, rid))
     finally:
         stop(w)
-    files = sorted(p.name for p in settings.recordings_dir.iterdir() if p.is_file())
+    files = user_files(settings.recordings_dir, files_only=True)
     assert files == [f"{rid}.mp4"] and sha(final) == digest
     staging = settings.recordings_dir / ".staging"
     leftovers = [p.name for p in staging.iterdir()] if staging.is_dir() else []
     assert not [n for n in leftovers if n.endswith(".partial")], leftovers
-    assert [p.name for p in settings.temp_dir.iterdir()] == []
+    assert user_files(settings.temp_dir) == []
     assert rec_status(db, rid) == ("READY", "READY")
 
 
@@ -163,14 +165,15 @@ def test_crash_between_stage_and_commit_leaves_only_temp(db, settings, media_dir
     code = (
         "import sys; from app.core.config import get_settings; "
         "from app.db.session import Database; from tests.helpers import import_file; "
-        "from pathlib import Path; s=get_settings(); "
-        "import_file(Database(s.database_url), s, Path(sys.argv[1]))"
+        "from pathlib import Path; from app.services.locations import load_layout; "
+        "s=get_settings(); d=Database(s.database_url); load_layout(d, s, 'test'); "
+        "import_file(d, s, Path(sys.argv[1]))"
     )
     env = dict(os.environ, RIFTWIRE_TEST_CRASH_AT="after_stage_rename")
     p = subprocess.run([sys.executable, "-c", code, str(media_dir / "basic.mp4")],
                        cwd=BACKEND_DIR, env=env, capture_output=True)
     assert p.returncode == 137
-    staged = [x.name for x in settings.temp_dir.iterdir()]
+    staged = user_files(settings.temp_dir)
     assert len(staged) == 1 and staged[0].endswith(".staged")
     with db.session() as s:
         assert s.scalars(select(Recording)).all() == []

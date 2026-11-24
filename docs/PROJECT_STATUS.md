@@ -10,9 +10,13 @@ _Last updated: 2026-11-24_
   benchmarking milestone, with the documented timestamp-accuracy and memory limitations.
   It is **not** production acceptance of transcription or highlight detection. Results:
   [`BENCHMARKS.md`](BENCHMARKS.md). Tag `v0.2.0-m0`.
-- **Next: M1, Storage Architecture.** The checklist
-  ([`M1_STORAGE_CHECKLIST.md`](M1_STORAGE_CHECKLIST.md)) awaits owner approval. **M1 has not
-  started.** M2 is not authorized.
+- **M1, Storage Architecture: implemented, in review** (draft PR, branch
+  `phase2/m1-storage`). Approved by the owner on 2026-11-24, to start without the SSD.
+  - Everything possible without the SSD is done and verified in isolated environments.
+  - Physical-SSD acceptance is deferred until the SanDisk 1 TB arrives
+    ([checklist §11](M1_STORAGE_CHECKLIST.md#11-acceptance-checks-that-depend-on-the-external-ssd-deferred)).
+  - Design: [`ARCHITECTURE.md`](ARCHITECTURE.md) §19.
+  - **M2 is not authorized.**
 
 ### Merged state of `main` (2026-11-24)
 | PR | Content | Reviewed head | Squash commit on `main` |
@@ -201,26 +205,52 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
   - Approved by the owner as a completed benchmarking milestone.
 - [x] Tag `v0.2.0-m0` (annotated) → `0399a5a`, verified `main`; pushed by the owner
       2026-11-24 05:32 UTC.
-- [ ] **M1 Storage Architecture**: checklist prepared, awaiting approval.
+- [x] M1 checklist approved by the owner (2026-11-24), with decisions:
+  - no exFAT override;
+  - start without the SSD;
+  - concurrent-safe, verified promotion;
+  - migration dry-run by default, never deleting.
+- [x] **M1 Storage Architecture**, branch `phase2/m1-storage` (draft PR):
+  - **Locations:** five configurable locations. The database is the authority, every process
+    loads the layout first, and stored recording paths are unchanged.
+  - **Identity:** markers plus the OS volume UUID; APFS required on macOS.
+  - **Offline safety:** nothing is created or written on an absent or wrong drive; 503
+    responses; readiness reports it; jobs wait or defer without consuming attempts.
+  - **Reservations:** persistent and per volume (`BEGIN IMMEDIATE`, leases, reclaim). The
+    60 GiB floor is mandatory outside `env=test`.
+  - **Transfer:** staged copy, SHA-256 re-read from disk via a held fd, atomic `link`
+    promotion. Concurrency is tested with threads and separate processes.
+  - **Migration:** `scripts/migrate_storage.py`, dry run by default, resumable through a
+    database journal, full re-hash, one-transaction switch, never deletes.
+  - **Dashboard:** Storage page; `GET /api/v1/storage`.
+  - **Verified in the cloud container:**
+    - `scripts/test.sh`: backend **206**, bench 48, frontend **17**, build;
+    - acceptance **22/22** (new storage steps M1–M3, real processes);
+    - smoke 28 passed, 1 macOS-only skip.
+    - The real end-to-end migration of `exports` to a second filesystem was checked in a
+      browser.
+  - **Not yet verified:**
+    - Mac run on the internal disk;
+    - every physical-SSD check (checklist §11).
 
 ## Blockers
-None for planning. **M1 Mac-side multi-volume verification** needs either the SSD
-(owner-formatted APFS) or an approved disk-image test. Real footage at scale needs the SSD.
+None for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB SSD
+(owner-formatted APFS). Real footage at scale needs the SSD.
 
 ## Decisions pending
-- Approval of the [M1 checklist](M1_STORAGE_CHECKLIST.md), including the multi-volume Mac
-  test method and the exFAT policy.
+- Owner and independent review of the M1 draft PR.
+- When the SSD arrives: approval of the physical-SSD acceptance run (checklist §11). No real
+  data is moved and no drive is formatted by the agent.
 - Separately and later: migrating real recordings to the SSD.
 - Open questions in PRODUCT_SPEC §7 (first YouTube channel, Ollama and model size when
   un-deferred, Higgsfield use cases, brand assets).
 
 ## Next steps
-1. Owner review of `docs/M1_STORAGE_CHECKLIST.md` → approval or amendments.
-2. M1 implementation on branch `phase2/m1-storage`, with tests, Mac verification and
-   independent review.
-3. Optional owner housekeeping: switch `~/Claude/riftwire` to `main`
-   (`git checkout main && git pull --ff-only`) and remove the prunable `riftwire-m0`
-   worktree.
+1. Owner runs the M1 branch on the Mac, internal disk only: `scripts/test.sh`, acceptance
+   at the 60 GiB floor, the smoke test.
+2. Independent review of the M1 draft PR.
+3. When the SSD arrives: physical-SSD acceptance (checklist §11), then M1 merge and tag
+   `v0.3.0-m1`.
 
 ## Review notes for external reviewers
 - Source of truth is this repository's `main` branch.

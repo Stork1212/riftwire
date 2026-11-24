@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
 import { ApiError, api, uploadRecording } from "../services/api";
-import { detail, job, recording, systemStatus } from "./fixtures";
+import { detail, job, recording, storageStatus, systemStatus } from "./fixtures";
 
 vi.mock("../services/api", async (orig) => {
   const actual = await orig<typeof import("../services/api")>();
@@ -17,6 +17,7 @@ vi.mock("../services/api", async (orig) => {
       listJobs: vi.fn(),
       retryJob: vi.fn(),
       listEvents: vi.fn(),
+      storage: vi.fn(),
     },
     uploadRecording: vi.fn(),
   };
@@ -34,6 +35,7 @@ beforeEach(() => {
   m.listRecordings.mockResolvedValue(page([]));
   m.listJobs.mockResolvedValue(page([]));
   m.listEvents.mockResolvedValue(page([]));
+  m.storage.mockResolvedValue(storageStatus());
 });
 
 describe("Overview", () => {
@@ -205,5 +207,57 @@ describe("System", () => {
     expect(screen.getByText(/brew install ffmpeg/)).toBeInTheDocument();
     expect(screen.getByText("Unresponsive")).toBeInTheDocument();
     expect(await screen.findByText("No errors recorded")).toBeInTheDocument();
+  });
+});
+
+describe("Storage", () => {
+  it("lists every location and its drive", async () => {
+    renderAt("/storage");
+    expect(await screen.findByRole("heading", { name: "Storage" })).toBeInTheDocument();
+    for (const label of ["Recordings", "Temporary processing", "AI models", "Exports", "Brand assets"]) {
+      expect(await screen.findByRole("cell", { name: label })).toBeInTheDocument();
+    }
+    expect(screen.getAllByText("APFS")).toHaveLength(5);
+    expect(screen.getByText("Macintosh HD", { selector: "h3" })).toBeInTheDocument();
+    expect(screen.getByText("9.0 GB")).toBeInTheDocument(); // headroom above the floor
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows an offline drive clearly and never as healthy", async () => {
+    const base = storageStatus();
+    m.storage.mockResolvedValue(storageStatus({
+      locations: base.locations.map((l) => l.kind === "recordings"
+        ? { ...l, path: "/Volumes/SSD/riftwire/recordings", online: false,
+          reason: "volume_not_mounted", message: "the drive is not mounted", usage_bytes: null }
+        : l),
+      volumes: [...base.volumes, { volume_uuid: "vol-ssd", kinds: ["recordings"], online: false,
+        label: null, mount_point: null, floor_bytes: 60 * 2 ** 30, total_bytes: null,
+        free_bytes: null, reserved_bytes: 0, headroom_bytes: null, below_floor: null }],
+    }));
+    renderAt("/storage");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Storage offline");
+    expect(alert).toHaveTextContent("Recordings (the drive is not mounted)");
+    const row = document.querySelector('tr[data-kind="recordings"]') as HTMLElement;
+    expect(within(row).getByText("Offline", { selector: ".badge" })).toBeInTheDocument();
+    expect(screen.getAllByText("Online", { selector: ".badge" })).toHaveLength(4);
+    expect(screen.getByText(/nothing is redirected to another drive/)).toBeInTheDocument();
+  });
+
+  it("shows migration history read-only", async () => {
+    m.storage.mockResolvedValue(storageStatus({ migrations: [{ id: "m1", kind: "recordings",
+      source_path: "/data/recordings", dest_path: "/Volumes/SSD/riftwire/recordings",
+      status: "COPYING", total_files: 10, verified_files: 4, total_bytes: 2 ** 30,
+      updated_at: "2026-11-24T05:00:00Z" }] }));
+    renderAt("/storage");
+    expect(await screen.findByText("Recent migrations")).toBeInTheDocument();
+    expect(screen.getByText("4 / 10 files")).toBeInTheDocument();
+    expect(screen.getByText(/Unfinished/)).toBeInTheDocument();
+  });
+
+  it("shows an error when the backend is unreachable", async () => {
+    m.storage.mockRejectedValue(new ApiError(0, "network_error", "Cannot reach the RIFTWIRE backend."));
+    renderAt("/storage");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Cannot load storage status/);
   });
 });

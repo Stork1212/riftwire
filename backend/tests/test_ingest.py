@@ -20,7 +20,7 @@ from app.services import ingest
 from app.services.ingest import UploadSession, reconcile
 from app.workers.worker import WorkerProcess
 from tests.conftest import requires_ffmpeg
-from tests.helpers import import_file
+from tests.helpers import import_file, user_files
 
 pytestmark = requires_ffmpeg
 
@@ -41,8 +41,16 @@ def count(db, model):
         return s.scalar(select(func.count()).select_from(model))
 
 
+def reservation_count(db):
+    from sqlalchemy import func, select
+
+    from app.models import DiskReservation
+    with db.session() as s:
+        return s.scalar(select(func.count()).select_from(DiskReservation))
+
+
 def temp_files(settings):
-    return sorted(p.name for p in settings.temp_dir.iterdir())
+    return user_files(settings.temp_dir)
 
 
 def get_rec(db, rid):
@@ -57,7 +65,7 @@ def test_import_stages_then_pipeline_completes(db, settings, media_dir):
     rec = res.recording
     assert rec.status == "STAGED"
     assert temp_files(settings) == [f"{rec.id}.staged"]
-    assert list(settings.recordings_dir.iterdir()) == []  # API never writes recordings/
+    assert user_files(settings.recordings_dir) == []  # API never writes recordings/
 
     drain(db, settings)
 
@@ -155,7 +163,7 @@ def test_disk_space_dropping_during_upload(db, settings, media_dir, monkeypatch)
 
 
 def test_incomplete_upload_rejected(db, settings, media_dir):
-    up = UploadSession(settings, "x.mp4", 10_000)
+    up = UploadSession(settings, "x.mp4", 10_000, db)
     up.write(b"\0" * 100)
     with pytest.raises(ValidationFailed):
         up.finish()
@@ -163,14 +171,15 @@ def test_incomplete_upload_rejected(db, settings, media_dir):
     assert temp_files(settings) == []
 
 
-def test_interrupted_upload_cleans_part_file(settings):
-    up = UploadSession(settings, "x.mp4", None)
+def test_interrupted_upload_cleans_part_file(db, settings):
+    up = UploadSession(settings, "x.mp4", None, db)
     up.write(b"\0" * 4096)
     assert temp_files(settings) == [f"{up.import_id}.part"]
+    assert reservation_count(db) == 1           # persistent, visible to the worker
     up.abort()
     up.abort()  # idempotent
     assert temp_files(settings) == []
-    assert ingest.RESERVATIONS.total() == 0
+    assert reservation_count(db) == 0
 
 
 def test_path_traversal_filename_is_metadata_only(db, settings, media_dir):
@@ -181,10 +190,10 @@ def test_path_traversal_filename_is_metadata_only(db, settings, media_dir):
     assert (settings.recordings_dir / rec.stored_filename).exists()
 
 
-def test_large_upload_streams_with_bounded_memory(settings):
+def test_large_upload_streams_with_bounded_memory(db, settings):
     """64 MiB streamed through the upload path must not be held in memory."""
     chunk = os.urandom(1024 * 1024)
-    up = UploadSession(settings, "big.mp4", 64 * 1024 * 1024)
+    up = UploadSession(settings, "big.mp4", 64 * 1024 * 1024, db)
     tracemalloc.start()
     for _ in range(64):
         up.write(chunk)
@@ -293,16 +302,14 @@ def test_reconcile_reports_but_keeps_orphan_recording(db, settings):
 # crash-safe copy fallback for filesystems without hard links (PR #1 review)
 
 import errno  # noqa: E402
-import fcntl  # noqa: E402
 import hashlib  # noqa: E402
-import threading  # noqa: E402
 
-from app.services import queue  # noqa: E402
-from app.services.ingest import STAGING_DIRNAME, promote_no_replace  # noqa: E402
+from app.services import queue, transfer  # noqa: E402
+from app.services.ingest import STAGING_DIRNAME  # noqa: E402
 
 
 def recordings_files(settings):
-    return sorted(p.name for p in settings.recordings_dir.iterdir() if p.is_file())
+    return user_files(settings.recordings_dir, files_only=True)
 
 
 def staging_files(settings):
@@ -324,17 +331,37 @@ def test_copy_fallback_promotes_complete_verified_file(db, settings, media_dir):
     assert not (dst.stat().st_mode & stat.S_IWUSR)
     assert not src.exists()
     assert [n for n in staging_files(settings) if n.endswith(".partial")] == []
-    reconcile(db, settings, "test")  # lock file no longer needed once not STAGED
+    reconcile(db, settings, "test")
     assert staging_files(settings) == []
+    assert reservation_count(db) == 0           # finalize reservation released
 
 
-def test_real_link_errno_triggers_fallback(db, settings, media_dir, monkeypatch):
+def test_cross_device_link_errno_uses_verified_copy(db, settings, media_dir, monkeypatch):
+    """EXDEV (temp and recordings on different drives) → verified staged copy."""
+    real_link = os.link
+
+    def cross_device_once(src, dst, *a, **k):
+        if str(src).endswith(".staged"):
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        return real_link(src, dst, *a, **k)
+    monkeypatch.setattr(ingest.os, "link", cross_device_once)
+    rec, src, dst = _stage(db, settings, media_dir)
+    drain(db, settings)
+    assert get_rec(db, rec.id).status == "READY" and sha_file(dst) == rec.sha256
+    assert not src.exists()
+
+
+def test_filesystem_without_hard_links_fails_clearly(db, settings, media_dir, monkeypatch):
+    """No hard links at all (e.g. exFAT): refused permanently, never a non-atomic rename.
+    The upload stays in temp; nothing is written to recordings."""
     def no_links(*a, **k):
         raise OSError(errno.EPERM, "Operation not permitted")
     monkeypatch.setattr(ingest.os, "link", no_links)
     rec, src, dst = _stage(db, settings, media_dir)
     drain(db, settings)
-    assert get_rec(db, rec.id).status == "READY" and sha_file(dst) == rec.sha256
+    r = get_rec(db, rec.id)
+    assert r.status == "FAILED" and "APFS required" in r.error_message
+    assert src.exists() and not dst.exists()
 
 
 def test_interrupted_copy_never_exposes_partial_final_file(db, settings, media_dir,
@@ -347,10 +374,10 @@ def test_interrupted_copy_never_exposes_partial_final_file(db, settings, media_d
         pass
 
     def crash_midway(name):
-        if name == "finalize_copy_midway":
+        if name == "transfer_copy_midway":
             raise Interrupted  # BaseException: bypasses normal error handling, like a crash
 
-    monkeypatch.setattr(ingest, "crashpoint", crash_midway)
+    monkeypatch.setattr(transfer, "crashpoint", crash_midway)
     w = WorkerProcess(settings, db)
     c = queue.claim_next(db, w.id, settings.job_lease_seconds)
     from app.workers.handlers import JobContext, handle_ingest
@@ -387,29 +414,37 @@ def test_promote_never_overwrites(tmp_path):
     staged.write_bytes(b"new")
     dst.write_bytes(b"existing")
     ino = dst.stat().st_ino
-    assert promote_no_replace(staged, dst, tmp_path / "x.lock") is False
+    assert transfer.promote_no_overwrite(staged, dst) is False
     assert dst.read_bytes() == b"existing" and dst.stat().st_ino == ino
     assert staged.exists()  # caller removes its own staging file
 
 
-def test_promote_is_serialized_with_other_attempts(tmp_path):
-    """The existence check and rename happen under the lock, so an attempt that was
-    waiting for the lock sees a destination created meanwhile and does not overwrite it."""
-    staged, dst, lock = tmp_path / "s.partial", tmp_path / "final.mp4", tmp_path / "x.lock"
-    staged.write_bytes(b"from zombie attempt")
-    fd = os.open(lock, os.O_RDWR | os.O_CREAT)
-    fcntl.flock(fd, fcntl.LOCK_EX)           # another attempt is promoting
-    result = {}
-    t = threading.Thread(target=lambda: result.setdefault(
-        "r", promote_no_replace(staged, dst, lock)))
-    t.start()
-    t.join(0.5)
-    assert t.is_alive()                       # blocked on the lock
-    dst.write_bytes(b"promoted by the other attempt")
-    fcntl.flock(fd, fcntl.LOCK_UN)
-    os.close(fd)
-    t.join(5)
-    assert result["r"] is False and dst.read_bytes() == b"promoted by the other attempt"
+def test_concurrent_promotions_have_exactly_one_winner(tmp_path):
+    """Many attempts promoting to the same destination at once: the kernel's link(2)
+    guarantees one winner; every other attempt gets False and nothing is overwritten."""
+    import threading
+
+    dst = tmp_path / "final.mp4"
+    n = 16
+    staged = []
+    for i in range(n):
+        p = tmp_path / f"s{i}.partial"
+        p.write_bytes(f"attempt {i}".encode())
+        staged.append(p)
+    barrier = threading.Barrier(n)
+    results: list[bool] = [False] * n
+
+    def go(i):
+        barrier.wait()
+        results[i] = transfer.promote_no_overwrite(staged[i], dst)
+    threads = [threading.Thread(target=go, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    winners = [i for i, r in enumerate(results) if r]
+    assert len(winners) == 1
+    assert dst.read_bytes() == f"attempt {winners[0]}".encode()
 
 
 def test_reconcile_keeps_staging_file_of_active_attempt(db, settings, media_dir):

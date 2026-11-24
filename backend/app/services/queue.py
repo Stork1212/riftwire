@@ -91,15 +91,20 @@ def enqueue(session: Session, recording_id: str, job_type: JobType, max_attempts
 # ---------------------------------------------------------------------------- claiming
 
 def claim_next(db: Database, worker_id: str, lease_seconds: int,
-               now: datetime | None = None) -> ClaimedJob | None:
+               now: datetime | None = None,
+               exclude_types: set[JobType] | frozenset[JobType] = frozenset(),
+               ) -> ClaimedJob | None:
+    """Claim the oldest eligible job. ``exclude_types``: job types that must not start now
+    (their storage location is offline); they stay queued and keep their attempts."""
     now = now or utcnow()
     with db.session() as s:
-        candidates = s.execute(
-            select(Job.id).where(
-                Job.status.in_(CLAIMABLE),
-                or_(Job.next_attempt_at.is_(None), Job.next_attempt_at <= now),
-            ).order_by(Job.created_at, Job.id).limit(10)
-        ).scalars().all()
+        stmt = select(Job.id).where(
+            Job.status.in_(CLAIMABLE),
+            or_(Job.next_attempt_at.is_(None), Job.next_attempt_at <= now),
+        )
+        if exclude_types:
+            stmt = stmt.where(Job.job_type.not_in([t.value for t in exclude_types]))
+        candidates = s.execute(stmt.order_by(Job.created_at, Job.id).limit(10)).scalars().all()
         for job_id in candidates:
             token = secrets.token_hex(16)
             res = s.execute(
@@ -234,6 +239,29 @@ def fail(db: Database, claimed: ClaimedJob, error: str, *, permanent: bool,
         record_event(s, sev, "worker", "job_failed" if sev == Severity.ERROR else "job_retry",
                      msg, job_id=job.id, recording_id=job.recording_id)
         return JobStatus(job.status)
+
+
+def defer(db: Database, claimed: ClaimedJob, reason: str, delay_seconds: float) -> None:
+    """Storage went offline: give the job back WITHOUT consuming the attempt.
+
+    RUNNING -> RETRY_WAIT with ``attempt_count`` restored, eligible again after
+    ``delay_seconds`` (the claim loop also skips it while the location stays offline)."""
+    with fenced(db, claimed.id, claimed.token) as s:
+        job = s.get(Job, claimed.id)
+        check_transition(job.status, JobStatus.RETRY_WAIT)
+        now = utcnow()
+        job.status = JobStatus.RETRY_WAIT.value
+        job.attempt_count = max(0, job.attempt_count - 1)
+        job.next_attempt_at = now + timedelta(seconds=delay_seconds)
+        job.lease_expires_at = None
+        job.lease_token = None
+        job.process_pid = None
+        job.process_started_at = None
+        job.updated_at = now
+        job.last_error = f"waiting for storage: {reason}"[:4000]
+        record_event(s, Severity.WARNING, "worker", "job_waiting_for_storage",
+                     f"{job.job_type} job waiting for storage (attempt not counted): {reason}",
+                     job_id=job.id, recording_id=job.recording_id)
 
 
 def release(db: Database, claimed: ClaimedJob, reason: str) -> None:

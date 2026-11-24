@@ -111,6 +111,13 @@ def system_status(db: DB, cfg: CFG) -> dict:
     return st
 
 
+@api.get("/storage", dependencies=[Depends(require_schema)])
+def storage(db: DB, cfg: CFG) -> dict:
+    """Storage locations, their drives and free space (read-only). Locations are changed
+    only with the verified migration tool (scripts/migrate_storage.py)."""
+    return system.storage_status(db, cfg)
+
+
 # --------------------------------------------------------------------------- recordings
 
 @api.get("/recordings", response_model=Page[RecordingOut],
@@ -154,7 +161,7 @@ async def import_recording(request: Request, db: DB, cfg: CFG,
     except ValueError:
         raise ValidationFailed("Invalid Content-Length header") from None
 
-    up = await run_in_threadpool(UploadSession, cfg, filename, content_length)
+    up = await run_in_threadpool(UploadSession, cfg, filename, content_length, db)
     buf = bytearray()
     try:
         async for chunk in request.stream():

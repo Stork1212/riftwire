@@ -146,6 +146,11 @@ def ffprobe_json(path: Path) -> dict:
     return json.loads(out)
 
 
+def temp_contents(data_dir: Path) -> list[Path]:
+    """Files in temp/, excluding the location's identity marker (M1)."""
+    return [p for p in (data_dir / "temp").iterdir() if p.name != ".riftwire-location.json"]
+
+
 def sha256(p: Path) -> str:
     h = hashlib.sha256()
     with open(p, "rb") as f:
@@ -258,7 +263,7 @@ def run(args) -> int:
         check(stored.exists(), "stored file missing")
         check(sha256(stored) == sha256(media["valid"]) == d["sha256"], "hash mismatch")
         check(not stored.stat().st_mode & stat.S_IWUSR, "stored file should be read-only")
-        check(list((data_dir / "temp").iterdir()) == [], "temp dir not empty")
+        check(temp_contents(data_dir) == [], "temp dir not empty")
         return f"recordings/{d['stored_filename']} (SHA-256 verified, read-only)"
     step("7", "Recording is stored", s7)
 
@@ -326,7 +331,7 @@ def run(args) -> int:
               f"HTTP {r.status_code}")
         r2 = upload(stack, media["unsupported"])
         check(r2.status_code == 415, f"HTTP {r2.status_code}")
-        check(list((data_dir / "temp").iterdir()) == [], "temp not cleaned")
+        check(temp_contents(data_dir) == [], "temp not cleaned")
         check(stack.get("/api/v1/recordings").json()["total"] == 1, "invalid file stored")
         return f"422 — {r.json()['error']['message'][:70]}…; .txt → 415"
     step("16-17", "Import an invalid file → safe rejection, clear error", s16_17)
@@ -341,9 +346,9 @@ def run(args) -> int:
                 s.sendall(f.read(size // 3))
             time.sleep(0.5)
         deadline = time.time() + 10
-        while time.time() < deadline and list((data_dir / "temp").iterdir()):
+        while time.time() < deadline and temp_contents(data_dir):
             time.sleep(0.2)
-        check(list((data_dir / "temp").iterdir()) == [], "partial upload left in temp/")
+        check(temp_contents(data_dir) == [], "partial upload left in temp/")
         check(stack.get("/api/v1/recordings").json()["total"] == 1, "partial upload stored")
         ev = stack.get("/api/v1/events", params={"limit": 200}).json()["items"]
         check(any(e["event_type"] == "upload_interrupted" for e in ev), "no event recorded")
@@ -403,6 +408,110 @@ def run(args) -> int:
             check({"timestamp", "level", "component", "message"} <= set(rec), name)
         return "api.log and worker.log are structured JSON"
     step("X4", "Structured logs written", s_logs)
+
+    # ------------------------------------------------------------------ storage (M1)
+    marker_name = ".riftwire-location.json"
+
+    def extra_clip(name: str, seconds: float) -> Path:
+        p = media_dir / name
+        ffmpeg("-f", "lavfi", "-i", f"testsrc2=size=640x360:rate=30:duration={seconds}",
+               "-f", "lavfi", "-i", f"sine=frequency=550:duration={seconds}", "-c:v",
+               "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", str(p))
+        return p
+
+    def s_locations():
+        st = stack.get("/api/v1/storage").json()
+        kinds = {loc["kind"]: loc for loc in st["locations"]}
+        check(set(kinds) == {"recordings", "temp", "models", "exports", "assets"}, str(kinds))
+        check(all(loc["online"] for loc in kinds.values()), "a location is offline")
+        for k in kinds:
+            check((data_dir / k / marker_name).is_file(), f"no identity marker in {k}")
+        ready = stack.get("/health/ready").json()["checks"]["storage"]
+        check(ready["ok"], str(ready))
+        return f"5 locations online with identity markers; {len(st['volumes'])} volume(s)"
+    step("M1", "Storage locations registered and verified", s_locations)
+
+    def s_offline():
+        rec_dir = data_dir / "recordings"
+        marker = rec_dir / marker_name
+        hidden = data_dir / "recordings-marker.hidden"
+        # (a) Writes refused while a needed location is offline; nothing is written.
+        marker.rename(hidden)
+        before = sorted(p.name for p in (data_dir / "temp").iterdir())
+        r = upload(stack, extra_clip("offline-a.mp4", 2), "offline-a.mp4")
+        check(r.status_code == 503 and r.json()["error"]["code"] == "storage_offline",
+              f"upload while offline: HTTP {r.status_code}")
+        check(sorted(p.name for p in (data_dir / "temp").iterdir()) == before,
+              "temp changed while offline")
+        rd = httpx.get(stack.base + "/health/ready", timeout=10)
+        check(rd.status_code == 503 and "storage_offline:recordings"
+              in rd.json()["checks"]["storage"]["offline"], "readiness did not report offline")
+        hidden.rename(marker)
+        # (b) A queued job waits (no attempt used) while its drive is gone, then completes.
+        stack.stop(("worker",))
+        r = upload(stack, extra_clip("offline-b.mp4", 3), "offline-b.mp4")
+        check(r.status_code == 201, f"upload: HTTP {r.status_code}")
+        rid = r.json()["recording"]["id"]
+        marker.rename(hidden)
+        stack.start_worker()
+        time.sleep(4)
+        jobs = stack.get(f"/api/v1/recordings/{rid}").json()["jobs"]
+        ingest_job = next(j for j in jobs if j["job_type"] == "INGEST")
+        check(ingest_job["status"] == "PENDING" and ingest_job["attempt_count"] == 0,
+              f"job ran while storage offline: {ingest_job['status']} "
+              f"attempts={ingest_job['attempt_count']}")
+        check(not any(p.name.startswith(rid) for p in rec_dir.iterdir()),
+              "a file was written to the offline location")
+        hidden.rename(marker)
+        d = wait_ready(stack, rid, timeout=60)
+        ingest_job = next(j for j in d["jobs"] if j["job_type"] == "INGEST")
+        check(ingest_job["attempt_count"] == 1, f"attempts {ingest_job['attempt_count']}")
+        ev = stack.get("/api/v1/events", params={"limit": 200}).json()["items"]
+        types = {e["event_type"] for e in ev}
+        check({"storage_offline", "storage_online"} <= types, str(sorted(types)))
+        return ("upload refused (503) with nothing written; INGEST waited with 0 attempts, "
+                "then completed on attempt 1 after the drive returned")
+    step("M2", "Offline location: writes refused, jobs wait, recovery on return", s_offline)
+
+    def s_migration():
+        rec_dir = data_dir / "recordings"
+        files = {p.name: sha256(p) for p in rec_dir.iterdir()
+                 if p.is_file() and p.name != marker_name}
+        check(files, "no recordings to migrate")
+        dest = tmp / "moved" / "recordings"
+        tool = [str(PY), str(BACKEND.parent / "scripts" / "migrate_storage.py"), "recordings",
+                str(dest)]
+        dry = subprocess.run(tool, env=stack.env, capture_output=True, text=True, timeout=120)
+        check(dry.returncode == 0 and "DRY RUN" in dry.stdout, dry.stdout + dry.stderr)
+        check(not dest.exists() and not dest.parent.exists(), "dry run created folders")
+        refused = subprocess.run([*tool, "--execute"], env=stack.env, capture_output=True,
+                                 text=True, timeout=120)
+        check(refused.returncode == 1 and "running" in refused.stdout, refused.stdout)
+        stack.stop()
+        ex = subprocess.run([*tool, "--execute"], env=stack.env, capture_output=True,
+                            text=True, timeout=600)
+        check(ex.returncode == 0, ex.stdout + ex.stderr)
+        moved = {p.name: sha256(p) for p in dest.iterdir()
+                 if p.is_file() and p.name != marker_name}
+        check(moved == files, "destination differs from source")
+        kept = {p.name: sha256(p) for p in rec_dir.iterdir()
+                if p.is_file() and p.name != marker_name}
+        check(kept == files, "originals changed or deleted")
+        stack.start_api()
+        stack.start_worker()
+        st = {x["kind"]: x for x in stack.get("/api/v1/storage").json()["locations"]}
+        check(st["recordings"]["online"] and st["recordings"]["path"] == str(dest),
+              str(st["recordings"]))
+        r = upload(stack, extra_clip("after-move.mp4", 2), "after-move.mp4")
+        check(r.status_code == 201, f"HTTP {r.status_code}")
+        rid = r.json()["recording"]["id"]
+        wait_ready(stack, rid, timeout=60)
+        check(any(p.name.startswith(rid) for p in dest.iterdir()), "new import not on new path")
+        check(not any(p.name.startswith(rid) for p in rec_dir.iterdir()),
+              "new import written to the old location")
+        return (f"dry run wrote nothing; refused while running; moved {len(files)} file(s) "
+                "byte-identical; originals kept; new imports land in the new location")
+    step("M3", "Verified migration of the recordings location", s_migration)
 
     stack.stop()
     passed = sum(r["result"] == "PASS" for r in results)

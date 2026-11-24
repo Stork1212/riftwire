@@ -5,6 +5,7 @@ import type {
   Page,
   Recording,
   RecordingDetail,
+  StorageStatus,
   SystemEvent,
   SystemStatus,
 } from "../types/api";
@@ -65,6 +66,8 @@ export interface ListParams {
 
 export const api = {
   systemStatus: () => request<SystemStatus>("/api/v1/system/status"),
+
+  storage: () => request<StorageStatus>("/api/v1/storage"),
 
   listRecordings: (p: ListParams & { q?: string; status?: string } = {}) =>
     request<Page<Recording>>(`/api/v1/recordings${qs({ ...p })}`),

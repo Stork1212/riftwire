@@ -23,7 +23,7 @@ scripts/start.sh          # migrations, API + worker, dashboard at http://127.0.
 scripts/stop.sh           # graceful shutdown
 ```
 
-## What it does (Phase 1)
+## What it does (Phase 1 + Phase 2 M1)
 
 | | |
 |---|---|
@@ -32,8 +32,9 @@ scripts/stop.sh           # graceful shutdown
 | Queue | SQLite-backed, survives restarts; atomic claiming, per-attempt fencing tokens, leases + heartbeats, exponential backoff, orphaned-FFmpeg cleanup, single-worker OS lock |
 | Metadata | duration, display resolution (rotation/SAR aware), exact rational frame rate + VFR flag, codecs, audio presence, container |
 | Thumbnails | aspect-preserving, deterministic, never regenerated when valid, fallback frame + placeholder |
-| Dashboard | Overview, Recordings (+ detail), Import (upload vs. processing progress), Processing Queue (retry), System |
+| Dashboard | Overview, Recordings (+ detail), Import (upload vs. processing progress), Processing Queue (retry), Storage, System |
 | Safety | API bound to 127.0.0.1, restricted CORS, 60 GiB free-space floor, no server paths in API errors |
+| Storage (Phase 2 · M1) | Configurable locations for recordings, temp, models, exports and brand assets (database, logs and thumbnails stay internal). Each location is verified by an identity marker plus the drive's own volume UUID; APFS required. An unplugged or wrong drive is never written to, and jobs wait for it without using up retries. Disk reservations are persistent and per volume. Cross-drive copies are verified and never overwrite. Locations move with a verified, resumable migration tool (dry run by default; originals never deleted) |
 
 ## Layout
 
@@ -54,6 +55,7 @@ data/       runtime data (git-ignored; relocate with RIFTWIRE_DATA_DIR)
 | Start / stop / status | `scripts/start.sh [--dev]` · `scripts/stop.sh` · `scripts/status.sh` |
 | All tests + build | `scripts/test.sh` |
 | End-to-end acceptance | `backend/.venv/bin/python scripts/acceptance.py` |
+| Move a storage location | `backend/.venv/bin/python scripts/migrate_storage.py KIND DEST` (dry run; add `--execute` with RIFTWIRE stopped) |
 | Environment report | `bash scripts/discover_env.sh` |
 
 ## Documentation

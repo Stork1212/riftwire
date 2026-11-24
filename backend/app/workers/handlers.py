@@ -12,16 +12,32 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.errors import PermanentJobError
+from app.core.errors import PermanentJobError, StorageOffline, StorageOfflineJobError
 from app.core.logging import get_logger
 from app.db.session import Database
 from app.models import JobType, Recording, RecordingStatus, Severity
 from app.services import media, queue
 from app.services.events import record_event
 from app.services.ingest import FinalizeError, finalize_recording
+from app.services.locations import get_layout
 from app.services.storage import safe_join
 
 log = get_logger("handlers")
+
+# Storage locations each job type reads or writes. While any is offline the job is not
+# started (claim loop) and an attempt that loses its drive mid-way is deferred, not failed.
+REQUIRED_KINDS: dict[JobType, tuple[str, ...]] = {
+    JobType.INGEST: ("temp", "recordings"),
+    JobType.METADATA: ("recordings",),
+    JobType.THUMBNAIL: ("recordings", "temp"),
+}
+
+
+def require_storage(ctx: JobContext) -> None:
+    try:
+        get_layout(ctx.settings).require_online(*REQUIRED_KINDS[ctx.claimed.job_type])
+    except StorageOffline as e:
+        raise StorageOfflineJobError(e.message) from e
 
 
 class JobContext:
@@ -97,10 +113,15 @@ def _load_recording(ctx: JobContext) -> Recording:
 # ----------------------------------------------------------------------------- INGEST
 
 def handle_ingest(ctx: JobContext) -> None:
+    require_storage(ctx)
     rec = _load_recording(ctx)
     try:
         outcome = finalize_recording(ctx.settings, rec, attempt_token=ctx.claimed.token,
-                                     progress=ctx.progress, should_stop=ctx.should_stop)
+                                     progress=ctx.progress, should_stop=ctx.should_stop,
+                                     db=ctx.db,
+                                     holder=f"job:{ctx.job_id}:{ctx.claimed.token}")
+    except StorageOffline as e:
+        raise StorageOfflineJobError(e.message) from e
     except FinalizeError as e:
         if e.permanent:
             raise PermanentJobError(str(e)) from e
@@ -126,8 +147,9 @@ def handle_ingest(ctx: JobContext) -> None:
 # --------------------------------------------------------------------------- METADATA
 
 def handle_metadata(ctx: JobContext) -> None:
+    require_storage(ctx)
     rec = _load_recording(ctx)
-    path = safe_join(ctx.settings.data_dir, rec.file_path)
+    path = ctx.settings.managed_path(rec.file_path)
     if not path.exists():
         raise PermanentJobError("recording file is missing")
     ctx.progress(10)
@@ -159,6 +181,7 @@ def thumbnail_path(settings: Settings, recording_id: str) -> Path:
 
 
 def handle_thumbnail(ctx: JobContext) -> None:
+    require_storage(ctx)
     rec = _load_recording(ctx)
     s = ctx.settings
     dst = thumbnail_path(s, rec.id)
@@ -176,7 +199,7 @@ def handle_thumbnail(ctx: JobContext) -> None:
                  "-f", "null", "-"], timeout=s.test_slow_ffmpeg_seconds + 30)
         ctx.check()
 
-    src = safe_join(s.data_dir, rec.file_path)
+    src = s.managed_path(rec.file_path)
     tmp = safe_join(s.temp_dir, f"job-{ctx.job_id}-{ctx.claimed.token}.tmp.jpg")
     kw: dict = {"on_spawn": ctx._on_spawn, "should_cancel": ctx.should_stop}
     errors = []

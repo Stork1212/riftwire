@@ -18,6 +18,7 @@ from alembic.config import Config
 from app.core import config as config_mod
 from app.core.config import Settings
 from app.db.session import Database
+from app.services.locations import load_layout
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 FFMPEG = shutil.which("ffmpeg")
@@ -123,5 +124,6 @@ def run_migrations(database_url: str) -> None:
 def db(settings) -> Iterator[Database]:
     run_migrations(settings.database_url)
     database = Database(settings.database_url)
+    load_layout(database, settings, "test")
     yield database
     database.dispose()
