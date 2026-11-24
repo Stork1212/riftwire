@@ -34,7 +34,7 @@ this roadmap is approved.
   A global switch disables URL acquisition.
 - **Configurable storage locations** (recordings, temp, models, exports, assets) with per-volume
   60 GiB floor, cross-volume atomic finalize, and "storage offline" handling for an unmounted
-  external SSD. Data migration helper for the planned 2 TB APFS SSD.
+  external SSD. Data migration helper for the external APFS SSD (ordered: SanDisk 1 TB Portable SSD). Capacity-independent: volumes identified by marker UUID; all checks use measured free space and per-volume floors, never an assumed drive size.
 - Watch folder / import-by-move.
 - `TRANSCRIBE` with word-level timestamps using **small local Whisper models**, plus a
   **benchmark** (WER, word-timing error, real-time factor, peak memory) of Apple Silicon
@@ -115,8 +115,11 @@ downloads (sizes listed in the proposal); SSD timing.
   - publication targets per artifact;
   - read-only `verify(publication_id)` per platform adapter;
   - persistent hourly `CLEANUP_SWEEP` with overdue recovery;
-  - fenced, crash-safe `DELETE_ARTIFACT` (intent → same-volume trash → unlink), with the SSD
-    identity checked before any deletion;
+  - fenced, crash-safe `DELETE_ARTIFACT` (intent → same-volume trash → **final gate** →
+    unlink), with the SSD identity checked before any deletion. The final gate re-checks
+    current eligibility and locks right before every permanent unlink, including in
+    recovery. If anything blocks, the file is restored from the trash, never overwriting;
+    a conflict is held for the owner;
   - dashboard: enable/disable, retention period (default 72 h), Keep forever, scheduled
     deletion time, storage reclaimed, history and audit log, dry run.
 
@@ -134,6 +137,9 @@ downloads (sizes listed in the proposal); SSD timing.
   - Real SIGKILL at every deletion step → recovered with no double deletion.
   - An overdue sweep runs after restart.
   - Dry run changes nothing.
+  - **Final gate:** a lock, new target, active job or disabled cleanup introduced while the
+    file sits in the internal trash (including across a crash) restores the file instead of
+    unlinking it; restore never overwrites, and a conflict is held, never unlinked.
 
 ## Phase 6 — Analytics & Optimization
 

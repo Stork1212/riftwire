@@ -12,7 +12,7 @@ technical proposal is approved (see [`ROADMAP.md`](ROADMAP.md))._
 | D1 | Sources & rights | Local recordings + **authorized** YouTube and Twitch sources. Track ownership, creator permission and licensing. **User must confirm source rights.** Use permitted acquisition methods only; **never bypass access restrictions.** |
 | D2 | AI budget & providers | Initial recurring cloud AI budget **$0**. Local-first. **Interchangeable AI provider interface** (Ollama, OpenAI, Anthropic, other compatible). Paid providers optional, with usage tracking and configurable spending limits. **No paid API charge without explicit authorization.** Separate, versioned **highlight-detection** and **editing** prompts per game. |
 | D3 | Transcription | **Smaller local Whisper models approved**, subject to disk space. Evaluate Apple Silicon-optimized implementations. Word-level timestamps for animated subtitles. **Benchmark accuracy, speed and memory before downloading larger models.** |
-| D4 | Storage | Keep the **60 GiB** free-space floor. Plan for a **2 TB external APFS SSD**. **Configurable locations** for recordings, temp files, AI models and rendered exports. Prefer selective acquisition where supported and permitted. |
+| D4 | Storage | Keep the **60 GiB** free-space floor. Plan for an **external APFS SSD**. The owner has ordered a **SanDisk 1 TB Portable SSD** (Pokémon Mewtwo Edition). Storage is **capacity-independent**: no size is assumed anywhere (§5.3). **Configurable locations** for recordings, temp files, AI models and rendered exports. Prefer selective acquisition where supported and permitted. |
 | D5 | Publishing | **YouTube Shorts first.** Later: Instagram Reels, TikTok, Facebook Reels, X. Multiple accounts/channels; scheduling, metadata generation, thumbnails, **human approval before publication**; official APIs where available. |
 | D6 | Higgsfield | **Optional premium integration.** Core clipping, editing, subtitles, branding and rendering must work without it. Local FFmpeg + Whisper for standard production. Evaluate it for advanced visual enhancements and creative assets. |
 | D7 | Branding & editing | Customizable preset system. Default 1080×1920; 35 % camera / 65 % gameplay; bold white subtitles, black outline, red active word; white hook background with bold black text; configurable 2-second outro. **User-uploaded logos, fonts, outros and brand assets.** **Branding configurable independently per publishing channel.** |
@@ -268,8 +268,15 @@ Design constraints:
 - **Unmounted external SSD safety.** If a configured path is on a volume that is not mounted,
   RIFTWIRE must **not** create directories at that path (which would silently fill the internal
   disk). Readiness reports "storage offline", and jobs needing it wait as a transient condition.
-- Planned layout with the **2 TB external APFS SSD**: recordings, temp, models, exports and assets
-  on the SSD; database and logs on the internal SSD (default; configurable).
+- Planned layout with the **external APFS SSD** (owner's ordered drive: SanDisk 1 TB Portable
+  SSD): recordings, temp, models, exports and assets on the SSD; database and logs on the
+  internal SSD (default; configurable).
+- **Capacity-independent.** No code, default or test assumes a drive size. Volumes are
+  identified by their marker UUID, not by capacity or name. Every admission decision (import,
+  acquisition, render, model download) uses the **measured** free space of the target volume
+  against that volume's configurable floor (default 60 GiB). The dashboard shows capacity,
+  usage per category and remaining headroom per volume, as measured. Replacing or adding a
+  larger or smaller drive is only a configuration change plus the migration helper.
 
 ### 5.4 Higgsfield (D6)
 - An optional **premium** plugin behind a generic "external creative generator" interface.
@@ -368,10 +375,39 @@ dry run), for example `upload_pending:youtube`, `unverified:tiktok`, `locked`, `
   2. In one transaction, write the intent `deleting` with a reason, then atomically rename
      the file into `<volume>/.riftwire-trash/<artifact_id>` (same volume).
   3. Unlink it, fsync the directory, and mark `deleted` with `deleted_at` and bytes reclaimed.
-- **Recovery:** the reconciler finishes interrupted deletions. In state `deleting`: file
-  still in place → re-check eligibility, then continue or roll back to `active`; file in the
-  trash → unlink and mark deleted; file gone → mark deleted. Re-running never deletes
-  anything twice or anything else.
+  The unlink in step 3 is gated (below); step 2 alone is always reversible.
+- **Final gate before every permanent unlink.** Moving a file into the internal trash is
+  never a deletion decision by itself. Immediately before unlinking (in the job *and* in
+  recovery), one `BEGIN IMMEDIATE` transaction:
+  1. re-checks **current** eligibility: every §6a.2 condition, including retention locks
+     ("Keep forever" and manual locks), active jobs, publication states, cleanup still
+     enabled and the retention period as configured *now*. Platform verification is reused
+     only if it is fresher than a short window (default 15 min); otherwise it is redone first,
+     outside the transaction;
+  2. re-checks volume identity and that the trash file still matches the recorded fingerprint;
+  3. only if everything passes, commits state `unlinking` (a commit point). Then it unlinks,
+     fsyncs the directory and marks `deleted`.
+- **Restore when blocked.** If any check fails, or cannot be completed (for example, the API
+  is unreachable), the file is **restored**, not deleted. It is renamed from the trash back
+  to its recorded path on the same volume with the Phase 1 no-replace promotion, and the
+  state goes back to `active`. The audit log gets the blocking reason. If the original path
+  is now occupied, nothing is overwritten: the file stays in the trash as
+  `restore_conflict` and is shown to the owner. It is never unlinked automatically. If the
+  volume is offline, nothing is touched and the job retries later.
+- **Locks win races.** Setting "Keep forever" (or any lock) is a DB write serialized with
+  the final gate. A lock committed before `unlinking` always blocks and restores the file.
+  Once `unlinking` is committed, the decision is final. The dashboard shows "deletion in
+  progress" for that brief step and rejects the lock with a clear message; it never shows
+  the lock as saved.
+- **Recovery:** the reconciler resumes interrupted deletions from the recorded state, never
+  from guesses:
+  - `deleting`, file still at its original path → full re-check, then proceed or return to
+    `active`;
+  - `deleting`, file in the trash → **final gate**, then unlink or restore as above;
+  - `unlinking`, file in the trash → finish the unlink (the decision was committed);
+  - file gone in either state → mark `deleted`.
+
+  Re-running never deletes anything twice or anything else.
 - Uses the Phase 1 queue guarantees (leases, fencing, orphan cleanup) and per-volume floor
   logic unchanged.
 
@@ -416,7 +452,7 @@ audited.
 1. Which YouTube channel(s) and account(s) come first, and who approves posts.
 2. Ollama: installing it is a system-wide install (Homebrew or its app), which needs approval in
    Phase 3. Also which local LLM size is acceptable (memory/quality trade-off).
-3. Timing of the 2 TB SSD purchase (URL acquisition and model storage at scale depend on it).
+3. Arrival and setup of the external SSD (ordered: SanDisk 1 TB Portable SSD). URL acquisition and model storage at scale depend on it.
 4. Higgsfield: specific use cases to evaluate first.
 5. Brand assets for the first channel (logo, fonts, outro) and their licences.
 6. Retention: should "Keep forever" be the default for specific channels or categories (e.g.
