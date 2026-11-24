@@ -8,6 +8,8 @@ info "Backend: ruff"
 ( cd "$BACKEND" && "$VENV/bin/ruff" check . )
 info "Backend: pytest"
 ( cd "$BACKEND" && "$VENV/bin/pytest" -q )
+info "M0 benchmark harness: ruff + pytest (no mlx needed)"
+( cd "$ROOT/bench" && "$VENV/bin/ruff" check . && "$VENV/bin/pytest" -q -p no:cacheprovider tests )
 info "Frontend: lint + typecheck"
 ( cd "$FRONTEND" && npx eslint src && npx tsc -b --noEmit )
 info "Frontend: tests"
