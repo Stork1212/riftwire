@@ -1,7 +1,8 @@
 # M2 — Rights & Source Management: implementation plan
 
-_Status: **proposal for owner approval**. No M2 code exists yet. Written 2026-11-24 on the
-isolated branch `docs/m2-rights-sources-plan` (based on `phase2/m1-storage`)._
+_Status: **approved with changes** (owner decisions R1–R6, 2026-11-24, recorded in §12, which
+takes precedence over earlier sections). Implementation starts on `phase2/m2-rights-sources`
+only after M1 passes Mac verification and independent review. No M2 code exists yet._
 
 ## 0. Ground rules for M2
 
@@ -291,6 +292,8 @@ paths are exposed.
 | R5 | First authorized creators and brand channels (open question 4 in PHASE2_PROPOSAL) | Owner to list them; M2 works without them |
 | R6 | Approve starting M2 on `phase2/m2-rights-sources` | After PR #9 is reviewed (merging it first keeps M2's diff clean) |
 
+The owner's answers are in §12.
+
 ## 11. Risks
 
 - **Attestation is only as good as the owner's statement.** RIFTWIRE records it and shows it
@@ -303,6 +306,154 @@ paths are exposed.
 - **Two branches in flight (M1 review and M2).** M2 touches different files, apart from the
   `recordings` FK and the worker hook. Rebasing on the merged PR #9 before the M2 PR
   resolves this.
+
+## 12. Owner decisions (2026-11-24) and resulting design
+
+Where this section differs from §1–§11, this section wins.
+
+### 12.1 Decisions
+
+| # | Decision |
+|---|---|
+| R1 | **Approved, with a requirement:** acquisition is modular and provider-independent. Supported methods: platform-authorized acquisition, creator-provided original files, authorized direct media links, local recordings and future watch-folder automation. **No mandatory manual upload workflow is hardcoded.** Both content rights and acquisition-method permission are enforced |
+| R2 | **Approved.** Housekeeping (INGEST, METADATA, THUMBNAIL) stays ungated; analyse, edit and publish require valid rights. Monetization, attribution, maximum clip duration, territories and brand-channel scope are enforced, or fail closed where enforcement is not possible. Revocation races at the final output and publishing boundaries are prevented |
+| R3 | **Approved.** Evidence files are capped at 25 MB each, go through storage reservations, and have an aggregate storage limit |
+| R4 | **Deferred to M3.** M3 priorities: automatic creator matching, video titles, duration, source identification |
+| R5 | Creators, games and output channels are configured through the dashboard. Initial brand: **RumbleFrame**; initial focus: GTA VI / Rockstar content. **No seeded creators, permissions or sources**, and no seeded games or channels either: the owner creates them |
+| R6 | **Approved to begin after M1 passes Mac verification and independent review.** Physical-SSD acceptance stays pending separately |
+
+**Additional requirements:**
+- standing creator licences;
+- automatic source matching for future integrations;
+- superseded records never authorize;
+- immutable provenance and permission history;
+- evidence is documentation, not proof;
+- $0, no Ollama, no new dependencies, no real-data migration, no unauthorized downloads;
+- no M3 implementation.
+
+### 12.2 Acquisition as a provider-independent layer (R1)
+
+M2 builds the **contract and the permission checks**. It ships no downloader. Real
+acquirers come in M3 and later, each separately approved.
+
+- **`AcquisitionMethod` enum:**
+
+  | Method | Meaning |
+  |---|---|
+  | `local_recording` | Owner's own recordings |
+  | `creator_file` | Original files from the creator |
+  | `platform_export` | Owner's Studio/Twitch download |
+  | `direct_link` | Creator-provided authorized media URL |
+  | `platform_api` | Platform-authorized acquisition |
+  | `watch_folder` | Future automation |
+  | `url_fetch` | Generic URL fetch, only with `platform_permission` evidence |
+
+- **`AcquisitionProvider` protocol** (`services/acquisition/base.py`): `method`,
+  `can_handle(source)`, `requirements(source)` and `acquire(source, request, ctx)`.
+  - The registry is keyed by method.
+  - M2 registers only the in-process providers that need no network: `local_recording`
+    and `creator_file`, both fed by the existing upload path.
+  - Everything else is declared but unimplemented. Requesting it gives a clean
+    `acquisition_unavailable` error.
+- **Two independent checks before any acquisition:**
+  1. content rights: `evaluate(source, use="acquire")`;
+  2. method permission: the rights record's `scope.acquisition_methods` must list the method.
+  Both are recorded on the job.
+- **Media can come from any provider.** "Attach media" in the dashboard is one provider
+  (`creator_file`/`local_recording` via upload). Nothing in the source, rights or job model
+  assumes a person uploads. A watch-folder or API provider later calls the same
+  `attach_media(source, recording, method, provenance)` service.
+- **`url_fetch` needs a `platform_permission` evidence record.** That evidence is a
+  precondition for the owner's attestation, not a substitute for it (§12.6). The global
+  switch stays off.
+
+### 12.3 Standing licences and automatic matching
+
+- **Licence coverage.** A rights record covers a creator (all of their listed
+  `creator_channels`), or a channel subset, or specific sources. Every new source from a
+  covered channel is authorized automatically. No per-video attestation, and the source
+  records which rights version covers it.
+- **`SourceMatcher` interface:** an acquisition hint (platform, video ID, channel ID or
+  login, file hash, watch-folder path rule) resolves to `creator_channel` and then to the
+  active licence.
+  - M2 matchers work offline: Twitch clip URLs carry the login, the owner can bind a
+    folder or naming rule to a creator, and a file hash can be matched to an existing
+    source.
+  - M3 adds the official-API matcher (YouTube channel ID, Twitch user ID, titles,
+    duration).
+  - The result is always `matched` (one licence), `ambiguous` (more than one candidate:
+    the owner decides) or `unmatched` (rights needed). It never guesses.
+
+### 12.4 Rights evaluation: fail closed (R2)
+
+- **Only the current version authorizes.** `evaluate` considers only records that are
+  attested, have no successor, are not revoked and are inside their validity window. A
+  superseded record can never authorize; a test enumerates every state.
+- **Scope parsing is strict** (`extra="forbid"`). An unknown `v` or unknown key makes the
+  record unusable (`scope_unsupported`). It is never ignored.
+- **Each constraint is enforced, or the action fails closed:**
+
+  | Constraint | M2 behaviour |
+  |---|---|
+  | Brand-channel scope | Enforced. Publish/edit for a brand channel requires `source_assignments` **and** the channel in `scope.brand_channels` (or `"*"`) |
+  | Monetization | `brand_channels.monetized` (owner setting). Monetized channel + `monetization: false` → refused |
+  | Maximum clip duration | `evaluate` takes `clip_ms`. Edit, render and publish refuse longer clips (padding included) |
+  | Attribution | Returned as an **obligation** (`attribution: "<text>"`). A consumer must confirm it satisfied every obligation (`obligations_satisfied` check); unknown obligations → refused |
+  | Territories | RIFTWIRE cannot restrict publishing by territory. Any non-null `territories` → publish refused (`territories_unsupported`) until a publisher declares support |
+
+- **Decision snapshot.** Every gated job stores the `Decision` it ran under (record ID,
+  version, scope hash, obligations).
+
+### 12.5 Revocation races
+
+- **Transactional fence at output boundaries.**
+  - Gated jobs promote outputs and record completion inside one `BEGIN IMMEDIATE`
+    transaction that first re-runs `evaluate` against the stored decision (same record,
+    same version, still valid).
+  - Revocation and supersession are also `BEGIN IMMEDIATE` writes.
+  - SQLite serializes the two, so either the output lands before the revocation or it is
+    refused. There is no interleaving.
+  - A refused output is left unpromoted (the staged file is removed by the reconciler).
+- **Publishing (Phase 5, external and not transactional).**
+  - The fence runs immediately before the upload call, and its intent is recorded.
+  - After upload, the decision is re-checked. If rights changed during the upload, the
+    post is flagged `revoked_during_publish` with an alert and a takedown task. The
+    remaining window is documented, not hidden.
+  - M2 implements the fence and the obligation API, tested with a test-only gated job;
+    Phase 5 wires them in.
+
+### 12.6 Evidence and provenance
+
+- **Evidence is documentation, not proof.**
+  - Attaching evidence never changes a record's status.
+  - Only an explicit owner attestation (text plus timestamp) activates a record.
+  - The UI labels evidence "supporting documentation".
+- **Storage limits.**
+  - Evidence is capped at 25 MB per file. The aggregate limit is
+    `RIFTWIRE_EVIDENCE_MAX_TOTAL_BYTES` (default 1 GiB), checked inside the reservation
+    transaction.
+  - Evidence files are stored under `data/evidence/`, internal, floor-gated and read-only.
+  - Evidence is never deleted automatically.
+- **Immutable history.** Rights records, scope changes, supersessions, revocations,
+  assignments and decisions all write `provenance_events`. SQLite triggers reject UPDATE and
+  DELETE on `provenance_events` and on attested `rights_records` content columns, so
+  immutability is enforced in the database, not only in code.
+
+### 12.7 Effect on scope and tests
+
+- **Additions to §8:**
+  - provider and matcher contract tests;
+  - two-check acquisition gating;
+  - every scope constraint, plus fail-closed on unknown keys and versions;
+  - superseded and revoked can't authorize, at enqueue, start and output;
+  - fence race tests: revoke concurrently with output promotion across processes, with
+    exactly one outcome;
+  - the database triggers;
+  - evidence aggregate limit;
+  - standing licence auto-coverage.
+- **Acceptance gains M2-5** (standing licence covers a second source with no new
+  attestation) and **M2-6** (revocation during a gated job's output is refused).
+- **Estimate:** 6–8 working sessions.
 
 Sources: YouTube Terms of Service (15 Dec 2023); YouTube Data API quota documentation;
 Twitch API documentation (Get Videos, authentication); Twitch developer forum thread on
