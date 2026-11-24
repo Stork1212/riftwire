@@ -125,6 +125,38 @@ REASON_TEXT = {
     OBLIGATION_UNSATISFIED: "an obligation of the rights was not satisfied",
 }
 
+# What the owner can do about each refusal (shown in the API and the dashboard).
+REASON_ACTION = {
+    NO_SOURCE: "Check the link or pick an existing source.",
+    SOURCE_BLOCKED: "Reactivate the source on its page if it was blocked by mistake.",
+    NOT_ATTESTED_MEDIA: "Link the recording to a source (Import with a rights link, or "
+                        "attach it on the source's page).",
+    NO_RIGHTS_RECORD: "Add a licence for this creator on Creators & Rights.",
+    NOT_ATTESTED: "Attest the draft licence on Creators & Rights.",
+    SUPERSEDED: "A newer version exists; it is used automatically if it covers this.",
+    REVOKED: "Attest a new licence on Creators & Rights if permission was granted again.",
+    EXPIRED: "Attest a renewed licence on Creators & Rights.",
+    NOT_YET_VALID: "Wait for the licence's start date, or correct it on Creators & Rights.",
+    CREATOR_ARCHIVED: "Unarchive the creator on Creators & Rights.",
+    SCOPE_UNSUPPORTED: "Edit the licence on Creators & Rights to save a supported version.",
+    USE_NOT_IN_SCOPE: "Edit the licence on Creators & Rights to allow this use.",
+    METHOD_NOT_PERMITTED: "Use a permitted way of obtaining the footage, or edit the licence "
+                          "to allow this method.",
+    PLATFORM_PERMISSION_MISSING: "Attach written platform permission as evidence first.",
+    URL_ACQUISITION_DISABLED: "URL fetching is not available in this version.",
+    PLATFORM_NOT_IN_SCOPE: "Edit the licence to allow this platform.",
+    BRAND_CHANNEL_REQUIRED: "Choose the brand channel.",
+    BRAND_CHANNEL_NOT_ASSIGNED: "Assign the source to this brand channel on its page.",
+    BRAND_CHANNEL_NOT_IN_SCOPE: "Edit the licence to include this brand channel.",
+    MONETIZATION_NOT_PERMITTED: "Use a non-monetized channel, or edit the licence.",
+    CLIP_LENGTH_REQUIRED: "Specify the clip length.",
+    CLIP_TOO_LONG: "Shorten the clip to the licence's maximum.",
+    TERRITORIES_UNSUPPORTED: "Remove the territory limit only if the licence really allows "
+                             "worldwide use.",
+    RIGHTS_CHANGED: "Check the licence, then retry the job.",
+    OBLIGATION_UNSATISFIED: "Satisfy the licence's obligations (e.g. attribution).",
+}
+
 SPECIFICITY = {RightsCoverage.SOURCES.value: 0, RightsCoverage.CHANNELS.value: 1,
                RightsCoverage.CREATOR.value: 2}
 
@@ -192,17 +224,25 @@ class Decision:
     def message(self) -> str:
         return REASON_TEXT.get(self.reason, self.reason)
 
+    @property
+    def action(self) -> str | None:
+        return None if self.allowed else REASON_ACTION.get(self.reason)
+
     def as_dict(self) -> dict:
         d = asdict(self)
         d["obligations"] = list(self.obligations)
         d["message"] = self.message
+        d["action"] = self.action
         return d
 
     def refuse(self) -> RightsRefused:
-        return RightsRefused(f"Not authorized: {self.message}",
-                             details={"reason": self.reason, "use": self.use,
-                                      "source_id": self.source_id,
-                                      "record_id": self.record_id})
+        msg = f"Not authorized: {self.message}."
+        if self.action:
+            msg += f" {self.action}"
+        return RightsRefused(msg, details={"reason": self.reason, "use": self.use,
+                                           "source_id": self.source_id,
+                                           "record_id": self.record_id,
+                                           "action": self.action})
 
 
 def record_state(r: RightsRecord, at: datetime) -> str:
@@ -252,7 +292,8 @@ def _has_platform_permission(s: Session, record_id: str) -> bool:
 
 def _check_record(s: Session, r: RightsRecord, scope: Scope, source: Source, use: str, *,
                   platform: str | None, brand_channel_id: str | None, clip_ms: int | None,
-                  method: str | None, url_acquisition_enabled: bool) -> str:
+                  method: str | None, media_method: str | None,
+                  url_acquisition_enabled: bool) -> str:
     if use not in scope.uses:
         return USE_NOT_IN_SCOPE
     if use == "acquire":
@@ -265,8 +306,9 @@ def _check_record(s: Session, r: RightsRecord, scope: Scope, source: Source, use
             if not _has_platform_permission(s, r.id):
                 return PLATFORM_PERMISSION_MISSING
         return OK
-    # Media must have been obtained by a method these rights permit (R1).
-    if source.acquisition_method not in scope.acquisition_methods:
+    # Media must have been obtained by a method these rights permit (R1): the recording's
+    # actual method when known, else the source's declared one (review finding A).
+    if (media_method or source.acquisition_method) not in scope.acquisition_methods:
         return METHOD_NOT_PERMITTED
     if use in ("edit", "publish"):
         if scope.max_clip_seconds is not None:
@@ -303,13 +345,15 @@ REFUSAL_PRIORITY = (REVOKED, EXPIRED, NOT_YET_VALID, SUPERSEDED, NOT_ATTESTED)
 def evaluate(s: Session, source_id: str | None, use: str, *, platform: str | None = None,
              brand_channel_id: str | None = None, clip_ms: int | None = None,
              method: str | None = None, at: datetime | None = None,
-             url_acquisition_enabled: bool = False) -> Decision:
+             url_acquisition_enabled: bool = False,
+             media_method: str | None = None) -> Decision:
     """Pure read: may ``use`` happen for ``source_id`` now? Never raises for a refusal."""
     if use not in USES:
         raise ValidationFailed(f"unknown use '{use}'")
     at = at or utcnow()
     params = {k: v for k, v in (("platform", platform), ("brand_channel_id", brand_channel_id),
-                                ("clip_ms", clip_ms), ("method", method)) if v is not None}
+                                ("clip_ms", clip_ms), ("method", method),
+                                ("media_method", media_method)) if v is not None}
 
     def no(reason: str, r: RightsRecord | None = None) -> Decision:
         return Decision(False, reason, use, source_id, r.id if r else None,
@@ -344,7 +388,7 @@ def evaluate(s: Session, source_id: str | None, use: str, *, platform: str | Non
             reason = SCOPE_UNSUPPORTED if scope is None else _check_record(
                 s, r, scope, source, use, platform=platform,
                 brand_channel_id=brand_channel_id, clip_ms=clip_ms, method=method,
-                url_acquisition_enabled=url_acquisition_enabled)
+                media_method=media_method, url_acquisition_enabled=url_acquisition_enabled)
         if reason == OK:
             assert scope is not None
             obligations: list[dict] = []
@@ -362,6 +406,7 @@ def evaluate_recording(s: Session, recording_id: str, use: str, **kw) -> Decisio
     rec = s.get(Recording, recording_id)
     if rec is None or rec.source_id is None:
         return Decision(False, NOT_ATTESTED_MEDIA, use, None)
+    kw.setdefault("media_method", rec.acquisition_method)
     return evaluate(s, rec.source_id, use, **kw)
 
 
@@ -461,6 +506,11 @@ def _link_coverage(s: Session, r: RightsRecord, channel_ids: list[str],
             src = s.get(Source, sid)
             if src is None:
                 raise ValidationFailed(f"unknown source '{sid}'")
+            ch = s.get(CreatorChannel, src.creator_channel_id) \
+                if src.creator_channel_id else None
+            if ch is None or ch.creator_id != r.creator_id:
+                # A creator can only license their own footage (review finding B).
+                raise ValidationFailed(f"source '{sid}' does not belong to this creator")
             s.add(RightsSourceLink(rights_record_id=r.id, source_id=sid))
     elif source_ids:
         raise ValidationFailed("sources can only be listed with coverage 'sources'")
@@ -569,8 +619,12 @@ def revoke(s: Session, record_id: str, reason: str) -> RightsRecord:
 
 def status_summary(s: Session, source: Source, at: datetime | None = None,
                    soon: timedelta = timedelta(days=14)) -> str:
-    """Badge for lists: ok | expires_soon | expired | revoked | not_attested | none |
-    blocked."""
+    """Licence state for badges: active | expires_soon | unusable | expired | revoked |
+    not_attested | not_yet_valid | none | blocked.
+
+    "active" only says a usable licence is in force; which uses it authorizes is
+    reported separately (``authorized_uses``), because a licence may allow acquiring but
+    not publishing (review finding C)."""
     at = at or utcnow()
     if source.status != SourceStatus.ACTIVE.value:
         return "blocked"
@@ -579,13 +633,31 @@ def status_summary(s: Session, source: Source, at: datetime | None = None,
         return "none"
     states = [(r, record_state(r, at)) for r in recs]
     active = [r for r, st in states if st == OK]
-    if active:
-        if all(r.valid_until is not None and r.valid_until - at <= soon for r in active):
+    usable = [r for r in active if parse_scope(r.scope_json) is not None
+              and (c := s.get(Creator, r.creator_id)) is not None and c.archived_at is None]
+    if usable:
+        if all(r.valid_until is not None and r.valid_until - at <= soon for r in usable):
             return "expires_soon"
-        return "ok"
+        return "active"
+    if active:
+        return "unusable"
     names = {REVOKED: "revoked", EXPIRED: "expired", NOT_ATTESTED: "not_attested",
              NOT_YET_VALID: "not_yet_valid", SUPERSEDED: "none"}
     for reason in REFUSAL_PRIORITY:
         if any(st == reason for _, st in states):
             return names[reason]
     return "none"
+
+
+def authorized_uses(s: Session, source: Source, *,
+                    url_acquisition_enabled: bool = False) -> list[str]:
+    """Uses allowed without per-clip parameters. Edit and publish also depend on the clip,
+    platform and brand channel, so they are checked when those are known, never shown as
+    blanket permissions."""
+    out = []
+    if evaluate(s, source.id, "acquire",
+                url_acquisition_enabled=url_acquisition_enabled).allowed:
+        out.append("acquire")
+    if evaluate(s, source.id, "analyze").allowed:
+        out.append("analyze")
+    return out

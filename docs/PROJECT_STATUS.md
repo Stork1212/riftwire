@@ -36,8 +36,26 @@ _Last updated: 2026-11-24_
   - **Mac verification of `9cbe705`** (2026-11-24): all stages exit 0. Backend 365 + 3
     skipped, bench 47 + 1, frontend 28, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
     Evidence: `docs/acceptance/2026-11-24-macos-m2-9cbe705/`.
+  - **Independent review of `9cbe705`** (2026-11-24): five reproduced defects fixed with
+    regression tests ([`M2_REVIEW.md`](M2_REVIEW.md) §7):
+    - the actual acquisition method was not enforced (migration `0005`);
+    - another creator's sources could be licensed;
+    - "Rights OK" mixed up licence state and authorization;
+    - refusals had no next step;
+    - ambiguous YouTube ids were accepted.
+
+    Frontend:
+    - Import has Local file and Video URL modes;
+    - inline creator setup;
+    - stale-response guard;
+    - one URL validator;
+    - actionable errors;
+    - grouped navigation.
+
+    Interface direction document for review.
   - **Pending:**
-    - independent review;
+    - Mac run of the corrected commit;
+    - updated independent review;
     - merge (owner).
     M3 is not started.
 

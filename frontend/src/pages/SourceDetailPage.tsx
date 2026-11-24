@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { DecisionLine, METHODS, RightsBadge, ScopeSummary } from "../components/rights";
+import { DecisionLine, METHODS, RightsBadge, ScopeSummary, UseChips } from "../components/rights";
 import { EmptyState, ErrorBanner, Loading, Panel, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
 import { formatDate } from "../services/format";
@@ -130,13 +130,16 @@ export function SourceDetailPage() {
               ? <a href={s.url_canonical} target="_blank" rel="noreferrer noopener">{s.url_canonical}</a> : "local files"}</dd>
             <dt>Creator</dt><dd>{s.creator_name ?? "—"} <span className="muted">{s.channel_label}</span></dd>
             <dt>Game</dt><dd>{s.game_name ?? "—"}</dd>
-            <dt>Footage via</dt><dd>{METHODS[s.acquisition_method] ?? s.acquisition_method}</dd>
+            <dt>Declared footage method</dt><dd>{METHODS[s.acquisition_method] ?? s.acquisition_method}</dd>
             <dt>Status</dt><dd>{s.status}</dd>
           </dl>
         </Panel>
         <Panel title="Rights">
+          <p><strong>Authorized now:</strong> <UseChips uses={s.authorized_uses} /></p>
           <DecisionLine label="Obtain footage" d={s.acquire} />
           <DecisionLine label="Analyse" d={s.analyze} />
+          <p className="muted small">Editing and publishing are checked for each clip, platform and
+            brand channel when those steps exist (M3 onwards).</p>
           {s.records.length === 0 && <EmptyState title="No licence covers this source">
             Add one on the <Link to="/creators">Creators</Link> page.</EmptyState>}
           {s.records.map((r) => (

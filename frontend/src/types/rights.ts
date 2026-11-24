@@ -104,6 +104,7 @@ export interface Decision {
   record_id: string | null;
   version: number | null;
   obligations: Record<string, unknown>[];
+  action: string | null;
 }
 
 export interface Source {
@@ -124,6 +125,7 @@ export interface Source {
   created_at: string;
   updated_at: string;
   rights_status: string;
+  authorized_uses: string[];
   brand_channel_ids: string[];
   recording_count: number;
 }

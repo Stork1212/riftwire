@@ -78,7 +78,7 @@ def page(items: list, total: int, limit: int, offset: int) -> dict:
 def decision_out(d: rights.Decision) -> DecisionOut:
     return DecisionOut(allowed=d.allowed, reason=d.reason, message=d.message, use=d.use,
                        source_id=d.source_id, record_id=d.record_id, version=d.version,
-                       obligations=list(d.obligations))
+                       obligations=list(d.obligations), action=d.action)
 
 
 def creator_out(s: Session, c: Creator) -> CreatorOut:
@@ -138,6 +138,7 @@ def source_out(s: Session, src: Source, cls=SourceOut, **extra):
         status=src.status, acquisition_method=src.acquisition_method,
         created_at=src.created_at, updated_at=src.updated_at,
         rights_status=rights.status_summary(s, src),
+        authorized_uses=rights.authorized_uses(s, src),
         brand_channel_ids=list(s.scalars(select(SourceAssignment.brand_channel_id).where(
             SourceAssignment.source_id == src.id))),
         recording_count=int(s.scalar(select(func.count()).select_from(Recording).where(

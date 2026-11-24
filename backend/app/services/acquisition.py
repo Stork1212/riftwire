@@ -95,6 +95,7 @@ def attach_media(s: Session, settings: Settings, source_id: str, recording_id: s
         raise ConflictError("This recording already belongs to another source",
                             details={"source_id": rec.source_id})
     rec.source_id = source_id
+    rec.acquisition_method = m          # the method actually used, enforced later
     s.flush()
     rights.provenance(s, "recording", rec.id, "attached_to_source", actor=actor,
                       source_id=source_id, method=m, sha256=rec.sha256,

@@ -1,15 +1,23 @@
 import { NavLink, Outlet } from "react-router-dom";
 
-const NAV = [
-  { to: "/", label: "Overview", end: true },
-  { to: "/recordings", label: "Recordings" },
-  { to: "/import", label: "Import" },
-  { to: "/sources", label: "Sources" },
-  { to: "/creators", label: "Creators & Rights" },
-  { to: "/catalog", label: "Games & Channels" },
-  { to: "/queue", label: "Processing Queue" },
-  { to: "/storage", label: "Storage" },
-  { to: "/system", label: "System" },
+interface NavItem { to: string; label: string; end?: boolean }
+
+const NAV: { group: string; items: NavItem[] }[] = [
+  { group: "Workspace", items: [
+    { to: "/", label: "Overview", end: true },
+    { to: "/import", label: "Import" },
+    { to: "/sources", label: "Sources" },
+    { to: "/recordings", label: "Recordings" },
+  ] },
+  { group: "Management", items: [
+    { to: "/creators", label: "Creators & Rights" },
+    { to: "/catalog", label: "Games & Channels" },
+    { to: "/storage", label: "Storage" },
+  ] },
+  { group: "System", items: [
+    { to: "/queue", label: "Processing Queue" },
+    { to: "/system", label: "System" },
+  ] },
 ];
 
 export function Logo() {
@@ -30,11 +38,16 @@ export function Layout() {
       <aside className="sidebar">
         <Logo />
         <nav className="nav">
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end}
-              className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-              {n.label}
-            </NavLink>
+          {NAV.map((g) => (
+            <div key={g.group} className="nav-group" role="group" aria-label={g.group}>
+              <div className="nav-group-title">{g.group}</div>
+              {g.items.map((n) => (
+                <NavLink key={n.to} to={n.to} end={n.end}
+                  className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+                  {n.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-foot">Phase 2 · Sources &amp; Signals</div>

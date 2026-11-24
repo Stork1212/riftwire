@@ -19,15 +19,29 @@ export const PLATFORMS: Record<string, string> = {
   x: "X",
 };
 
+// Licence state only. Which uses are authorized is shown separately (UseChips): an active
+// licence may, for example, allow acquiring but not publishing.
 const RIGHTS_TONE: Record<string, string> = {
-  ok: "ok", expires_soon: "warn", expired: "bad", revoked: "bad", superseded: "muted",
-  not_attested: "warn", not_yet_valid: "warn", none: "muted", blocked: "bad",
+  active: "ok", ok: "ok", expires_soon: "warn", unusable: "bad", expired: "bad", revoked: "bad",
+  superseded: "muted", not_attested: "warn", not_yet_valid: "warn", none: "muted", blocked: "bad",
 };
 const RIGHTS_LABEL: Record<string, string> = {
-  ok: "Rights OK", expires_soon: "Expires soon", expired: "Expired", revoked: "Revoked",
-  superseded: "Superseded", not_attested: "Not attested", not_yet_valid: "Not yet valid",
-  none: "No rights", blocked: "Blocked",
+  active: "Licence active", ok: "Active", expires_soon: "Licence expires soon",
+  unusable: "Licence unusable", expired: "Expired", revoked: "Revoked", superseded: "Superseded",
+  not_attested: "Not attested", not_yet_valid: "Not yet valid", none: "No licence", blocked: "Blocked",
 };
+
+const USE_LABEL: Record<string, string> = { acquire: "Obtain footage", analyze: "Analyse" };
+
+/** Uses authorized right now. Editing and publishing are checked per clip and channel. */
+export function UseChips({ uses }: { uses: string[] }) {
+  if (uses.length === 0) return <span className="muted" data-uses="none">nothing</span>;
+  return (
+    <span className="use-chips" data-uses={uses.join(",")}>
+      {uses.map((u) => <span key={u} className="use-chip">{USE_LABEL[u] ?? u}</span>)}
+    </span>
+  );
+}
 
 export function RightsBadge({ status }: { status: string }) {
   const tone = RIGHTS_TONE[status] ?? "muted";
@@ -44,6 +58,7 @@ export function DecisionLine({ d, label }: { d: Decision; label: string }) {
     <div className={`decision ${d.allowed ? "decision-ok" : "decision-no"}`} data-reason={d.reason}>
       <strong>{label}:</strong> {d.allowed ? "allowed" : "refused"}
       {!d.allowed && <span className="muted"> — {d.message}</span>}
+      {!d.allowed && d.action && <div className="decision-action">{d.action}</div>}
       {d.allowed && d.version !== null && <span className="muted"> (licence v{d.version})</span>}
     </div>
   );

@@ -1,7 +1,8 @@
 # M2 Rights & Source Management: review package
 
 _PR #12 (draft), branch `phase2/m2-rights-sources`. Implemented 2026-11-24 under owner
-decisions R1–R6 ([`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12). Design:
+decisions R1–R6. The independent review of `9cbe705` and its corrections are in §7, which
+supersedes earlier sections where they differ ([`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12). Design:
 [`ARCHITECTURE.md`](ARCHITECTURE.md) §20. **Not merged; M3 not started.** The M1
 physical-SSD gate remains open separately._
 
@@ -74,3 +75,60 @@ physical-SSD gate remains open separately._
   immutability triggers. The migration docstring says such a migration must recreate them.
 - **Matching is offline.** YouTube video URLs don't name their channel, so the owner picks
   it until the M3 official-API matcher.
+
+## 7. Independent review of `9cbe705`: findings and corrections
+
+Each suspected backend defect was first written as a regression test and run against
+`9cbe705`. Only reproduced defects were fixed. Tests: `backend/tests/test_rights_review.py`.
+
+### 7.1 Backend
+
+| # | Finding | Reproduced on `9cbe705`? | Correction |
+|---|---|---|---|
+| A | The actual acquisition method was not preserved | **Yes.** The method used to attach media was only recorded in provenance. Analysis checked the source's *declared* method. Media attached as `creator_file` stayed analysable after the licence stopped permitting `creator_file` (`Decision(allowed=True)`) | New column `recordings.acquisition_method` (migration **0005**), backfilled from the source for media linked before it existed. `attach_media` records the method actually used. Analysis, editing and publishing use it, and it travels with the decision, so the output fence re-checks it too |
+| B | Creator authority for source-specific rights | **Yes.** A licence with coverage `sources` could name another creator's source | Coverage `sources` is accepted only for sources on the record creator's own channels (`does not belong to this creator`) |
+| C | The badge mixed up "licence active" with "authorized" | **Yes.** A source whose licence allowed only `acquire`, or whose scope could not be read, showed "Rights OK" | `rights_status` now reports only the licence state: `active`, `expires_soon`, `unusable` (in force but unreadable, or the creator is archived), `expired`, `revoked`, `not_attested`, `not_yet_valid`, `none` or `blocked`. A new `authorized_uses` lists what is allowed now (`acquire`, `analyze`). Edit and publish are always checked per clip, platform and brand channel and are never shown as blanket permissions |
+| D | Refusals were not actionable | **Yes.** Refusals gave a reason but no next step | Every reason has an action. It appears in `DecisionOut.action`, in `RightsRefused` messages and `details.action`, and in the dashboard, linked to the right page |
+| E | URL validation | **Partly.** A link naming two different YouTube ids (`v=A&v=B`) was accepted using the first id. Encoded-parameter smuggling was already refused (invalid id) | Two or more different `v` values are refused (`ambiguous_video_id`); repeated identical ids are still fine |
+
+**Checked and found sound (no change):**
+- **Concurrent supersession:** four parallel edits of one licence produce exactly one
+  new version, and three get `ConflictError`. Now covered by a test.
+- **Revocation races:** worker start, output fence and import linking (each in its own
+  `BEGIN IMMEDIATE`) were re-read and are unchanged.
+- **Output authorization:** the fence now also carries the media's acquisition method.
+- **Evidence storage:** limits, reservation and read-only promotion were re-read. The
+  orphan-file residual on commit failure is documented in §6.
+- **Database immutability:** the 12 triggers survive migration 0005. It adds a column to
+  `recordings` only, which has no triggers, and the migration test confirms the count.
+
+### 7.2 Frontend
+
+| Finding | Correction |
+|---|---|
+| Import offered only a local file | Two modes. **Local file** is unchanged, with an optional rights link. **Video URL** resolves the link to a source (existing, matched or new), then asks for the footage file and how it was obtained (the creator's file, or your own Studio or Twitch download). There is **no download control**, and the page says RIFTWIRE does not download from YouTube or Twitch |
+| No path when no creator matches | Inline **Set up a new creator** form (name, relationship, channel handle pre-filled from a Twitch link). It states that the footage stays unusable until a licence is attested |
+| Stale URL resolutions | Each check has a generation number. A reply for an older link is ignored, and editing the link invalidates replies in flight. A test with a deliberately late reply fails without the guard (checked by temporarily removing it) |
+| The frontend and backend validated URLs differently | The browser's `type="url"` check refused scheme-less links the backend accepts (`youtu.be/…`). It is now a text field, so the backend's validator is the only rule set |
+| Empty states and rights errors | The Sources empty state lists the three setup steps with links. `ActionableError` shows the backend's reason and next step, with a link to the page that fixes it. The source page shows authorized uses and the next step for each refused use |
+
+### 7.3 Interface direction (not M3 work)
+- **Navigation:** grouped into **Workspace** (Overview, Import, Sources, Recordings),
+  **Management** (Creators & Rights, Games & Channels, Storage) and **System**
+  (Processing Queue, System).
+- **Project workflow:** the unified workflow, configurable defaults (RumbleFrame is
+  configuration, never code) and the proposed data model are in
+  [`M3_INTERFACE_DIRECTION.md`](M3_INTERFACE_DIRECTION.md), for owner review.
+- **Nothing unavailable is shown as an active control.**
+
+### 7.4 Verification of the corrections (cloud container)
+| Check | Result |
+|---|---|
+| `scripts/test.sh` (exit 0) | ruff clean; backend **376 passed, 1 skipped** (macOS-only), 1 third-party warning; bench **48**; frontend lint/typecheck clean, **35/35**; build OK |
+| Alembic | up → down to 0004 → up; `alembic check` clean; 12 triggers present after 0005 |
+| Acceptance (`--min-free-gib 1`, test-only) | **28/28** |
+| Smoke (test-only 1 GiB floor) | 28 PASS + 1 macOS-only SKIP |
+| Regression proof | 6 of the 9 new backend tests fail on `9cbe705` (the other 3 cover behaviour confirmed sound); the stale-response frontend test fails with the guard removed |
+
+**Not yet verified:** a Mac run of the corrected commit; a visual check of the dashboard
+in a real browser.

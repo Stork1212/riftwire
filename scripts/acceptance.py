@@ -555,7 +555,7 @@ def run(args) -> int:
               and res["channel"]["id"] == m2["twitch"] and res["covered"], str(res))
         src = ok(stack.post("/api/v1/sources", json={
             "url": clip, "game_id": m2["game"], "brand_channel_ids": [m2["brand"]]}), 201)
-        check(src["rights_status"] == "ok" and src["creator_channel_id"] == m2["twitch"],
+        check(src["rights_status"] == "active" and src["creator_channel_id"] == m2["twitch"],
               str(src))
         dup = stack.post("/api/v1/sources",
                          json={"url": "https://clips.twitch.tv/HeistFinale-Xy_9"})
@@ -613,7 +613,7 @@ def run(args) -> int:
         vod = ok(stack.post("/api/v1/sources", json={
             "url": "https://www.twitch.tv/videos/987654321",
             "creator_channel_id": m2["twitch"]}), 201)
-        check(vod["rights_status"] == "ok", str(vod))
+        check(vod["rights_status"] == "active" and "analyze" in vod["authorized_uses"], str(vod))
         clip_now = ok(stack.get(f"/api/v1/sources/{m2['clip_source']}"))
         check(clip_now["analyze"]["allowed"]
               and clip_now["analyze"]["record_id"] == lic["id"], str(clip_now["analyze"]))

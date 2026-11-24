@@ -563,7 +563,7 @@ def test_api_end_to_end_paste_url_flow(client, db):
                                          "brand_channel_ids": [bc["id"]]})
     assert src.status_code == 201, src.text
     src = src.json()
-    assert src["rights_status"] == "ok" and src["creator_name"] == "Some Streamer"
+    assert src["rights_status"] == "active" and src["creator_name"] == "Some Streamer"
     dup = c.post("/api/v1/sources", json={"url": CLIP})
     assert dup.status_code == 409 and dup.json()["error"]["details"]["source_id"] == src["id"]
     chk = c.get(f"/api/v1/sources/{src['id']}/rights-check",

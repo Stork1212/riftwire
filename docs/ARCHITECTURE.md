@@ -760,6 +760,8 @@ R1–R6, §12). Review package: [`M2_REVIEW.md`](M2_REVIEW.md).
 - **Sources:** `sources` (one per external video or local origin; the canonical URL is
   unique; `acquisition_method` per R1) and `source_assignments` (to brand channels).
   `recordings.source_id` links media to its source; NULL means rights are not attested.
+  `recordings.acquisition_method` (migration `0005`) records how the media was actually
+  obtained; analysis, editing and publishing are checked against it.
 - **Rights:**
   - `rights_records`: versioned by `lineage_id` and `version`; draft until `attested_at`.
   - Coverage is one of `creator` (a standing licence for every channel), `channels`
@@ -793,6 +795,10 @@ that returns a `Decision` with a stable reason code.
   - maximum clip length (a clip length is required when the scope limits it);
   - platform;
   - territories, which can't be enforced, so they always refuse publishing.
+- **Badges:** `status_summary` reports the licence state only (`active`, `unusable`,
+  `expired` and so on); `authorized_uses` reports what is allowed now. Every refusal carries
+  an `action` (`REASON_ACTION`).
+- **Source-specific coverage:** accepted only for the creator's own sources.
 - **Attribution** is returned as an obligation. `require_obligations` refuses unless the
   consumer confirms every obligation type, including types it doesn't recognise.
 

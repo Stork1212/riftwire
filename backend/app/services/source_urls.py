@@ -124,6 +124,9 @@ def _youtube(host: str, segs: list[str], query: dict[str, list[str]]) -> ParsedS
     if host == YOUTU_BE:
         vid = segs[0] if len(segs) == 1 else None
     elif segs == ["watch"]:
+        ids = set(query.get("v", []))
+        if len(ids) > 1:
+            raise SourceUrlError("ambiguous_video_id", "The link names more than one video.")
         vid = _first(query, "v")
     elif len(segs) == 2 and segs[0] in ("shorts", "live"):
         vid = segs[1]

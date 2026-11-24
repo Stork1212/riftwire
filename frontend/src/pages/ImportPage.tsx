@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { JobStages } from "../components/JobStages";
+import { LinkResolver } from "../components/LinkResolver";
 import { ErrorBanner, Panel, ProgressBar, StatusBadge } from "../components/ui";
 import { ApiError, api, uploadRecording, type UploadHandle } from "../services/api";
 import { formatBytes } from "../services/format";
@@ -22,6 +23,9 @@ export function ImportPage() {
   const [drag, setDrag] = useState(false);
   const inFlight = useRef<UploadHandle | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<"file" | "url">("file");
+  const [urlSource, setUrlSource] = useState<string | null>(null);
+  const [urlMethod, setUrlMethod] = useState("creator_file");
   const [linkTo, setLinkTo] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
   const creators = usePolling(() => rightsApi.listCreators(), 60_000);
@@ -41,8 +45,9 @@ export function ImportPage() {
     if (!file || inFlight.current) return; // guard against repeated submissions
     setPhase({ kind: "uploading", loaded: 0, total: file.size });
     setLinkError(null);
-    const link = linkTo.startsWith("ch:") ? { creator_channel_id: linkTo.slice(3) }
-      : linkTo.startsWith("src:") ? { source_id: linkTo.slice(4) } : {};
+    const link = mode === "url" && urlSource ? { source_id: urlSource, acquisition_method: urlMethod }
+      : linkTo.startsWith("ch:") ? { creator_channel_id: linkTo.slice(3) }
+        : linkTo.startsWith("src:") ? { source_id: linkTo.slice(4) } : {};
     const handle = uploadRecording(file, (loaded, total) =>
       setPhase({ kind: "uploading", loaded, total }), link);
     inFlight.current = handle;
@@ -57,7 +62,7 @@ export function ImportPage() {
       inFlight.current = null;
       if (inputRef.current) inputRef.current.value = "";
     }
-  }, [file, linkTo]);
+  }, [file, linkTo, mode, urlSource, urlMethod]);
 
   const uploading = phase.kind === "uploading";
 
@@ -70,7 +75,31 @@ export function ImportPage() {
         </div>
       </div>
 
-      <Panel title="1 · Select recording">
+      <div className="mode-tabs" role="tablist" aria-label="Import from">
+        <button role="tab" aria-selected={mode === "file"} className={`chip${mode === "file" ? " active" : ""}`}
+          disabled={uploading} onClick={() => setMode("file")}>Local file</button>
+        <button role="tab" aria-selected={mode === "url"} className={`chip${mode === "url" ? " active" : ""}`}
+          disabled={uploading} onClick={() => setMode("url")}>Video URL</button>
+      </div>
+
+      {mode === "url" && (
+        <Panel title="1 · Video link">
+          {urlSource ? (
+            <div className="toolbar">
+              <span>Footage will be linked to <Link to={`/sources/${urlSource}`}>this source</Link>.</span>
+              <button className="btn btn-sm btn-ghost" disabled={uploading} onClick={() => setUrlSource(null)}>Use a different link</button>
+            </div>
+          ) : (
+            <LinkResolver submitLabel="Use this video" onSource={(id) => setUrlSource(id)} />
+          )}
+          <p className="muted small">RIFTWIRE does not download from YouTube or Twitch. Provide the
+            footage below: the creator's original file, or your own download from YouTube Studio or
+            the Twitch dashboard for your channel.</p>
+        </Panel>
+      )}
+
+      {(mode === "file" || urlSource) && (
+      <Panel title={mode === "url" ? "2 · Footage file" : "1 · Select recording"}>
         <label
           className={`dropzone${drag ? " drag" : ""}`}
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
@@ -84,6 +113,13 @@ export function ImportPage() {
           <small>{file ? formatBytes(file.size) : "Large files are streamed to disk — they are never loaded into memory."}</small>
         </label>
         <div className="toolbar" style={{ marginTop: 14 }}>
+          {mode === "url" ? (
+            <select aria-label="How this file was obtained" value={urlMethod} disabled={uploading}
+              onChange={(e) => setUrlMethod(e.target.value)}>
+              <option value="creator_file">The creator's original file</option>
+              <option value="platform_export">My own YouTube Studio / Twitch download</option>
+            </select>
+          ) : (
           <select aria-label="Rights link" value={linkTo} disabled={uploading}
             onChange={(e) => setLinkTo(e.target.value)}>
             <option value="">No rights link (housekeeping only: cannot be analysed or published)</option>
@@ -100,6 +136,7 @@ export function ImportPage() {
               </optgroup>
             )}
           </select>
+          )}
           <button className="btn btn-primary" onClick={start} disabled={!file || uploading}>
             {uploading ? "Uploading…" : "Upload"}
           </button>
@@ -108,8 +145,9 @@ export function ImportPage() {
           )}
         </div>
       </Panel>
+      )}
 
-      <Panel title="2 · Upload">
+      <Panel title={mode === "url" ? "3 · Upload" : "2 · Upload"}>
         {phase.kind === "idle" && <p className="muted">No upload in progress.</p>}
         {phase.kind === "uploading" && (
           <div>

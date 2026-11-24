@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
 import { ApiError, api } from "../services/api";
 import { rightsApi } from "../services/rightsApi";
-import type { Creator, Decision, RightsRecord, Source, SourceDetail } from "../types/rights";
+import type { Creator, Decision, Resolved, RightsRecord, Source, SourceDetail } from "../types/rights";
 
 vi.mock("../services/api", async (orig) => {
   const actual = await orig<typeof import("../services/api")>();
@@ -38,12 +38,13 @@ const source = (over: Partial<Source> = {}): Source => ({
   start_hint_ms: null, creator_channel_id: "ch-1", creator_id: "cr-1", creator_name: "Some Streamer",
   channel_label: "twitch: somestreamer", title_user: null, game_id: null, game_name: null,
   status: "active", acquisition_method: "platform_export", created_at: T, updated_at: T,
-  rights_status: "ok", brand_channel_ids: [], recording_count: 0, ...over,
+  rights_status: "active", authorized_uses: ["acquire", "analyze"], brand_channel_ids: [],
+  recording_count: 0, ...over,
 });
 
 const decision = (over: Partial<Decision> = {}): Decision => ({
   allowed: true, reason: "ok", message: "authorized", use: "analyze", source_id: "src-1",
-  record_id: "rr-1", version: 1, obligations: [], ...over,
+  record_id: "rr-1", version: 1, obligations: [], action: null, ...over,
 });
 
 const record = (over: Partial<RightsRecord> = {}): RightsRecord => ({
@@ -93,11 +94,98 @@ describe("Sources", () => {
     const box = await screen.findByTestId("resolve-result");
     expect(within(box).getByText("Some Streamer")).toBeInTheDocument();
     expect(within(box).getByText("(matched automatically)")).toBeInTheDocument();
-    expect(box.querySelector('[data-rights="ok"]')).not.toBeNull();
+    expect(box.querySelector('[data-rights="active"]')).not.toBeNull();
     await userEvent.click(within(box).getByRole("button", { name: "Create source" }));
     await waitFor(() => expect(r.createSource).toHaveBeenCalledWith({
       url: "https://www.twitch.tv/somestreamer/clip/Clip", creator_channel_id: "ch-1", game_id: undefined }));
     expect(await screen.findByText("History (provenance)")).toBeInTheDocument();
+  });
+
+  it("accepts scheme-less links (only the backend validates)", async () => {
+    r.resolve.mockResolvedValue({
+      platform: "youtube", media: "video", video_id: "dQw4w9WgXcQ", canonical_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      start_ms: null, channel_login: null, existing_source: null,
+      match: { status: "unmatched", matcher: null, reason: "choose", creator_channel_id: null, candidates: [] },
+      channel: null, creator_name: null, covered: false, covering_record_ids: [],
+    });
+    renderAt("/sources");
+    await userEvent.type(screen.getByLabelText("Video link"), "youtu.be/dQw4w9WgXcQ");
+    await userEvent.click(screen.getByRole("button", { name: "Check link" }));
+    await waitFor(() => expect(r.resolve).toHaveBeenCalledWith("youtu.be/dQw4w9WgXcQ"));
+  });
+
+  it("never shows a stale resolution for an older link", async () => {
+    let slowResolve: (v: unknown) => void = () => {};
+    const slow = new Promise((res) => { slowResolve = res; });
+    const fresh: Resolved = {
+      platform: "twitch", media: "vod", video_id: "2", canonical_url: "https://www.twitch.tv/videos/2",
+      start_ms: null, channel_login: null, existing_source: null,
+      match: { status: "unmatched", matcher: null, reason: "second link", creator_channel_id: null, candidates: [] },
+      channel: null, creator_name: null, covered: false, covering_record_ids: [],
+    };
+    r.resolve.mockImplementationOnce(() => slow as never).mockResolvedValueOnce(fresh);
+    renderAt("/sources");
+    const input = screen.getByLabelText("Video link");
+    await userEvent.type(input, "https://www.twitch.tv/videos/1");
+    await userEvent.click(screen.getByRole("button", { name: "Check link" }));
+    await userEvent.clear(input);
+    await userEvent.type(input, "https://www.twitch.tv/videos/2");
+    await userEvent.click(screen.getByRole("button", { name: "Check link" }));
+    expect(await screen.findByText("second link")).toBeInTheDocument();
+    slowResolve({ ...fresh, canonical_url: "https://www.twitch.tv/videos/1",
+      match: { ...fresh.match, reason: "first link" } });
+    await new Promise((res) => setTimeout(res, 20));
+    expect(screen.queryByText("first link")).toBeNull();
+    expect(screen.getByText("second link")).toBeInTheDocument();
+  });
+
+  it("sets up a missing creator inline (no licence is implied)", async () => {
+    const unmatched: Resolved = {
+      platform: "twitch", media: "clip", video_id: "C", canonical_url: "https://clips.twitch.tv/C",
+      start_ms: null, channel_login: "newstreamer", existing_source: null,
+      match: { status: "unmatched", matcher: "twitch_login", reason: "no creator has the Twitch channel 'newstreamer'",
+        creator_channel_id: null, candidates: [] },
+      channel: null, creator_name: null, covered: false, covering_record_ids: [],
+    };
+    r.resolve.mockResolvedValue(unmatched);
+    r.createCreator.mockResolvedValue(creator({ id: "cr-2", display_name: "New Streamer", channels: [] }));
+    r.addChannel.mockResolvedValue({ ...creator().channels[0]!, id: "ch-9", creator_id: "cr-2", handle: "newstreamer" });
+    renderAt("/sources");
+    await userEvent.type(screen.getByLabelText("Video link"), "https://www.twitch.tv/newstreamer/clip/C");
+    await userEvent.click(screen.getByRole("button", { name: "Check link" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Set up a new creator" }));
+    const form = screen.getByRole("form", { name: "Set up a new creator" });
+    expect(within(form).getByDisplayValue("newstreamer")).toBeInTheDocument();
+    expect(within(form).getByText(/stays unusable until you attest a licence/)).toBeInTheDocument();
+    await userEvent.type(within(form).getByLabelText("Creator name"), "New Streamer");
+    await userEvent.click(within(form).getByRole("button", { name: "Add creator" }));
+    await waitFor(() => expect(r.addChannel).toHaveBeenCalledWith("cr-2", { platform: "twitch", handle: "newstreamer" }));
+  });
+
+  it("explains a refusal with the next step", async () => {
+    r.resolve.mockResolvedValue({
+      platform: "twitch", media: "vod", video_id: "1", canonical_url: "https://www.twitch.tv/videos/1",
+      start_ms: null, channel_login: null, existing_source: null,
+      match: { status: "matched", matcher: "x", reason: "", creator_channel_id: "ch-1", candidates: ["ch-1"] },
+      channel: creator().channels[0] ?? null, creator_name: "Some Streamer", covered: false, covering_record_ids: [],
+    });
+    r.createSource.mockRejectedValue(new ApiError(403, "rights_refused",
+      "Not authorized: no rights record covers this source. Add a licence for this creator on Creators & Rights.",
+      { reason: "no_rights_record" }));
+    renderAt("/sources");
+    await userEvent.type(screen.getByLabelText("Video link"), "https://www.twitch.tv/videos/1");
+    await userEvent.click(screen.getByRole("button", { name: "Check link" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Create source" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Add a licence");
+    expect(within(alert).getByRole("link", { name: "Open Creators & Rights" })).toHaveAttribute("href", "/creators");
+  });
+
+  it("separates the licence badge from authorized uses in the list", async () => {
+    r.listSources.mockResolvedValue(page([source({ authorized_uses: ["acquire"] })]));
+    renderAt("/sources");
+    expect(await screen.findByText("Licence active")).toBeInTheDocument();
+    expect(document.querySelector('[data-uses="acquire"]')).not.toBeNull();
   });
 
   it("shows a clear refusal for unsupported links", async () => {
@@ -214,5 +302,33 @@ describe("Games & channels", () => {
     r.listGames.mockRejectedValue(new ApiError(0, "network_error", "Cannot reach the RIFTWIRE backend."));
     renderAt("/catalog");
     expect(await screen.findByText(/Could not load games/)).toBeInTheDocument();
+  });
+});
+
+describe("Import and navigation", () => {
+  it("offers Local file and Video URL; the URL path never offers a download", async () => {
+    r.resolve.mockResolvedValue({
+      platform: "twitch", media: "vod", video_id: "1", canonical_url: "https://www.twitch.tv/videos/1",
+      start_ms: null, channel_login: null, existing_source: source(),
+      match: { status: "matched", matcher: "existing_source", reason: "", creator_channel_id: "ch-1", candidates: [] },
+      channel: null, creator_name: null, covered: true, covering_record_ids: [],
+    });
+    renderAt("/import");
+    expect(screen.getByRole("tab", { name: "Local file" })).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(screen.getByRole("tab", { name: "Video URL" }));
+    await userEvent.type(screen.getByLabelText("Video link"), "https://www.twitch.tv/videos/1");
+    await userEvent.click(screen.getByRole("button", { name: "Check link" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Already a source: use it" }));
+    expect(screen.getByLabelText("How this file was obtained")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
+    expect(screen.getByText(/does not download from YouTube or Twitch/)).toBeInTheDocument();
+  });
+
+  it("groups navigation into Workspace, Management and System", () => {
+    renderAt("/sources");
+    for (const g of ["Workspace", "Management", "System"]) {
+      expect(screen.getByRole("group", { name: g })).toBeInTheDocument();
+    }
+    expect(within(screen.getByRole("group", { name: "Management" })).getByRole("link", { name: "Creators & Rights" })).toBeInTheDocument();
   });
 });

@@ -217,6 +217,7 @@ class DecisionOut(BaseModel):
     record_id: str | None
     version: int | None
     obligations: list[dict[str, Any]]
+    action: str | None = None
 
 
 class SourceOut(Out):
@@ -237,6 +238,7 @@ class SourceOut(Out):
     created_at: datetime
     updated_at: datetime
     rights_status: str
+    authorized_uses: list[str]
     brand_channel_ids: list[str]
     recording_count: int
 
