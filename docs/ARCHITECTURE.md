@@ -480,11 +480,18 @@ in principle on 2026-11-23. It **extends** this architecture without replacing i
 | Concern | Phase 1 (implemented) | Planned extension |
 |---|---|---|
 | Work execution | SQLite queue: leases, fencing, recovery, orphan cleanup | Same queue; new job types (probe/acquire, transcribe, signals, highlight detection, render, publish), all idempotent and fenced |
-| Storage | One `RIFTWIRE_DATA_DIR`; 60 GiB floor | Configurable recordings/temp/models/exports/assets locations; per-volume floor; cross-volume crash-safe finalize; offline-volume safety; 2 TB external APFS SSD |
+| Storage | One `RIFTWIRE_DATA_DIR`; 60 GiB floor | Configurable recordings/temp/models/exports/assets locations; per-volume floor; cross-volume crash-safe finalize; offline-volume safety; external APFS SSD (ordered: SanDisk 1 TB Portable SSD), capacity-independent: volumes identified by marker UUID, all checks on measured free space |
 | Sources | Local upload | Rights/provenance records with user confirmation; permitted acquisition only (no bypassing); selective VOD sections |
 | AI | none | Provider interface (Ollama default; OpenAI/Anthropic optional), $0 default budget, usage ledger, per-game versioned prompts, evidence-validated outputs |
 | Editing/publishing | none | Per-channel brand kits and presets; VideoToolbox renders; human-approved publishing via official APIs (YouTube Shorts first) |
+| Storage lifecycle | Originals never auto-deleted; temp cleanup by token/age | **Retention manager** (Phase 5, PRODUCT_SPEC §6a): generated renders and their intermediates are deleted 72 h after the final API-verified publication to all intended targets. Hourly persistent sweep with overdue recovery; fenced intent → same-volume trash → final eligibility/lock gate + unlink fingerprint → volume/file identity check → unlink (blocked → restore, never overwrite; identity mismatch → held for the owner; recovery from `unlinking` re-verifies identity); volume identity verified; locks honoured; metadata and originals preserved; read-only verification only (no remote deletion) |
 
 Each phase gets its own technical proposal for approval before implementation. A proposal
 that changes this document's guarantees must say so explicitly.
+
+**Note on deletion rules.** Phase 1's guarantee "never delete original recordings
+automatically" is unchanged and also binds the retention manager. The retention manager is
+the only component that may delete *generated* video files. Its eligibility rules (all
+re-checked at deletion time) and crash-safety design are specified in PRODUCT_SPEC §6a and
+will be detailed in the Phase 4/5 technical proposals.
 

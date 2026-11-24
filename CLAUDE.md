@@ -35,8 +35,10 @@ detailed technical proposal. **Do not implement work from a later phase early.**
   quality per dollar, and only within an owner-set budget (initially **$0**).
 - **One heavy processing worker at a time** by default.
 - **Keep ≥ 60 GB free** on the data volume (configurable `RIFTWIRE_MIN_FREE_DISK_BYTES`).
-- Storage plan: a **2 TB external APFS SSD** for recordings, temp files, models and exports
-  (configurable locations, Phase 2). Until then, ~9 GiB is importable on the internal SSD.
+- Storage plan: an **external APFS SSD** for recordings, temp files, models and exports
+  (configurable locations, Phase 2). Ordered: **SanDisk 1 TB Portable SSD**. Storage logic is
+  **capacity-independent**: never assume a drive size; use measured free space and per-volume
+  floors. Until it arrives, ~9 GiB is importable on the internal SSD.
 
 ## 3. Stack (Phase 1)
 
@@ -58,6 +60,10 @@ hosting, message brokers, extra microservices.
 1. **Reliability first.** Every stage observable (logs + `system_events`), testable,
    recoverable, idempotent.
 2. **Never delete original recordings automatically.** Not on failure, not on cleanup.
+   Generated videos may be deleted automatically **only** by the retention manager (Phase 5)
+   under `docs/PRODUCT_SPEC.md` §6a: verified publication to every intended target, 72 h
+   default, no active job or lock (re-checked at a final gate before every unlink, restoring
+   the file if blocked), SSD identity verified, and never remote content.
 3. **Never load whole videos into memory.** Stream in chunks.
 4. **Atomic file writes.** Write to `data/temp/` on the same volume, validate, then rename.
    Never overwrite an existing managed file.

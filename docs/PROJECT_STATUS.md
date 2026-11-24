@@ -78,7 +78,7 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
   app (like `df`) counts only space that is guaranteed free.
 - Phase 1 **development and automated tests are unaffected** (synthetic clips are a few MB).
 - Options for the owner:
-  1. **External APFS SSD** for `RIFTWIRE_DATA_DIR` (recommended; 1–2 TB keeps the internal
+  1. **External APFS SSD** for `RIFTWIRE_DATA_DIR` (recommended; the owner has ordered a SanDisk 1 TB Portable SSD; keeps the internal
      SSD free and makes the 60 GB floor easy).
   2. Free internal space (e.g. old recordings, caches) to raise headroom.
   3. Temporarily lower `RIFTWIRE_MIN_FREE_DISK_BYTES` (not recommended; macOS degrades badly
@@ -125,7 +125,7 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
 - [x] Phase 2 technical implementation proposal: PR #3 (`docs/PHASE2_PROPOSAL.md`), awaiting review and approval. No Phase 2 code.
 
 ## Blockers
-None. Before importing **real footage** at scale, the 2 TB external APFS SSD is needed (only
+None. Before importing **real footage** at scale, the external APFS SSD (ordered: SanDisk 1 TB Portable SSD) is needed (only
 ~9 GiB is importable above the 60 GiB floor on the internal SSD).
 
 ## Decisions pending
