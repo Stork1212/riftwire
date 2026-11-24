@@ -211,6 +211,12 @@ def test_missing_or_ambiguous_method_stays_blocked_until_recorded(w, db, setting
                     json={"recording_id": rec.id, "acquisition_method": "platform_export"})
     assert r.status_code == 409
 
+    db.dispose()
+    _rebackfill(settings)
+    with db.session() as s:
+        assert s.get(Recording, rec.id).acquisition_method == "creator_file"
+        assert rights.evaluate_recording(s, rec.id, "analyze").allowed
+
 
 def test_unpermitted_method_cannot_be_recorded(w, db, settings):
     w.licence(scope={**FULL_SCOPE, "acquisition_methods": ["local_recording"]})
