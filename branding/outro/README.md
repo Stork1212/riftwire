@@ -5,13 +5,12 @@ Approved 2.5-second closing bumper for RumbleFrame Media YouTube Shorts.
 ## Deliverables
 
 - `RumbleFrame_Outro_9x16_1080x1920_30fps_2p5s.mp4` — final video bumper with a quiet, original digital tick.
-- `RumbleFrame_Outro_Still_Reference.png` — editable visual reference.
-- `RumbleFrame_Outro_Preview.png` — representative frame from the rendered video.
+- `RumbleFrame_Outro_Preview.jpg` — representative frame from the rendered video.
 
 ## Technical details
 
 - Video: 1080 × 1920, 9:16, H.264 High Profile, yuv420p, 30 fps, exactly 2.5 seconds.
-- Audio sting: AAC stereo at 48 kHz in the MP4; the uncompressed source is stereo PCM, 48 kHz, exactly 2.5 seconds. One short tick begins about 0.72 seconds in.
+- Audio sting: AAC stereo at 48 kHz in the MP4; one short tick begins about 0.72 seconds in.
 - The MP4 audio contains only the sting. Preserve the source gameplay audio under the bumper and mix the embedded sting quietly over it; never replace the clip soundtrack with the bumper audio.
 - Visual: near-black background, centered white RF badge and RUMBLEFRAME wordmark, tagline, Subscribe capsule, four frame brackets, subtle movement and a short fade-in.
 
