@@ -36,7 +36,7 @@ export interface CreatorChannel {
 export interface Creator {
   id: string;
   display_name: string;
-  relationship: "self" | "partner" | "licensor";
+  relationship: "self" | "partner" | "licensor" | "unaffiliated";
   contact: string | null;
   notes: string | null;
   archived: boolean;
@@ -84,6 +84,7 @@ export interface RightsRecord {
   valid_from: string;
   valid_until: string | null;
   attestation_text: string | null;
+  attested_by?: string | null;
   attested_at: string | null;
   superseded_by_id: string | null;
   revoked_at: string | null;

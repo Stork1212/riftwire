@@ -1,6 +1,9 @@
 # URL acquisition: a saved link becomes a linked recording (branch `phase2/url-download`)
 
-Status: **prototype on a local branch, not merged, not a milestone acceptance.** Built at
+Status: **prototype on a local branch, not merged, not a milestone acceptance.** §7
+describes the owner acquisition policy of 2026-11-24 (default-allow fetching, automatic
+`public_web` record), which supersedes the platform-permission requirement in §2 for
+saved links. Built at
 the owner's direction (2026-11-24) in two separate patches. Highlight detection (the GTA VI
 prompt) is deliberately **not** part of this work.
 
@@ -85,3 +88,36 @@ The source's provenance records an `acquired_by_url` event with:
   - the owner's own Twitch downloads.
 
   All three can already be imported without `url_fetch`.
+
+## 7. Owner acquisition policy (2026-11-24): public footage is fetched and analysed
+- **Fetching is on by default** (`RIFTWIRE_URL_ACQUISITION_ENABLED=true`). Saving a link
+  queues its `ACQUIRE` job with no prompt. A refusal never blocks saving the link: it
+  becomes a `acquire_not_queued` system event.
+- **Every saved link gets an automatic `public_web` rights record** (migration `0008`).
+  - It is written by `system`, in the same transaction as the source, and covers that one
+    source.
+  - It names the source's creator but claims nothing from them: "Publicly accessible
+    footage … Not creator-confirmed."
+  - Scope: `acquire` and `analyze`, method `url_fetch` only. No written platform
+    permission is needed under this basis; other bases keep that requirement.
+- **`public_web` never authorizes editing or publishing,** whatever its scope says. They
+  are refused with `creator_permission_needed`, whose next step is "ask the creator;
+  record their permission on Creators & Rights". When a creator's permission or licence
+  exists and refuses for its own reason (revoked, not in scope), that reason is reported
+  instead.
+- **It covers fetched media only.** A copy imported by hand is judged by its own method.
+- **Nobody can create or widen it by hand.** The API refuses `public_web` with
+  `public_web_automatic`, and it cannot be superseded. The owner can still revoke it to
+  stop fetching and analysing one link; a revoked one is never recreated.
+- **Creator relationship `unaffiliated`:** a creator whose public footage was saved, with
+  no relationship. Recording their permission creates a `creator_permission` record.
+- **Migration `0008`** rebuilds `rights_records` and `creators`. It drops and recreates,
+  from frozen copies, the 10 triggers that mention `rights_records`, so all 14 immutability
+  triggers survive (tested before and after, with tampering still refused). Its downgrade
+  refuses while `public_web` records or unaffiliated creators exist, because they are
+  immutable history.
+- Tests and acceptance never contact a platform: fetching is switched off in their
+  settings, and only acceptance step M2-7 switches it on, with a stand-in downloader.
+- **Out of scope, by decision:** publishing public footage without the creator's
+  permission is not built.
+

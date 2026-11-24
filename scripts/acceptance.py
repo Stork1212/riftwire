@@ -64,6 +64,9 @@ class Stack:
             "RIFTWIRE_JOB_BACKOFF_BASE_SECONDS": "1",
             "RIFTWIRE_WORKER_SHUTDOWN_GRACE_SECONDS": "5",
             "RIFTWIRE_STALE_TEMP_SECONDS": "3600",
+            # Never contact a platform: fetching is on by default in the app; only step
+            # M2-7 switches it on, with a stand-in downloader first on PATH.
+            "RIFTWIRE_URL_ACQUISITION_ENABLED": "false",
             **env_extra,
         })
         self.api: subprocess.Popen | None = None
@@ -582,8 +585,9 @@ def run(args) -> int:
         for need in [("creator", "created"), ("rights", "attested"), ("source", "created"),
                      ("recording", "attached_to_source")]:
             check(need in acts, f"missing provenance {need}")
-        recs = ok(stack.get(f"/api/v1/creators/{m2['creator']}/rights"))
-        check(len(recs) == 1, f"{len(recs)} rights records")
+        recs = [r for r in ok(stack.get(f"/api/v1/creators/{m2['creator']}/rights"))
+                if r["basis"] != "public_web"]      # saved links also have their own record
+        check(len(recs) == 1, f"{len(recs)} licences")
         return ("2 imports linked automatically under one standing licence (no new "
                 "attestation); provenance chain creator → rights → source → recording")
     step("M2-3", "Import under a standing licence: linked with provenance", s_m2_import)
@@ -592,9 +596,12 @@ def run(args) -> int:
         rv = ok(stack.post(f"/api/v1/rights/{m2['licence']}/revoke",
                            json={"reason": "acceptance: creator withdrew"}))
         check(rv["state"] == "revoked", str(rv))
+        chk = ok(stack.get(f"/api/v1/sources/{m2['clip_source']}/rights-check",
+                           params={"use": "edit", "clip_ms": 1000}))
+        check(not chk["allowed"] and chk["reason"] == "revoked", str(chk))
         d = ok(stack.get(f"/api/v1/sources/{m2['clip_source']}"))
-        check(not d["analyze"]["allowed"] and d["analyze"]["reason"] == "revoked",
-              str(d["analyze"]))
+        check(d["rights_status"] == "public_web" and d["analyze"]["allowed"],
+              f"{d['rights_status']} {d['analyze']}")
         before = ok(stack.get("/api/v1/recordings"))["total"]
         p = extra_clip("after-revoke.mp4", 2.5)
         r = upload(stack, p, p.name, params={"creator_channel_id": m2["local"]})
@@ -603,8 +610,9 @@ def run(args) -> int:
         h = ok(upload(stack, extra_clip("housekeeping.mp4", 2.7), "housekeeping.mp4"), 201)
         wait_ready(stack, h["recording"]["id"], timeout=60)
         check(h["recording"]["source_id"] is None, "unlinked import got a source")
-        return ("revoked immediately: analysis refused, licensed import refused before any "
-                "byte; plain imports (housekeeping) still work, unlinked")
+        return ("revoked immediately: editing refused (reason: revoked), licensed import "
+                "refused before any byte; the saved link stays analysable as public footage; "
+                "plain imports (housekeeping) still work, unlinked")
     step("M2-4", "Revocation: refused everywhere, housekeeping continues", s_m2_revoke)
 
     def s_m2_second():
@@ -617,11 +625,12 @@ def run(args) -> int:
             "creator_channel_id": m2["twitch"]}), 201)
         check(vod["rights_status"] == "active" and "analyze" in vod["authorized_uses"], str(vod))
         m2["vod"] = vod["id"]
-        clip_now = ok(stack.get(f"/api/v1/sources/{m2['clip_source']}"))
-        check(clip_now["analyze"]["allowed"]
-              and clip_now["analyze"]["record_id"] == lic["id"], str(clip_now["analyze"]))
-        n = len(ok(stack.get(f"/api/v1/creators/{m2['creator']}/rights")))
-        check(n == 2, f"{n} records")
+        clip_now = ok(stack.get(f"/api/v1/sources/{m2['clip_source']}/rights-check",
+                                params={"use": "edit", "clip_ms": 1000}))
+        check(clip_now["allowed"] and clip_now["record_id"] == lic["id"], str(clip_now))
+        n = len([r for r in ok(stack.get(f"/api/v1/creators/{m2['creator']}/rights"))
+                 if r["basis"] != "public_web"])
+        check(n == 2, f"{n} licences")
         return "one new licence covers the existing and a new source; no per-source attestation"
     step("M2-5", "A standing licence covers further sources automatically", s_m2_second)
 
@@ -657,10 +666,11 @@ def run(args) -> int:
     step("M2-6", "Supersession and immutable history", s_m2_history)
 
     def s_m2_acquire():
-        """A saved URL becomes a linked recording through a queued ACQUIRE job, run by the
-        real API and worker processes. The platform downloader is a stand-in script that
-        writes a synthetic clip; no platform is contacted. The written platform permission
-        recorded here is synthetic and exists only in this temporary acceptance instance."""
+        """A saved link is fetched without any prompt and becomes a linked recording that
+        may be analysed but not edited: the automatic public_web record (no licence, no
+        form, no evidence), a queued ACQUIRE job, the real API and worker processes. The
+        platform downloader is a stand-in script writing a synthetic clip; no platform is
+        contacted."""
         fake_bin = tmp / "fake-bin"
         fake_bin.mkdir()
         clip_file = extra_clip("acquired-vod.mp4", 2.9)
@@ -678,40 +688,50 @@ def run(args) -> int:
         stack.stop()
         stack.start_api(**env)
         stack.start_worker(**env)
-        lic = ok(stack.post("/api/v1/rights", json={
-            "creator_id": m2["creator"], "basis": "licence", "coverage": "creator",
-            "scope": {**scope, "uses": ["acquire", "analyze"],
-                      "acquisition_methods": ["url_fetch"]},
-            "attestation_text": attest + " (URL fetching)"}), 201)
-        ok(stack.post(f"/api/v1/rights/{lic['id']}/evidence", params={
-            "kind": "platform_permission",
-            "reference": "ACCEPTANCE ONLY: synthetic platform permission"}), 201)
-        q = ok(stack.post(f"/api/v1/sources/{m2['vod']}/acquire"), 202)
-        check(q["job"]["job_type"] == "ACQUIRE" and q["job"]["recording_id"] is None, str(q))
-        again = ok(stack.post(f"/api/v1/sources/{m2['vod']}/acquire"), 202)
-        check(again["job"]["id"] == q["job"]["id"], "a second ACQUIRE job was created")
+        # A creator with no licence at all: only the automatic public_web record applies.
+        other = ok(stack.post("/api/v1/creators", json={"display_name": "Public Streamer",
+                                                        "relationship": "unaffiliated"}), 201)
+        ch = ok(stack.post(f"/api/v1/creators/{other['id']}/channels", json={
+            "platform": "twitch", "handle": "PublicStreamer"}), 201)
+        src = ok(stack.post("/api/v1/sources", json={
+            "url": "https://www.twitch.tv/videos/555000111",
+            "creator_channel_id": ch["id"]}), 201)
+        sid = src["id"]
+        d = ok(stack.get(f"/api/v1/sources/{sid}"))
+        pub = [r for r in d["records"] if r["basis"] == "public_web"]
+        check(len(pub) == 1 and pub[0]["attested_by"] == "system"
+              and pub[0]["scope"]["uses"] == ["acquire", "analyze"], str(pub))
+        check(d["acquire_job"] is not None, "saving the link did not queue its acquisition")
         deadline = time.time() + 90
         while time.time() < deadline:
-            d = ok(stack.get(f"/api/v1/sources/{m2['vod']}"))
+            d = ok(stack.get(f"/api/v1/sources/{sid}"))
             if d["acquire_job"]["status"] in ("COMPLETED", "FAILED"):
                 break
             time.sleep(0.5)
         job = d["acquire_job"]
         check(job["status"] == "COMPLETED", f"ACQUIRE {job['status']}: {job['last_error']}")
         rec = wait_ready(stack, job["recording_id"], timeout=60)
-        check(rec["source_id"] == m2["vod"] and rec["acquisition_method"] == "url_fetch",
+        check(rec["source_id"] == sid and rec["acquisition_method"] == "url_fetch",
               f"{rec['source_id']} {rec['acquisition_method']}")
-        prov = ok(stack.get(f"/api/v1/sources/{m2['vod']}/provenance"))
-        got = [p for p in prov if p["action"] == "acquired_by_url"]
-        check(len(got) == 1 and got[0]["details"]["recording_id"] == rec["id"], str(got))
-        check(ok(stack.get(f"/api/v1/sources/{m2['vod']}"))["recording_count"] == 1,
+        again = ok(stack.post(f"/api/v1/sources/{sid}/acquire"), 202)
+        check(again["job"]["id"] == job["id"], "a second ACQUIRE job was created")
+        prov = ok(stack.get(f"/api/v1/sources/{sid}/provenance"))
+        acts = [p["action"] for p in prov]
+        for need in ("recorded_public_web", "acquired_by_url", "attached_to_source"):
+            check(need in acts, f"missing provenance {need}")
+        check(d["analyze"]["allowed"], str(d["analyze"]))
+        chk = ok(stack.get(f"/api/v1/sources/{sid}/rights-check",
+                           params={"use": "edit", "clip_ms": 1000}))
+        check(not chk["allowed"] and chk["reason"] == "creator_permission_needed", str(chk))
+        check(ok(stack.get(f"/api/v1/sources/{sid}"))["recording_count"] == 1,
               "more than one recording for the source")
         leftovers = list((data_dir / "temp").glob("source-download-*"))
         check(not leftovers, f"download workspace left behind: {leftovers}")
-        return ("queued ACQUIRE job (one per source) → recording READY, linked, method "
-                "url_fetch, acquired_by_url provenance; stand-in downloader, no platform "
-                "contacted")
-    step("M2-7", "Acquire a saved URL as a linked recording via the queue", s_m2_acquire)
+        return ("link saved → public_web recorded automatically → ACQUIRE queued without "
+                "a prompt → recording READY, url_fetch; analysable, editing refused "
+                "(creator_permission_needed); stand-in downloader, no platform contacted")
+    step("M2-7", "A saved link is fetched automatically; public footage is analysable only",
+         s_m2_acquire)
 
     stack.stop()
     passed = sum(r["result"] == "PASS" for r in results)

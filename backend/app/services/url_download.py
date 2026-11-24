@@ -43,7 +43,7 @@ from app.core.errors import (
 from app.core.logging import get_logger
 from app.db.session import Database
 from app.models import AcquisitionMethod, Recording, Severity
-from app.services import acquisition, media, reservations, rights, sources
+from app.services import acquisition, media, queue, reservations, rights, sources
 from app.services.events import record_event
 from app.services.ingest import UploadSession, complete_upload
 from app.services.locations import get_layout, require_no_maintenance
@@ -238,6 +238,19 @@ def acquire(db: Database, settings: Settings, source_id: str, *, actor: str = "o
             return AcquireResult(rec_id, source_id, result.job_id, False)
     finally:
         reservations.release(db, reservation)
+
+
+def queue_for_new_source(s, settings: Settings, source) -> None:
+    """A newly saved link is acquired without a prompt when URL fetching is on (owner
+    acquisition policy, 2026-11-24). A refusal never blocks saving the source: it is
+    recorded as a system event and shown on the source's page."""
+    if not settings.url_acquisition_enabled or source.url_canonical is None:
+        return
+    try:
+        queue.enqueue_acquire(s, settings, source.id, settings.job_max_attempts)
+    except AppError as e:
+        record_event(s, Severity.WARNING, "url_download", "acquire_not_queued",
+                     f"Source {source.id} saved but not queued for acquisition: {e.message}")
 
 
 def _provenance(s, source_id: str, url: str, downloader: str, version: str,

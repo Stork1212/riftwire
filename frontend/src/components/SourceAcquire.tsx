@@ -8,10 +8,10 @@ import { ProgressBar, StatusBadge } from "./ui";
 const ACTIVE = new Set(["PENDING", "RUNNING", "RETRY_WAIT"]);
 const POLL_MS = 2000;
 
-/** Queue fetching a saved video link into a recording linked to its source (one ACQUIRE
- * job per source). The server checks the licence (URL fetching allowed, written platform
- * permission on record) before queueing, before and after the download, and records how
- * the footage was obtained. Shows the job's live state. */
+/** Fetching a saved video link into a recording linked to its source (one ACQUIRE job per
+ * source; queued automatically when the link is saved). The server checks the rights
+ * before queueing, before and after the download, and records how the footage was
+ * obtained. Shows the job's live state; the button queues it when it was not. */
 export function SourceAcquire({ sourceId, job: initial, onChange }: {
   sourceId?: string; job?: Job | null; onChange?: () => void;
 }) {
@@ -55,7 +55,7 @@ export function SourceAcquire({ sourceId, job: initial, onChange }: {
           disabled={!sourceId || busy || (status !== undefined && status !== "FAILED")}>
           {busy ? "Queueing…" : "Acquire footage"}
         </button>
-        {!sourceId && <span className="muted">Save the source first; acquisition needs a licence that allows URL fetching and written platform permission.</span>}
+        {!sourceId && <span className="muted">Save the link first; it is then fetched automatically.</span>}
         {job && <StatusBadge status={job.status} />}
         {job && ACTIVE.has(job.status) && (
           <span className="muted" role="status">

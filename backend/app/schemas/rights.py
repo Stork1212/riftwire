@@ -197,6 +197,7 @@ class RightsRecordOut(Out):
     valid_from: datetime
     valid_until: datetime | None
     attestation_text: str | None
+    attested_by: str | None = None      # owner | system (public_web)
     attested_at: datetime | None
     superseded_by_id: str | None
     revoked_at: datetime | None

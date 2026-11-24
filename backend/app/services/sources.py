@@ -240,7 +240,9 @@ def create_source(s: Session, *, url: str | None = None, kind: str | None = None
                   creator_channel_id: str | None = None, game_id: str | None = None,
                   title_user: str | None = None, acquisition_method: str | None = None,
                   brand_channel_ids: list[str] | None = None,
-                  actor: str = "owner") -> Source:
+                  actor: str = "owner", record_public_web: bool = True) -> Source:
+    """``record_public_web=False`` is only for tests of the licence engine in isolation;
+    every application path records it."""
     parsed = parse_url(url) if url else None
     if parsed is not None:
         kind = parsed.platform
@@ -277,6 +279,9 @@ def create_source(s: Session, *, url: str | None = None, kind: str | None = None
                       acquisition_method=method, game_id=game_id)
     if brand_channel_ids:
         set_assignments(s, src.id, brand_channel_ids, actor=actor)
+    # A saved link is public footage: record that honestly (fetch and analyse only).
+    if record_public_web:
+        rights.record_public_web(s, src)
     return src
 
 

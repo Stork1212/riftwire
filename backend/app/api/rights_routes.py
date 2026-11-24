@@ -63,7 +63,7 @@ from app.schemas.rights import (
     SourcePatch,
     SupersedeIn,
 )
-from app.services import acquisition, evidence, queue, rights, sources
+from app.services import acquisition, evidence, queue, rights, sources, url_download
 from app.services.sources import channel_coverage
 
 m2 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_schema)])
@@ -112,7 +112,8 @@ def record_out(s: Session, r: RightsRecord) -> RightsRecordOut:
         basis=r.basis, coverage=r.coverage,
         scope=scope.model_dump(mode="json") if scope else None,
         scope_sha256=r.scope_sha256, valid_from=r.valid_from, valid_until=r.valid_until,
-        attestation_text=r.attestation_text, attested_at=r.attested_at,
+        attestation_text=r.attestation_text, attested_by=r.attested_by,
+        attested_at=r.attested_at,
         superseded_by_id=r.superseded_by_id, revoked_at=r.revoked_at,
         revoked_reason=r.revoked_reason, created_at=r.created_at,
         state=rights.record_state(r, utcnow()),
@@ -392,13 +393,14 @@ def list_sources(db: DB, limit: Limit = 50, offset: Offset = 0,
 
 
 @m2.post("/sources", response_model=SourceOut, status_code=201)
-def create_source(body: SourceIn, db: DB):
+def create_source(body: SourceIn, db: DB, cfg: CFG):
     with db.session() as s:
         src = sources.create_source(
             s, url=body.url, kind=body.kind, creator_channel_id=body.creator_channel_id,
             game_id=body.game_id, title_user=body.title_user,
             acquisition_method=body.acquisition_method,
             brand_channel_ids=body.brand_channel_ids)
+        url_download.queue_for_new_source(s, cfg, src)
         return source_out(s, src)
 
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ActionableError } from "../components/ActionableError";
-import { DecisionLine, METHODS, RightsBadge, ScopeSummary, UseChips } from "../components/rights";
+import { basisLabel, DecisionLine, METHODS, RightsBadge, ScopeSummary, UseChips } from "../components/rights";
 import { SourceAcquire } from "../components/SourceAcquire";
 import { EmptyState, ErrorBanner, Loading, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
@@ -179,11 +179,15 @@ export function SourceDetailPage() {
           <DecisionLine label="Analyse" d={s.analyze} />
           <p className="hint">Editing and publishing are checked for each clip, platform and
             brand channel when those steps exist (M3 onwards).</p>
+          {s.rights_status === "public_web" && (
+            <p className="hint">Public footage: it can be fetched and analysed. To edit or
+              publish it, ask the creator; when they agree, record their permission on the{" "}
+              <Link to="/creators">Creators</Link> page.</p>)}
           {s.records.length === 0 && <EmptyState title="No licence covers this source">
             Add one on the <Link to="/creators">Creators</Link> page.</EmptyState>}
           {s.records.map((r) => (
             <div key={r.id} className="record">
-              <div><strong>v{r.version}</strong> · {r.basis} · covers {r.coverage}{" "}
+              <div><strong>v{r.version}</strong> · {basisLabel(r)} · covers {r.coverage}{" "}
                 <RightsBadge status={r.state} /></div>
               <ScopeSummary scope={r.scope} brands={brands.data ?? []} />
             </div>

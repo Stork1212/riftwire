@@ -12,6 +12,7 @@ const FIX_LINK: Record<string, { to: string; label: string }> = {
   scope_unsupported: { to: "/creators", label: "Open Creators & Rights" },
   use_not_in_scope: { to: "/creators", label: "Open Creators & Rights" },
   platform_permission_missing: { to: "/creators", label: "Add written platform permission" },
+  creator_permission_needed: { to: "/creators", label: "Record the creator's permission" },
   acquisition_method_not_permitted: { to: "/creators", label: "Open Creators & Rights" },
   acquisition_method_unknown: { to: "/sources", label: "Open Sources" },
   creator_channel_required: { to: "/creators", label: "Set up the creator" },

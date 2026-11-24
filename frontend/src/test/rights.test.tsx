@@ -243,6 +243,22 @@ describe("Source detail", () => {
     expect(await screen.findByText(/— withdrawn/)).toBeInTheDocument();
   });
 
+  it("shows public footage as analysable only and points to the creator's permission", async () => {
+    const pub = record({ id: "pub-1", basis: "public_web", coverage: "sources", attested_by: "system",
+      scope: { v: 1, uses: ["acquire", "analyze"], acquisition_methods: ["url_fetch"], publish_platforms: [],
+        brand_channels: [], monetization: false, attribution_required: null, max_clip_seconds: null,
+        territories: null, notes: "" } });
+    r.getSource.mockResolvedValue({
+      ...source({ rights_status: "public_web", authorized_uses: ["acquire", "analyze"] }),
+      analyze: decision(), acquire: decision({ use: "acquire" }), records: [pub], recordings: [],
+    } as SourceDetail);
+    r.provenance.mockResolvedValue([]);
+    renderAt("/sources/src-1");
+    expect(await screen.findByText("Public footage · analysis only")).toBeInTheDocument();
+    expect(screen.getByText(/Public footage \(not creator-confirmed\), recorded automatically/)).toBeInTheDocument();
+    expect(screen.getByText(/To edit or\s+publish it, ask the creator/)).toBeInTheDocument();
+  });
+
   it("asks once how footage was obtained when the method is not on record", async () => {
     const detailWith = (method: string | null) => ({
       ...source(), analyze: decision(), acquire: decision({ use: "acquire" }), records: [],

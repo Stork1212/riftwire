@@ -75,9 +75,11 @@ class World:
                                         scope=scope or FULL_SCOPE, attestation_text=ATTEST,
                                         **kw).id
 
-    def source(self, url=CLIP, **kw) -> str:
+    def source(self, url=CLIP, *, public_web: bool = False, **kw) -> str:
+        """Licence-engine tests isolate licences from the automatic public_web record
+        (tested in test_public_web.py); pass ``public_web=True`` for the app's path."""
         with self.db.session() as s:
-            src = sources.create_source(s, url=url, **kw)
+            src = sources.create_source(s, url=url, record_public_web=public_web, **kw)
             return src.id
 
     def decide(self, source_id, use, **kw) -> rights.Decision:
@@ -579,10 +581,21 @@ def test_api_end_to_end_paste_url_flow(client, db):
                         "brand_channel_id": bc["id"], "clip_ms": 30000}).json()
     assert chk["allowed"] is True
     detail = c.get(f"/api/v1/sources/{src['id']}").json()
-    assert detail["analyze"]["allowed"] and detail["records"][0]["id"] == lic["id"]
+    assert detail["analyze"]["allowed"]
+    bases = {r["basis"]: r for r in detail["records"]}
+    assert bases["licence"]["id"] == lic["id"]
+    assert bases["public_web"]["attested_by"] == "system"   # automatic, for the saved link
     rv = c.post(f"/api/v1/rights/{lic['id']}/revoke", json={"reason": "ended"})
     assert rv.json()["state"] == "revoked"
-    assert c.get(f"/api/v1/sources/{src['id']}").json()["rights_status"] == "revoked"
+    after = c.get(f"/api/v1/sources/{src['id']}").json()
+    # The licence is gone; only the public-footage record remains: analyse, nothing more.
+    assert after["rights_status"] == "public_web"
+    assert after["authorized_uses"] == ["analyze"]   # fetching is switched off in tests
+    chk = c.get(f"/api/v1/sources/{src['id']}/rights-check",
+                params={"use": "publish", "platform": "youtube_shorts",
+                        "brand_channel_id": bc["id"], "clip_ms": 30000}).json()
+    # Publishing is refused; the licence that allowed it was revoked, which is reported.
+    assert not chk["allowed"] and chk["reason"] == "revoked"
     prov = c.get(f"/api/v1/sources/{src['id']}/provenance").json()
     actions = [(p["entity"], p["action"]) for p in prov]
     for expected in [("creator", "created"), ("creator", "channel_added"),

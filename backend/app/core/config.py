@@ -77,9 +77,11 @@ class Settings(BaseSettings):
     # Evidence files (supporting documentation for rights records), internal disk.
     evidence_max_file_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
     evidence_max_total_bytes: int = Field(default=1 * GIB, gt=0)
-    # Global switch for generic URL fetching (acquisition method url_fetch). Off by default
-    # (owner decision R1); M2 implements no fetcher either way.
-    url_acquisition_enabled: bool = False
+    # Global switch for URL fetching (acquisition method url_fetch, services/url_download).
+    # On by default (owner acquisition policy, 2026-11-24): a saved link is fetched and may
+    # be analysed under its automatic public_web record; editing and publishing still need
+    # a creator's permission or a licence.
+    url_acquisition_enabled: bool = True
 
     clip_whisper_python: Path | None = None
     clip_whisper_model: Path | None = None

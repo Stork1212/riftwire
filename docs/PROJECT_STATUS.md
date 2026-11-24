@@ -11,6 +11,10 @@ commits `1180a46`–`b05d881`. See [`URL_ACQUISITION.md`](URL_ACQUISITION.md).
   permanent refusals and crash recovery.
 - **Verified:** with a stand-in downloader only (tests, acceptance step M2-7).
 - **Not verified:** a live platform download.
+- **Owner acquisition policy (2026-11-24), points 1–2:** fetching on by default, and an
+  automatic `public_web` record per saved link (fetch and analyse only; migration `0008`,
+  [`URL_ACQUISITION.md`](URL_ACQUISITION.md) §7). Publishing public footage without the
+  creator's permission is not built.
 - **Pending:** the owner's milestone approval for acquisition (R4 deferred it to M3) and
   for `yt-dlp`.
 
