@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.api import RecordingOut
+from app.schemas.api import JobOut, RecordingOut
 
 
 class In(BaseModel):
@@ -248,6 +248,7 @@ class SourceDetail(SourceOut):
     acquire: DecisionOut
     records: list[RightsRecordOut]
     recordings: list[RecordingOut]
+    acquire_job: JobOut | None = None     # the source's ACQUIRE job, if one was queued
 
 
 class MatchOut(BaseModel):

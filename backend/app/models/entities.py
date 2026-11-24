@@ -38,6 +38,9 @@ class JobType(enum.StrEnum):
     INGEST = "INGEST"
     METADATA = "METADATA"
     THUMBNAIL = "THUMBNAIL"
+    # Fetch a saved source URL into a linked recording (url_download). Keyed to its source;
+    # ``recording_id`` is set when the recording exists.
+    ACQUIRE = "ACQUIRE"
 
 
 class JobStatus(enum.StrEnum):
@@ -128,8 +131,14 @@ class Recording(Base):
 class Job(Base):
     __tablename__ = "jobs"
     __table_args__ = (
-        # One job of each type per recording: makes enqueueing idempotent.
+        # One job of each type per recording (and per source for ACQUIRE): makes
+        # enqueueing idempotent.
         UniqueConstraint("recording_id", "job_type", name="uq_jobs_recording_type"),
+        UniqueConstraint("source_id", "job_type", name="uq_jobs_source_type"),
+        # ACQUIRE jobs belong to a source; every other job to a recording.
+        CheckConstraint("(job_type = 'ACQUIRE' AND source_id IS NOT NULL) OR "
+                        "(job_type != 'ACQUIRE' AND source_id IS NULL "
+                        "AND recording_id IS NOT NULL)", name="subject"),
         CheckConstraint(_enum_check("status", JobStatus), name="status_valid"),
         CheckConstraint(_enum_check("job_type", JobType), name="job_type_valid"),
         CheckConstraint("progress_percent BETWEEN 0 AND 100", name="progress_range"),
@@ -140,9 +149,10 @@ class Job(Base):
     )
 
     id: Mapped[str] = mapped_column(UUIDStr, primary_key=True, default=new_uuid)
-    recording_id: Mapped[str] = mapped_column(
+    recording_id: Mapped[str | None] = mapped_column(
         UUIDStr, ForeignKey("recordings.id", ondelete="CASCADE")
     )
+    source_id: Mapped[str | None] = mapped_column(UUIDStr, ForeignKey("sources.id"))
     job_type: Mapped[str] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16), default=JobStatus.PENDING.value)
     progress_percent: Mapped[int] = mapped_column(Integer, default=0)
@@ -162,7 +172,7 @@ class Job(Base):
     process_started_at: Mapped[str | None] = mapped_column(String(64))
     last_error: Mapped[str | None] = mapped_column(Text)
 
-    recording: Mapped[Recording] = relationship(back_populates="jobs")
+    recording: Mapped[Recording | None] = relationship(back_populates="jobs")
 
 
 class SystemEvent(Base):

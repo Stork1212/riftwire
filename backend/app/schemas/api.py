@@ -21,7 +21,8 @@ class JobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    recording_id: str
+    recording_id: str | None              # None for an ACQUIRE job until its recording exists
+    source_id: str | None = None          # ACQUIRE jobs
     recording_filename: str | None = None
     job_type: str
     status: str
@@ -83,11 +84,10 @@ class EventOut(BaseModel):
 
 
 class AcquireOut(BaseModel):
-    """A saved link fetched by RIFTWIRE and imported as a linked recording."""
-    recording: RecordingOut
+    """Acquisition of a saved link, queued as an ACQUIRE job (one per source)."""
     source_id: str
-    job_id: str | None = None          # INGEST job; None when it was already acquired
-    already_acquired: bool = False
+    job: JobOut
+    recording: RecordingOut | None = None   # set once the job has linked it
 
 
 class ImportResponse(BaseModel):

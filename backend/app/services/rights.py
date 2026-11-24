@@ -66,6 +66,10 @@ JOB_USE: dict[JobType, str | None] = {
     JobType.INGEST: None,
     JobType.METADATA: None,
     JobType.THUMBNAIL: None,
+    # Gated, but at the source level: the job has no recording yet. ``enqueue_acquire`` and
+    # ``url_download.acquire`` check ``acquire`` by ``url_fetch`` before queueing, before
+    # the download, after it, and again in the transaction that links the recording.
+    JobType.ACQUIRE: None,
 }
 
 # Reason codes (stable; API, UI, events).

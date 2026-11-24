@@ -154,7 +154,7 @@ export function SourceDetailPage() {
     <>
       <PageHeader eyebrow={<Link to="/sources" className="muted">← Sources</Link>}
         title={s.title_user || s.url_canonical || "Local source"} actions={<RightsBadge status={s.rights_status} />} />
-      {s.url_canonical && <SourceAcquire key={s.id} sourceId={s.id} onAcquired={refresh} />}
+      {s.url_canonical && <SourceAcquire key={s.id} sourceId={s.id} job={s.acquire_job} onChange={refresh} />}
       {err && <ErrorBanner error={err} />}
       <div className="grid-2">
         <Panel title="Source" actions={

@@ -1,4 +1,5 @@
-"""A saved URL becomes a correctly linked recording (url_download.acquire).
+"""A saved URL becomes a correctly linked recording (url_download.acquire), run as a
+durable ACQUIRE job (queue.enqueue_acquire, handlers.handle_acquire).
 
 The platform downloader is replaced by a stand-in that writes a synthetic MP4 made by
 FFmpeg; every other command (ffprobe, ffmpeg validation) runs for real. A live YouTube or
@@ -14,8 +15,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from app.core.errors import RightsRefused
 from app.main import create_app
-from app.models import DiskReservation, Job, JobType, ProvenanceEvent, Recording
+from app.models import DiskReservation, Job, ProvenanceEvent, Recording, SystemEvent
 from app.services import evidence, media, rights, url_download
 from tests.conftest import requires_ffmpeg
 from tests.helpers import import_file
@@ -82,9 +84,25 @@ def _nothing_stored(db, settings) -> None:
     assert list(settings.temp_dir.glob("source-download-*")) == []
 
 
-# ------------------------------------------------------------------------------ refusals
+def _acquire(db, settings, sid: str):
+    return url_download.acquire(db, settings, sid)
 
-def test_refused_before_any_download(w, db, settings, client, monkeypatch, media_dir):
+
+def _source_detail(client, sid: str) -> dict:
+    r = client.get(f"/api/v1/sources/{sid}")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _jobs(db) -> list[Job]:
+    with db.session() as s:
+        return list(s.scalars(select(Job).order_by(Job.created_at)))
+
+
+# ------------------------------------------------------------------ refusals at the door
+
+def test_refused_before_any_download_or_job(w, db, settings, client, monkeypatch,
+                                            media_dir):
     fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
     rid = w.licence(scope=URL_SCOPE)
     sid = w.source()
@@ -105,34 +123,48 @@ def test_refused_before_any_download(w, db, settings, client, monkeypatch, media
     local = w.source(kind="local", url=None, creator_channel_id=w.local)
     r = client.post(f"/api/v1/sources/{local}/acquire")    # nothing to fetch
     assert r.status_code == 422
-    assert fake.calls == []
+    assert fake.calls == [] and _jobs(db) == []
     _nothing_stored(db, settings)
 
 
-def test_missing_downloader_is_reported_and_nothing_is_stored(w, db, settings, client,
-                                                             monkeypatch):
+# ------------------------------------------------------------ the service (patch 1 proof)
+
+@requires_ffmpeg
+def test_saved_url_becomes_a_linked_recording(w, db, settings, monkeypatch, media_dir):
     _permitted(w, db, settings)
     sid = w.source()
-    monkeypatch.setattr(url_download.shutil, "which",
-                        lambda b: None if b == "yt-dlp" else REAL_WHICH(b))
-    r = client.post(f"/api/v1/sources/{sid}/acquire")
-    assert r.status_code == 503 and r.json()["error"]["code"] == "downloader_missing"
-    _nothing_stored(db, settings)
+    fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
+
+    res = _acquire(db, settings, sid)
+    assert res.source_id == sid and res.already_acquired is False and res.job_id
+    (args,) = fake.downloads                               # one download, canonical URL
+    assert args[-1] == "https://clips.twitch.tv/BigHeistMoment-AbC_123"
+    assert "--no-playlist" in args and "!is_live" in args
+    drain(db, settings)                                    # INGEST, METADATA, THUMBNAIL
+    with db.session() as s:
+        rec = s.get(Recording, res.recording_id)
+        assert rec.status == "READY" and rec.source_id == sid
+        assert rec.acquisition_method == "url_fetch"
+        assert rec.original_filename == "twitch-BigHeistMoment-AbC_123.mp4"
+        assert rec.sha256 == _sha(media_dir / "basic.mp4")
+        ev = {(e.entity, e.action): json.loads(e.details_json) for e in s.scalars(
+            select(ProvenanceEvent).where(ProvenanceEvent.entity_id.in_([rec.id, sid])))}
+        assert ev[("recording", "attached_to_source")]["method"] == "url_fetch"
+        assert ev[("source", "media_attached")]["recording_id"] == rec.id
+        got = ev[("source", "acquired_by_url")]
+        assert got["url"] == "https://clips.twitch.tv/BigHeistMoment-AbC_123"
+        assert got["downloader"] == "yt-dlp" and got["downloader_version"] == "2026.11.23"
+        assert got["sha256"] == rec.sha256 and got["recording_id"] == rec.id
+        assert rights.evaluate_recording(s, rec.id, "analyze").allowed
+        assert s.scalar(select(func.count()).select_from(DiskReservation)) == 0
+    assert list(settings.temp_dir.glob("source-download-*")) == []
+    again = _acquire(db, settings, sid)                    # idempotent, no second download
+    assert again.recording_id == res.recording_id and again.already_acquired
+    assert len(fake.downloads) == 1
 
 
 @requires_ffmpeg
-def test_failed_download_leaves_nothing(w, db, settings, client, monkeypatch, media_dir):
-    _permitted(w, db, settings)
-    sid = w.source()
-    FakeDownloader(monkeypatch, media_dir / "basic.mp4", returncode=1)
-    r = client.post(f"/api/v1/sources/{sid}/acquire")
-    assert r.status_code == 503 and r.json()["error"]["code"] == "download_unavailable"
-    _nothing_stored(db, settings)
-
-
-@requires_ffmpeg
-def test_rights_revoked_during_download_discards_it(w, db, settings, client, monkeypatch,
-                                                   media_dir):
+def test_rights_revoked_during_download_discards_it(w, db, settings, monkeypatch, media_dir):
     rid = _permitted(w, db, settings)
     sid = w.source()
 
@@ -140,72 +172,19 @@ def test_rights_revoked_during_download_discards_it(w, db, settings, client, mon
         with db.session() as s:
             rights.revoke(s, rid, "withdrawn during download")
     FakeDownloader(monkeypatch, media_dir / "basic.mp4", after=revoke)
-    r = client.post(f"/api/v1/sources/{sid}/acquire")
-    assert r.status_code == 403
-    assert r.json()["error"]["details"]["reason"] == rights.RIGHTS_CHANGED
+    with pytest.raises(RightsRefused) as e:
+        _acquire(db, settings, sid)
+    assert e.value.details["reason"] == rights.RIGHTS_CHANGED
     _nothing_stored(db, settings)
-
-
-# ------------------------------------------------------------------------------ the proof
-
-@requires_ffmpeg
-def test_saved_url_becomes_a_linked_recording(w, db, settings, client, monkeypatch,
-                                              media_dir):
-    _permitted(w, db, settings)
-    sid = w.source()
-    fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
-
-    r = client.post(f"/api/v1/sources/{sid}/acquire")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    rec_id = body["recording"]["id"]
-    assert body["source_id"] == sid and body["already_acquired"] is False and body["job_id"]
-    # exactly one download, of the canonical URL, within the limits
-    (args,) = fake.downloads
-    assert args[-1] == "https://clips.twitch.tv/BigHeistMoment-AbC_123"
-    assert "--no-playlist" in args and "!is_live" in args
-
-    drain(db, settings)                                    # INGEST, METADATA, THUMBNAIL
-    with db.session() as s:
-        rec = s.get(Recording, rec_id)
-        assert rec.status == "READY" and rec.source_id == sid
-        assert rec.acquisition_method == "url_fetch"
-        assert rec.original_filename == "twitch-BigHeistMoment-AbC_123.mp4"
-        assert rec.sha256 == _sha(media_dir / "basic.mp4")
-        jobs = {j.job_type: j.status for j in s.scalars(select(Job).where(
-            Job.recording_id == rec_id))}
-        assert jobs == {JobType.INGEST.value: "COMPLETED", JobType.METADATA.value: "COMPLETED",
-                        JobType.THUMBNAIL.value: "COMPLETED"}
-        # provenance: the recording, the source, and how it was obtained
-        ev = {(e.entity, e.action): json.loads(e.details_json) for e in s.scalars(
-            select(ProvenanceEvent).where(ProvenanceEvent.entity_id.in_([rec_id, sid])))}
-        assert ev[("recording", "attached_to_source")]["method"] == "url_fetch"
-        assert ev[("source", "media_attached")]["recording_id"] == rec_id
-        got = ev[("source", "acquired_by_url")]
-        assert got["url"] == "https://clips.twitch.tv/BigHeistMoment-AbC_123"
-        assert got["downloader"] == "yt-dlp" and got["downloader_version"] == "2026.11.23"
-        assert got["sha256"] == rec.sha256 and got["recording_id"] == rec_id
-        # downstream rights are checked against the actual method
-        assert rights.evaluate_recording(s, rec_id, "analyze").allowed
-        assert s.scalar(select(func.count()).select_from(DiskReservation)) == 0
-    assert list(settings.temp_dir.glob("source-download-*")) == []
-    src = client.get(f"/api/v1/sources/{sid}").json()
-    assert [x["id"] for x in src["recordings"]] == [rec_id]
-    assert src["recordings"][0]["acquisition_method"] == "url_fetch"
-
-    # idempotent: a second request returns the same recording without downloading again
-    again = client.post(f"/api/v1/sources/{sid}/acquire").json()
-    assert again["recording"]["id"] == rec_id and again["already_acquired"] is True
-    assert len(fake.downloads) == 1
 
 
 @requires_ffmpeg
 def test_licence_without_url_fetch_refuses_analysis_of_fetched_media(
-        w, db, settings, client, monkeypatch, media_dir):
+        w, db, settings, monkeypatch, media_dir):
     rid = _permitted(w, db, settings)
     sid = w.source()
     FakeDownloader(monkeypatch, media_dir / "basic.mp4")
-    rec_id = client.post(f"/api/v1/sources/{sid}/acquire").json()["recording"]["id"]
+    rec_id = _acquire(db, settings, sid).recording_id
     with db.session() as s:
         rights.supersede(s, rid, scope={**URL_SCOPE, "acquisition_methods": ["creator_file"]},
                          attestation_text=ATTEST)
@@ -216,17 +195,137 @@ def test_licence_without_url_fetch_refuses_analysis_of_fetched_media(
 
 @requires_ffmpeg
 def test_earlier_unlinked_import_of_the_same_bytes_is_linked_as_fetched(
-        w, db, settings, client, monkeypatch, media_dir):
+        w, db, settings, monkeypatch, media_dir):
     _permitted(w, db, settings)
     sid = w.source()
     earlier = import_file(db, settings, media_dir / "basic.mp4").recording
     FakeDownloader(monkeypatch, media_dir / "basic.mp4")
-    body = client.post(f"/api/v1/sources/{sid}/acquire").json()
-    assert body["recording"]["id"] == earlier.id and body["already_acquired"] is True
+    res = _acquire(db, settings, sid)
+    assert res.recording_id == earlier.id and res.already_acquired
     with db.session() as s:
         rec = s.get(Recording, earlier.id)
         assert rec.source_id == sid and rec.acquisition_method == "url_fetch"
         assert s.scalar(select(func.count()).select_from(Recording)) == 1
+
+
+# ------------------------------------------------------------------ the queue (patch 2)
+
+@requires_ffmpeg
+def test_acquisition_runs_as_a_queued_job(w, db, settings, client, monkeypatch, media_dir):
+    _permitted(w, db, settings)
+    sid = w.source()
+    fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
+
+    r = client.post(f"/api/v1/sources/{sid}/acquire")
+    assert r.status_code == 202, r.text
+    job = r.json()["job"]
+    assert job["job_type"] == "ACQUIRE" and job["status"] == "PENDING"
+    assert job["source_id"] == sid and job["recording_id"] is None
+    assert fake.downloads == []                            # nothing happens in the request
+    again = client.post(f"/api/v1/sources/{sid}/acquire").json()
+    assert again["job"]["id"] == job["id"]                 # one ACQUIRE job per source
+    listed = client.get("/api/v1/jobs").json()["items"]
+    assert [j["id"] for j in listed] == [job["id"]]        # visible before a recording exists
+    assert _source_detail(client, sid)["acquire_job"]["status"] == "PENDING"
+
+    drain(db, settings)                                    # ACQUIRE, INGEST, METADATA, THUMBNAIL
+    detail = _source_detail(client, sid)
+    acq = detail["acquire_job"]
+    assert acq["status"] == "COMPLETED" and acq["progress_percent"] == 100
+    (rec,) = detail["recordings"]
+    assert acq["recording_id"] == rec["id"] and rec["acquisition_method"] == "url_fetch"
+    assert rec["status"] == "READY"
+    types = {j.job_type: j.status for j in _jobs(db)}
+    assert types == {"ACQUIRE": "COMPLETED", "INGEST": "COMPLETED", "METADATA": "COMPLETED",
+                     "THUMBNAIL": "COMPLETED"}
+    done = client.post(f"/api/v1/sources/{sid}/acquire").json()
+    assert done["recording"]["id"] == rec["id"] and len(fake.downloads) == 1
+    with db.session() as s:
+        evs = [e.event_type for e in s.scalars(select(SystemEvent))]
+    assert "acquire_queued" in evs
+
+
+@requires_ffmpeg
+def test_network_failures_retry_then_succeed(w, db, settings, client, monkeypatch,
+                                             media_dir):
+    _permitted(w, db, settings)
+    sid = w.source()
+    fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4", returncode=1)
+    job_id = client.post(f"/api/v1/sources/{sid}/acquire").json()["job"]["id"]
+    drain(db, settings)
+    with db.session() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "FAILED" and j.attempt_count == settings.job_max_attempts
+        assert "download_unavailable" in j.last_error or "downloadable MP4" in j.last_error
+    assert len(fake.downloads) == settings.job_max_attempts   # retried, not given up early
+    _nothing_stored(db, settings)
+    fake.returncode = 0                                    # the platform is back
+    assert client.post(f"/api/v1/jobs/{job_id}/retry").status_code == 200
+    drain(db, settings)
+    with db.session() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "COMPLETED" and j.recording_id is not None
+        assert s.get(Recording, j.recording_id).acquisition_method == "url_fetch"
+
+
+@requires_ffmpeg
+def test_rights_revoked_while_queued_fails_permanently_with_provenance(
+        w, db, settings, client, monkeypatch, media_dir):
+    rid = _permitted(w, db, settings)
+    sid = w.source()
+    fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
+    job_id = client.post(f"/api/v1/sources/{sid}/acquire").json()["job"]["id"]
+    with db.session() as s:
+        rights.revoke(s, rid, "withdrawn while queued")
+    drain(db, settings)
+    with db.session() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "FAILED" and j.attempt_count == 1      # never retried
+        assert "RightsRefused" in j.last_error
+        assert s.scalars(select(ProvenanceEvent).where(
+            ProvenanceEvent.entity_id == job_id,
+            ProvenanceEvent.action == "rights_refused")).one()
+    assert fake.downloads == []                            # refused before downloading
+    _nothing_stored(db, settings)
+
+
+def test_missing_downloader_fails_permanently(w, db, settings, client, monkeypatch):
+    _permitted(w, db, settings)
+    sid = w.source()
+    monkeypatch.setattr(url_download.shutil, "which",
+                        lambda b: None if b == "yt-dlp" else REAL_WHICH(b))
+    job_id = client.post(f"/api/v1/sources/{sid}/acquire").json()["job"]["id"]
+    drain(db, settings)
+    with db.session() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "FAILED" and j.attempt_count == 1
+        assert "downloader_missing" in j.last_error
+    _nothing_stored(db, settings)
+
+
+@requires_ffmpeg
+def test_crashed_attempt_is_recovered_without_duplicates(w, db, settings, client,
+                                                         monkeypatch, media_dir):
+    """A previous attempt crashed after importing the bytes but before linking them, and
+    left its workspace behind. The next attempt clears the workspace, recognises the
+    identical bytes and links that recording: one recording, correctly attributed."""
+    _permitted(w, db, settings)
+    sid = w.source()
+    job_id = client.post(f"/api/v1/sources/{sid}/acquire").json()["job"]["id"]
+    stale = settings.temp_dir / f"source-download-{job_id}"
+    stale.mkdir()
+    (stale / "video.mp4.part").write_bytes(b"half a download")
+    orphan = url_download._import(db, settings, media_dir / "basic.mp4",
+                                  "twitch-BigHeistMoment-AbC_123.mp4").recording
+    fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
+    drain(db, settings)
+    with db.session() as s:
+        j = s.get(Job, job_id)
+        assert j.status == "COMPLETED" and j.recording_id == orphan.id
+        assert s.scalar(select(func.count()).select_from(Recording)) == 1
+        rec = s.get(Recording, orphan.id)
+        assert rec.source_id == sid and rec.acquisition_method == "url_fetch"
+    assert len(fake.downloads) == 1 and not stale.exists()
 
 
 # ------------------------------------------------------------------- method integrity
@@ -238,10 +337,6 @@ def test_uploads_cannot_claim_url_fetch(w, db, settings, client):
                     params={"filename": "x.mp4", "source_id": sid,
                             "acquisition_method": "url_fetch"})
     assert r.status_code == 422 and r.json()["error"]["code"] == "url_fetch_reserved"
-    r = client.post(f"/api/v1/sources/{sid}/recordings",
-                    json={"recording_id": "00000000-0000-4000-8000-000000000000",
-                          "acquisition_method": "url_fetch"})
-    assert r.status_code in (404, 422)
     methods = {m["method"]: m["available"] for m in
                client.get("/api/v1/acquisition-methods").json()}
     assert methods["url_fetch"] is True                    # switched on in this test

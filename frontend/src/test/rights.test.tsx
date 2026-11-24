@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
 import { ApiError, api } from "../services/api";
 import { rightsApi } from "../services/rightsApi";
-import { recording } from "./fixtures";
+import { job, recording } from "./fixtures";
 import type { Creator, Decision, Resolved, RightsRecord, Source, SourceDetail } from "../types/rights";
 
 vi.mock("../services/api", async (orig) => {
@@ -18,7 +18,7 @@ vi.mock("../services/rightsApi", () => ({
     "updateBrandChannel", "listCreators", "createCreator", "updateCreator", "addChannel",
     "creatorRights", "createRights", "supersedeRights", "revokeRights", "addEvidenceNote",
     "addEvidenceFile", "acquisitionMethods", "resolve", "listSources", "createSource", "getSource",
-    "updateSource", "setAssignments", "attachRecording", "acquireSource", "rightsCheck", "provenance",
+    "updateSource", "setAssignments", "attachRecording", "acquireSource", "acquireJob", "rightsCheck", "provenance",
   ].map((k) => [k, vi.fn()])),
 }));
 
@@ -340,19 +340,21 @@ describe("Games & channels", () => {
 });
 
 describe("Import and navigation", () => {
-  it("acquires a saved link as a linked recording and explains refusals", async () => {
+  it("queues acquisition of a saved link, follows the job and explains refusals", async () => {
     r.resolve.mockResolvedValue({
       platform: "twitch", media: "vod", video_id: "1", canonical_url: "https://www.twitch.tv/videos/1",
       start_ms: null, channel_login: null, existing_source: source(),
       match: { status: "matched", matcher: "existing_source", reason: "", creator_channel_id: "ch-1", candidates: [] },
       channel: null, creator_name: null, covered: true, covering_record_ids: [],
     });
+    const acqJob = { ...job({ id: "job-a", job_type: "ACQUIRE", status: "PENDING", progress_percent: 0 }),
+      recording_id: null, source_id: source().id, recording_filename: null };
     r.acquireSource
       .mockRejectedValueOnce(new ApiError(403, "rights_refused", "Written platform permission is required.",
         { reason: "platform_permission_missing" }))
-      .mockResolvedValueOnce({ recording: { ...recording({ id: "rec-9", original_filename: "twitch-1.mp4" }),
-        source_id: source().id, acquisition_method: "url_fetch" },
-        source_id: source().id, job_id: "job-1", already_acquired: false });
+      .mockResolvedValueOnce({ source_id: source().id, job: acqJob, recording: null });
+    r.acquireJob.mockResolvedValue({ ...acqJob, status: "COMPLETED", progress_percent: 100,
+      recording_id: "rec-9", recording_filename: "twitch-1.mp4" });
     renderAt("/import");
     expect(screen.getByRole("tab", { name: "Local file" })).toHaveAttribute("aria-selected", "true");
     await userEvent.click(screen.getByRole("tab", { name: "Video URL" }));
@@ -365,10 +367,11 @@ describe("Import and navigation", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Written platform permission is required.");
     expect(r.acquireSource).toHaveBeenCalledWith(source().id);
     await userEvent.click(acquire);
-    const status = await screen.findByRole("status");
-    expect(status).toHaveTextContent("Acquired and linked: twitch-1.mp4");
-    expect(within(status).getByRole("link", { name: "twitch-1.mp4" })).toHaveAttribute("href", "/recordings/rec-9");
-    expect(acquire).toBeDisabled();
+    expect(await screen.findByRole("status")).toHaveTextContent("Acquiring in the background");
+    expect(acquire).toBeDisabled();                        // one ACQUIRE job per source
+    const link = await screen.findByRole("link", { name: "twitch-1.mp4" }, { timeout: 4000 });
+    expect(link).toHaveAttribute("href", "/recordings/rec-9");
+    expect(r.acquireJob).toHaveBeenCalledWith("job-a");
   });
 
   it("groups navigation into Workspace, Management and System", () => {

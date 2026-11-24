@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.api.routes import CFG, DB, Limit, Offset, rec_out, require_schema
+from app.api.routes import CFG, DB, Limit, Offset, job_out, rec_out, require_schema
 from app.core.errors import NotFoundError, ValidationFailed
 from app.db.base import utcnow
 from app.models import (
@@ -20,6 +20,8 @@ from app.models import (
     Creator,
     CreatorChannel,
     Game,
+    Job,
+    JobType,
     ProvenanceEvent,
     Recording,
     RightsEvidence,
@@ -61,7 +63,7 @@ from app.schemas.rights import (
     SourcePatch,
     SupersedeIn,
 )
-from app.services import acquisition, evidence, rights, sources, url_download
+from app.services import acquisition, evidence, queue, rights, sources
 from app.services.sources import channel_coverage
 
 m2 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_schema)])
@@ -414,7 +416,16 @@ def get_source(source_id: str, db: DB, cfg: CFG):
             acquire=decision_out(rights.evaluate(
                 s, src.id, "acquire", url_acquisition_enabled=cfg.url_acquisition_enabled)),
             records=[record_out(s, r) for r in recs],
-            recordings=[rec_out(r) for r in recordings])
+            recordings=[rec_out(r) for r in recordings],
+            acquire_job=_acquire_job(s, src.id))
+
+
+def _acquire_job(s: Session, source_id: str):
+    j = s.scalar(select(Job).where(Job.source_id == source_id,
+                                   Job.job_type == JobType.ACQUIRE.value))
+    if j is None:
+        return None
+    return job_out(j, j.recording.original_filename if j.recording else None)
 
 
 @m2.patch("/sources/{source_id}", response_model=SourceOut)
@@ -430,14 +441,15 @@ def put_assignments(source_id: str, body: AssignmentsIn, db: DB):
         return source_out(s, sources.get_source(s, source_id))
 
 
-@m2.post("/sources/{source_id}/acquire", response_model=AcquireOut)
+@m2.post("/sources/{source_id}/acquire", response_model=AcquireOut, status_code=202)
 def acquire_source(source_id: str, db: DB, cfg: CFG):
-    """Fetch the saved link and import it as a recording linked to this source."""
-    r = url_download.acquire(db, cfg, source_id)
+    """Queue fetching the saved link into a recording linked to this source. Idempotent:
+    the source's existing ACQUIRE job is returned (retry a failed one from the queue)."""
     with db.session() as s:
-        rec = s.get(Recording, r.recording_id)
-        return AcquireOut(recording=rec_out(rec), source_id=r.source_id, job_id=r.job_id,
-                          already_acquired=r.already_acquired)
+        job = queue.enqueue_acquire(s, cfg, source_id, cfg.job_max_attempts)
+        rec = s.get(Recording, job.recording_id) if job.recording_id else None
+        return AcquireOut(source_id=source_id, job=job_out(job, rec and rec.original_filename),
+                          recording=rec_out(rec) if rec else None)
 
 
 @m2.post("/sources/{source_id}/recordings", response_model=SourceOut)

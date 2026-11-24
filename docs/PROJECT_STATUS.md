@@ -2,6 +2,18 @@
 
 _Last updated: 2026-11-24_
 
+## URL acquisition prototype (branch `phase2/url-download`, local; not merged)
+At the owner's direction (2026-11-24), in two patches on top of the local prototype
+commits `1180a46`–`b05d881`. See [`URL_ACQUISITION.md`](URL_ACQUISITION.md).
+- **Patch 1:** a saved URL becomes a recording linked to its source, with method `url_fetch`
+  and provenance, through the normal import path.
+- **Patch 2:** acquisition is a durable `ACQUIRE` job (migration `0007`) with retries,
+  permanent refusals and crash recovery.
+- **Verified:** with a stand-in downloader only (tests, acceptance step M2-7).
+- **Not verified:** a live platform download.
+- **Pending:** the owner's milestone approval for acquisition (R4 deferred it to M3) and
+  for `yt-dlp`.
+
 ## Current phase
 **Phase 2 — Sources & Signals: in progress.** Phases 2–3 are delivered as milestones M0–M7
 (approved [`PHASE2_PROPOSAL.md`](PHASE2_PROPOSAL.md); phase numbering unchanged).

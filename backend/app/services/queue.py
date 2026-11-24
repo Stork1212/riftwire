@@ -20,12 +20,18 @@ from datetime import datetime, timedelta
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
-from app.core.errors import ConflictError, NotFoundError, RightsRefused, RightsRefusedJobError
+from app.core.errors import (
+    ConflictError,
+    NotFoundError,
+    RightsRefused,
+    RightsRefusedJobError,
+    ValidationFailed,
+)
 from app.core.logging import get_logger
 from app.db.base import utcnow
 from app.db.session import Database
 from app.models import Job, JobStatus, JobType, Recording, RecordingStatus, Severity
-from app.services import rights
+from app.services import acquisition, rights, sources
 from app.services.events import record_event
 
 log = get_logger("queue")
@@ -66,10 +72,11 @@ def backoff_seconds(attempt: int, base: float, cap: float) -> float:
 class ClaimedJob:
     id: str
     job_type: JobType
-    recording_id: str
+    recording_id: str | None          # None for an ACQUIRE job until its recording exists
     token: str
     attempt: int
     max_attempts: int
+    source_id: str | None = None      # ACQUIRE jobs
     # Set by the worker for rights-gated job types (M2): the decision the job runs under.
     # Completion re-checks it inside the same transaction (rights fence).
     decision: rights.Decision | None = None
@@ -97,6 +104,33 @@ def enqueue(session: Session, recording_id: str, job_type: JobType, max_attempts
               created_at=now, updated_at=now, next_attempt_at=now)
     session.add(job)
     session.flush()
+    return job
+
+
+def enqueue_acquire(session: Session, settings, source_id: str, max_attempts: int) -> Job:
+    """Queue fetching a saved source URL into a linked recording (``url_download``).
+
+    Idempotent: one ACQUIRE job per source; the existing one is returned. Checked before
+    queueing (a saved URL, URL fetching permitted by the current rights with written
+    platform permission, URL acquisition switched on), so a job that could only be refused
+    is never created; the handler checks again before and after the download."""
+    existing = session.scalar(select(Job).where(Job.source_id == source_id,
+                                                Job.job_type == JobType.ACQUIRE.value))
+    if existing is not None:
+        return existing
+    src = sources.get_source(session, source_id)
+    if not src.url_canonical:
+        raise ValidationFailed("Save a YouTube or Twitch video link before acquiring.")
+    acquisition.check_acquire(session, settings, source_id,
+                              acquisition.AcquisitionMethod.URL_FETCH.value, fetched=True)
+    now = utcnow()
+    job = Job(source_id=source_id, job_type=JobType.ACQUIRE.value,
+              status=JobStatus.PENDING.value, max_attempts=max_attempts,
+              created_at=now, updated_at=now, next_attempt_at=now)
+    session.add(job)
+    session.flush()
+    record_event(session, Severity.INFO, "queue", "acquire_queued",
+                 f"Acquisition of source {source_id} queued", job_id=job.id)
     return job
 
 
@@ -135,7 +169,8 @@ def claim_next(db: Database, worker_id: str, lease_seconds: int,
             if res.rowcount == 1:
                 job = s.get(Job, job_id)
                 return ClaimedJob(job.id, JobType(job.job_type), job.recording_id, token,
-                                  job.attempt_count, job.max_attempts)
+                                  job.attempt_count, job.max_attempts,
+                                  source_id=job.source_id)
     return None
 
 
@@ -222,6 +257,8 @@ def complete(db: Database, claimed: ClaimedJob,
 
 
 def _apply_terminal_failure(s: Session, job: Job, error: str) -> None:
+    if job.recording_id is None:          # ACQUIRE before its recording exists
+        return
     rec = s.get(Recording, job.recording_id)
     if rec is None:
         return
@@ -456,7 +493,7 @@ def retry_job(s: Session, job_id: str) -> Job:
     job.completed_at = None
     job.started_at = None
     job.updated_at = now
-    rec = s.get(Recording, job.recording_id)
+    rec = s.get(Recording, job.recording_id) if job.recording_id else None
     if rec is not None:
         if job.job_type == JobType.THUMBNAIL.value:
             rec.thumbnail_status = "PENDING"

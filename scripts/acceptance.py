@@ -184,7 +184,9 @@ def wait_ready(stack: Stack, rid: str, timeout=120, observe: list | None = None)
         d = stack.get(f"/api/v1/recordings/{rid}").json()
         if observe is not None:
             observe.append({j["job_type"]: (j["status"], j["progress_percent"]) for j in d["jobs"]})
-        if (len(d["jobs"]) == 3 and all(j["status"] == "COMPLETED" for j in d["jobs"])
+        stages = {j["job_type"]: j["status"] for j in d["jobs"]
+                  if j["job_type"] in ("INGEST", "METADATA", "THUMBNAIL")}
+        if (len(stages) == 3 and set(stages.values()) == {"COMPLETED"}
                 and d["status"] == "READY"):
             return d
         if d["status"] == "FAILED":
@@ -614,6 +616,7 @@ def run(args) -> int:
             "url": "https://www.twitch.tv/videos/987654321",
             "creator_channel_id": m2["twitch"]}), 201)
         check(vod["rights_status"] == "active" and "analyze" in vod["authorized_uses"], str(vod))
+        m2["vod"] = vod["id"]
         clip_now = ok(stack.get(f"/api/v1/sources/{m2['clip_source']}"))
         check(clip_now["analyze"]["allowed"]
               and clip_now["analyze"]["record_id"] == lic["id"], str(clip_now["analyze"]))
@@ -652,6 +655,63 @@ def run(args) -> int:
         return ("edit = new version (v2), old one superseded and powerless; direct database "
                 "edits/deletes of attested rights and provenance refused (5/5)")
     step("M2-6", "Supersession and immutable history", s_m2_history)
+
+    def s_m2_acquire():
+        """A saved URL becomes a linked recording through a queued ACQUIRE job, run by the
+        real API and worker processes. The platform downloader is a stand-in script that
+        writes a synthetic clip; no platform is contacted. The written platform permission
+        recorded here is synthetic and exists only in this temporary acceptance instance."""
+        fake_bin = tmp / "fake-bin"
+        fake_bin.mkdir()
+        clip_file = extra_clip("acquired-vod.mp4", 2.9)
+        fake = fake_bin / "yt-dlp"
+        fake.write_text(
+            f"#!{sys.executable}\n"
+            "import shutil, sys\n"
+            "a = sys.argv[1:]\n"
+            "if '--version' in a:\n"
+            "    print('acceptance-stand-in'); sys.exit(0)\n"
+            f"shutil.copyfile({str(clip_file)!r}, a[a.index('-o') + 1])\n")
+        fake.chmod(0o755)
+        env = {"RIFTWIRE_URL_ACQUISITION_ENABLED": "true",
+               "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}"}
+        stack.stop()
+        stack.start_api(**env)
+        stack.start_worker(**env)
+        lic = ok(stack.post("/api/v1/rights", json={
+            "creator_id": m2["creator"], "basis": "licence", "coverage": "creator",
+            "scope": {**scope, "uses": ["acquire", "analyze"],
+                      "acquisition_methods": ["url_fetch"]},
+            "attestation_text": attest + " (URL fetching)"}), 201)
+        ok(stack.post(f"/api/v1/rights/{lic['id']}/evidence", params={
+            "kind": "platform_permission",
+            "reference": "ACCEPTANCE ONLY: synthetic platform permission"}), 201)
+        q = ok(stack.post(f"/api/v1/sources/{m2['vod']}/acquire"), 202)
+        check(q["job"]["job_type"] == "ACQUIRE" and q["job"]["recording_id"] is None, str(q))
+        again = ok(stack.post(f"/api/v1/sources/{m2['vod']}/acquire"), 202)
+        check(again["job"]["id"] == q["job"]["id"], "a second ACQUIRE job was created")
+        deadline = time.time() + 90
+        while time.time() < deadline:
+            d = ok(stack.get(f"/api/v1/sources/{m2['vod']}"))
+            if d["acquire_job"]["status"] in ("COMPLETED", "FAILED"):
+                break
+            time.sleep(0.5)
+        job = d["acquire_job"]
+        check(job["status"] == "COMPLETED", f"ACQUIRE {job['status']}: {job['last_error']}")
+        rec = wait_ready(stack, job["recording_id"], timeout=60)
+        check(rec["source_id"] == m2["vod"] and rec["acquisition_method"] == "url_fetch",
+              f"{rec['source_id']} {rec['acquisition_method']}")
+        prov = ok(stack.get(f"/api/v1/sources/{m2['vod']}/provenance"))
+        got = [p for p in prov if p["action"] == "acquired_by_url"]
+        check(len(got) == 1 and got[0]["details"]["recording_id"] == rec["id"], str(got))
+        check(ok(stack.get(f"/api/v1/sources/{m2['vod']}"))["recording_count"] == 1,
+              "more than one recording for the source")
+        leftovers = list((data_dir / "temp").glob("source-download-*"))
+        check(not leftovers, f"download workspace left behind: {leftovers}")
+        return ("queued ACQUIRE job (one per source) → recording READY, linked, method "
+                "url_fetch, acquired_by_url provenance; stand-in downloader, no platform "
+                "contacted")
+    step("M2-7", "Acquire a saved URL as a linked recording via the queue", s_m2_acquire)
 
     stack.stop()
     passed = sum(r["result"] == "PASS" for r in results)

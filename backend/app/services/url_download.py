@@ -24,7 +24,8 @@ returned and nothing is downloaded again. The temporary download is always remov
 from __future__ import annotations
 
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -77,7 +78,8 @@ def _tools(settings: Settings) -> tuple[str, str, list[str]]:
                                  "downloads.", code="downloader_missing")
     ffmpeg = shutil.which(settings.ffmpeg_path)
     if ffmpeg is None:
-        raise ServiceUnavailable("FFmpeg is required to combine video and audio into an MP4.")
+        raise ServiceUnavailable("FFmpeg is required to combine video and audio into an MP4.",
+                                 code="ffmpeg_missing")
     node = shutil.which("node")
     return downloader, ffmpeg, (["--js-runtimes", f"node:{node}"] if node else [])
 
@@ -91,7 +93,8 @@ def _version(downloader: str) -> str:
 
 
 def _download(downloader: str, ffmpeg: str, js_runtime: list[str], url: str,
-              folder: Path, should_cancel: Callable[[], bool] | None) -> Path:
+              folder: Path, should_cancel: Callable[[], bool] | None,
+              on_spawn: Callable[[int, str | None], None] | None) -> Path:
     output = folder / "video.mp4"
 
     def over_limit() -> bool:
@@ -110,7 +113,7 @@ def _download(downloader: str, ffmpeg: str, js_runtime: list[str], url: str,
             "--max-filesize", str(MAX_FILE), "--ffmpeg-location", ffmpeg,
             "-f", "bv[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]",
             "--merge-output-format", "mp4", "-o", str(output), "--", url,
-        ], TIMEOUT, should_cancel=over_limit)
+        ], TIMEOUT, should_cancel=over_limit, on_spawn=on_spawn)
     except media.CommandCancelled as exc:
         if should_cancel and should_cancel():
             raise
@@ -140,9 +143,34 @@ def _import(db: Database, settings: Settings, path: Path, filename: str):
     return complete_upload(db, settings, up, digest)
 
 
+@contextmanager
+def _workspace(root: Path, name: str | None) -> Iterator[Path]:
+    """A fresh download folder under the temp location. A named one (the job id) is
+    cleared first, so an attempt that crashed leaves nothing behind for the next."""
+    if name is None:
+        with TemporaryDirectory(prefix="source-download-", dir=root) as tmp:
+            yield Path(tmp)
+        return
+    folder = root / f"source-download-{name}"
+    if folder.parent != root or not name.replace("-", "").isalnum():
+        raise ValidationFailed("invalid workspace name")
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir()
+    try:
+        yield folder
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def acquire(db: Database, settings: Settings, source_id: str, *, actor: str = "owner",
-            should_cancel: Callable[[], bool] | None = None) -> AcquireResult:
-    """Download the source's saved URL and return the linked recording (see module doc)."""
+            should_cancel: Callable[[], bool] | None = None,
+            on_spawn: Callable[[int, str | None], None] | None = None,
+            progress: Callable[[int], None] | None = None,
+            workspace: str | None = None) -> AcquireResult:
+    """Download the source's saved URL and return the linked recording (see module doc).
+    The keyword hooks let the worker run it as a job: cancellation, child-process
+    tracking for orphan cleanup, progress, and a per-job workspace."""
+    step = progress or (lambda _p: None)
     with db.session() as s:
         src = sources.get_source(s, source_id)
         if not src.url_canonical:
@@ -164,10 +192,12 @@ def acquire(db: Database, settings: Settings, source_id: str, *, actor: str = "o
         "url-download", f"url:{source_id}", MAX_WORKSPACE + 32 * 1024 * 1024,
         lease_seconds=max(settings.reservation_lease_seconds, TIMEOUT + 600))
     try:
-        with TemporaryDirectory(prefix="source-download-", dir=root) as tmp:
+        with _workspace(root, workspace) as tmp:
             version = _version(downloader)
-            path = _download(downloader, ffmpeg, js_runtime, parsed.canonical_url, Path(tmp),
-                             should_cancel)
+            step(5)
+            path = _download(downloader, ffmpeg, js_runtime, parsed.canonical_url, tmp,
+                             should_cancel, on_spawn)
+            step(70)
             with db.session() as s:            # rights changed during the download?
                 rights.fence(s, decision)
             filename = f"{parsed.platform}-{parsed.video_id}.mp4"
@@ -188,6 +218,7 @@ def acquire(db: Database, settings: Settings, source_id: str, *, actor: str = "o
                         return AcquireResult(rec.id, source_id, None, True)
                 raise
             rec_id = result.recording.id
+            step(95)
             try:
                 with db.session() as s:
                     acquisition.attach_media(s, settings, source_id, rec_id, URL_FETCH,

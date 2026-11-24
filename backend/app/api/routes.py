@@ -245,7 +245,7 @@ def list_jobs(db: DB, limit: Limit = 50, offset: Offset = 0,
               status: Annotated[str | None, Query(max_length=20)] = None,
               job_type: Annotated[str | None, Query(max_length=20)] = None,
               recording_id: Annotated[str | None, Query(max_length=36)] = None):
-    stmt = select(Job, Recording.original_filename).join(Recording)
+    stmt = select(Job, Recording.original_filename).outerjoin(Recording)
     if status:
         stmt = stmt.where(Job.status == status.upper())
     if job_type:
@@ -266,7 +266,7 @@ def get_job(job_id: str, db: DB):
         j = s.get(Job, job_id)
         if j is None:
             raise NotFoundError("Job not found")
-        return job_out(j, j.recording.original_filename)
+        return job_out(j, j.recording.original_filename if j.recording else None)
 
 
 @api.post("/jobs/{job_id}/retry", response_model=JobOut,
@@ -275,7 +275,7 @@ def retry_job(job_id: str, db: DB):
     with db.session() as s:
         j = queue.retry_job(s, job_id)
         s.flush()
-        return job_out(j, j.recording.original_filename)
+        return job_out(j, j.recording.original_filename if j.recording else None)
 
 
 # --------------------------------------------------------------------------- events

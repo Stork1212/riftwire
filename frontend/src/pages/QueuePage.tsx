@@ -66,7 +66,11 @@ export function QueuePage() {
                 {data.items.map((j) => (
                   <tr key={j.id} data-testid={`job-${j.id}`}>
                     <td className="nowrap"><strong>{j.job_type}</strong></td>
-                    <td className="cell-primary"><Link className="row-link" to={`/recordings/${j.recording_id}`}>{j.recording_filename ?? j.recording_id}</Link></td>
+                    <td className="cell-primary">
+                      {j.recording_id
+                        ? <Link className="row-link" to={`/recordings/${j.recording_id}`}>{j.recording_filename ?? j.recording_id}</Link>
+                        : <Link className="row-link" to={`/sources/${j.source_id ?? ""}`}>Source link (not acquired yet)</Link>}
+                    </td>
                     <td className="cell-status">
                       <StatusBadge status={j.status} />
                       <ProgressBar value={j.progress_percent} label={`${j.job_type} progress`}
