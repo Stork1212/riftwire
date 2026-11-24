@@ -130,5 +130,11 @@ Each suspected backend defect was first written as a regression test and run aga
 | Smoke (test-only 1 GiB floor) | 28 PASS + 1 macOS-only SKIP |
 | Regression proof | 6 of the 9 new backend tests fail on `9cbe705` (the other 3 cover behaviour confirmed sound); the stale-response frontend test fails with the guard removed |
 
-**Not yet verified:** a Mac run of the corrected commit; a visual check of the dashboard
-in a real browser.
+**Mac run of `55ae624`** (evidence: `docs/acceptance/2026-11-24-macos-m2-55ae624/`):
+- **All stages exit 0;** clean tree before and after.
+- **Tests:** backend **374 passed, 3 skipped** (second filesystem), including the macOS
+  identity test. Bench 47 + 1, frontend **35/35**, build OK.
+- **Acceptance:** **28/28** at the 60 GiB floor.
+- **Smoke:** **30/30**.
+
+**Not yet verified:** a visual check of the dashboard in a real browser.

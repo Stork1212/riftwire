@@ -1,0 +1,66 @@
+From https://github.com/Stork1212/riftwire
+ * branch            phase2/m2-rights-sources -> FETCH_HEAD
+   9cbe705..55ae624  phase2/m2-rights-sources -> origin/phase2/m2-rights-sources
+Already on 'phase2/m2-rights-sources'
+Your branch is behind 'origin/phase2/m2-rights-sources' by 2 commits, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+Updating 9cbe705..55ae624
+Fast-forward
+ .../versions/0005_recording_acquisition_method.py  |  34 ++++
+ backend/app/api/rights_routes.py                   |   3 +-
+ backend/app/models/entities.py                     |   3 +
+ backend/app/schemas/rights.py                      |   2 +
+ backend/app/services/acquisition.py                |   1 +
+ backend/app/services/rights.py                     | 102 ++++++++--
+ backend/app/services/source_urls.py                |   3 +
+ backend/tests/test_rights.py                       |   2 +-
+ backend/tests/test_rights_review.py                | 146 +++++++++++++++
+ docs/ARCHITECTURE.md                               |   6 +
+ docs/M2_REVIEW.md                                  |  63 ++++++-
+ docs/M3_INTERFACE_DIRECTION.md                     |  72 +++++++
+ docs/PROJECT_STATUS.md                             |  24 ++-
+ .../2026-11-24-macos-m2-9cbe705/README.md          |  14 ++
+ .../2026-11-24-macos-m2-9cbe705/acceptance.json    | 207 +++++++++++++++++++++
+ .../2026-11-24-macos-m2-9cbe705/acceptance.txt     |  32 ++++
+ .../2026-11-24-macos-m2-9cbe705/df-after.txt       |   2 +
+ .../2026-11-24-macos-m2-9cbe705/df-before.txt      |   2 +
+ .../2026-11-24-macos-m2-9cbe705/environment.txt    |  17 ++
+ .../acceptance/2026-11-24-macos-m2-9cbe705/git.txt |   6 +
+ .../2026-11-24-macos-m2-9cbe705/smoke-cleanup.txt  |   4 +
+ .../2026-11-24-macos-m2-9cbe705/smoke.txt          |  71 +++++++
+ .../2026-11-24-macos-m2-9cbe705/summary.txt        |  36 ++++
+ .../2026-11-24-macos-m2-9cbe705/test.txt           |  51 +++++
+ .../2026-11-24-macos-m2-9cbe705/tree-after.txt     |   0
+ .../2026-11-24-macos-m2-9cbe705/verify-script.sh   |  83 +++++++++
+ .../2026-11-24-macos-m2-9cbe705/warnings.txt       |   4 +
+ frontend/src/components/ActionableError.tsx        |  31 +++
+ frontend/src/components/Layout.tsx                 |  43 +++--
+ frontend/src/components/LinkResolver.tsx           | 185 ++++++++++++++++++
+ frontend/src/components/rights.tsx                 |  25 ++-
+ frontend/src/pages/ImportPage.tsx                  |  48 ++++-
+ frontend/src/pages/SourceDetailPage.tsx            |   7 +-
+ frontend/src/pages/SourcesPage.tsx                 | 115 ++----------
+ frontend/src/styles.css                            |   7 +
+ frontend/src/test/rights.test.tsx                  | 124 +++++++++++-
+ frontend/src/types/rights.ts                       |   2 +
+ scripts/acceptance.py                              |   4 +-
+ 38 files changed, 1425 insertions(+), 156 deletions(-)
+ create mode 100644 backend/alembic/versions/0005_recording_acquisition_method.py
+ create mode 100644 backend/tests/test_rights_review.py
+ create mode 100644 docs/M3_INTERFACE_DIRECTION.md
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/README.md
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/acceptance.json
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/acceptance.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/df-after.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/df-before.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/environment.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/git.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/smoke-cleanup.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/smoke.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/summary.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/test.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/tree-after.txt
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/verify-script.sh
+ create mode 100644 docs/acceptance/2026-11-24-macos-m2-9cbe705/warnings.txt
+ create mode 100644 frontend/src/components/ActionableError.tsx
+ create mode 100644 frontend/src/components/LinkResolver.tsx
