@@ -18,7 +18,23 @@ import sys
 import time
 
 
+def _version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("mlx-whisper")
+    except Exception:  # noqa: BLE001 - the version is informational only
+        import mlx_whisper
+
+        return str(getattr(mlx_whisper, "__version__", "unknown"))
+
+
 def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int:
+    # The model is the installed folder; never fall back to a hub download.
+    if not os.path.isfile(os.path.join(model_dir, "weights.npz")):
+        print(f"model not found at {model_dir}; nothing is downloaded", file=sys.stderr)
+        return 66
+    os.environ["HF_HUB_OFFLINE"] = "1"
     t0 = time.perf_counter()
     import mlx.core as mx
     import mlx_whisper
@@ -45,7 +61,7 @@ def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int
         peak = int(f())
     out = {"words": words, "segments": segments, "text": result.get("text", ""),
            "language": result.get("language"),
-           "engine_version": f"mlx-whisper {mlx_whisper.__version__}",
+           "engine_version": f"mlx-whisper {_version()}",
            "mlx_version": getattr(mx, "__version__", None), "mlx_peak_bytes": peak,
            "load_s": round(t_load - t0, 3), "transcribe_s": round(t_done - t_load, 3)}
     tmp = out_json + ".tmp"
