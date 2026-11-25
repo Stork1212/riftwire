@@ -36,10 +36,10 @@ independently reviewed, and needs the owner's approval before it starts.
 | M0 | 2 | Benchmark spike (transcription engine/model, signal throughput) | **Complete**: [`BENCHMARKS.md`](BENCHMARKS.md), tag `v0.2.0-m0` |
 | M1 | 2 | Storage architecture: locations, volume identity, offline handling, persistent per-volume reservations, cross-volume transfers, verified migration | **Merged** (PR #9) after independent review; verified on the Mac (internal disk); [physical-SSD acceptance pending](M1_STORAGE_CHECKLIST.md#11-acceptance-checks-that-depend-on-the-external-ssd-deferred) |
 | M2 | 2 | Rights & sources | **Merged** (PR #12, `d9c878e`; R1–R6) |
-| M3 | 2 | Permitted acquisition | **Infrastructure in PR #14** (approved for inclusion, in review): URL `ACQUIRE` job; public availability is not permission (owner, 2026-11-25); fetching off by default. Stand-in downloader only; real downloads and `yt-dlp` not authorized |
-| M4 | 2 | Transcription & signals (MLX Whisper `base` default; `small` optional after chunked memory testing; raw timestamps preserved) | **Next.** [Shared transcript architecture](TRANSCRIPT_ARCHITECTURE_PROPOSAL.md) approved in principle (2026-11-25); detailed plan after PR #14 merges |
-| M5 | 3 | AI providers & prompts ($0 budget; Ollama deferred) | Not started |
-| M6 | 3 | Highlight detection & validation | Not started. **Rule-based baseline** in PR #14 (frame activity + keyword cues), approved for inclusion; not contextual AI |
+| M3 | 2 | Permitted acquisition | **Prototype infrastructure merged** (PR #14, `93a1534`): URL `ACQUIRE` job; public availability is not permission; fetching off by default. Stand-in downloader only; real downloads and `yt-dlp` not authorized |
+| M4 | 2 | Transcription & signals (MLX Whisper `base` default; `small` optional after chunked memory testing; raw timestamps preserved) | **In progress** (`phase2/m4-transcription`); plan in PR #15; fixtures in PR #17 |
+| M5 | 3 | AI providers & prompts ($0 budget) | **Preparation in PR #16**: Ollama + Qwen3.5 4B approved and verified natively (synthetic gate passed); queue integration next |
+| M6 | 3 | Highlight detection & validation | Not started. Rule-based baseline merged (PR #14; not AI); validator and editorial scoring in PR #16 |
 | M7 | 3 | Review dashboard & exports | Not started. Prototype `clips.txt` review and the 35/65 Short export (with the approved 2.5 s outro) in PR #14 |
 
 **M0 findings that shape later milestones** (details in [`BENCHMARKS.md`](BENCHMARKS.md)):

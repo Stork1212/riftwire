@@ -33,8 +33,12 @@ approved): M0–M4 belong to Phase 2, M5–M7 to Phase 3. Phase numbering is unc
   verification. Its **physical-SSD acceptance gate stays open** until the SanDisk SSD
   arrives ([`docs/M1_STORAGE_CHECKLIST.md`](docs/M1_STORAGE_CHECKLIST.md) §11); no
   `v0.3.0-m1` tag until then.
-- **M2 (Rights & Source Management):** approved (decisions R1–R6, `docs/M2_RIGHTS_SOURCES_PLAN.md`
-  §12); in progress.
+- **M2 (Rights & Source Management):** merged (PR #12, `d9c878e`).
+- **M3 (prototype acquisition infrastructure, highlight baseline, Shorts prototype):** merged
+  (PR #14, `93a1534`). Real platform downloads, `yt-dlp` and publishing are **not**
+  authorized; YouTube channel verification is received, but publishing waits for Phase 5.
+- **M4 (shared transcription & signals):** in progress. **M5:** preparation in PR #16
+  (Ollama + Qwen3.5 4B approved; $0 budget). **M6:** after M5.
 - Each milestone needs owner approval before it starts. **Do not implement work from a later
   milestone or phase early.**
 
