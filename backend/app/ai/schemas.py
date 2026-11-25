@@ -140,3 +140,54 @@ def response_json_schema() -> dict:
     """The JSON schema sent to providers that support constrained output (Ollama
     ``format``, OpenAI-compatible ``response_format``). Validation never relies on it."""
     return HighlightEval.model_json_schema(by_alias=True)
+
+
+def output_contract() -> str:
+    """The answer format spelled out for the prompt, generated from the schema itself so the
+    two cannot drift. Needed whenever the engine cannot constrain output (the model never
+    sees ``format`` then): the first native run with no contract produced invented field
+    names on every task that had highlights."""
+    fields = [
+        ("window_id", 'string: a WINDOW id from the evidence, e.g. "c:2"'),
+        ("start_id", "string: id of the first word/event of the clip, inside that window"),
+        ("end_id", "string: id of the last word/event of the clip, inside that window"),
+        ("category", "one of: " + ", ".join(CATEGORIES)),
+        ("what_happens", "string, at most 400 characters"),
+        ("why_entertaining", "string, at most 400 characters"),
+        ("standalone", "true or false"),
+        ("clear_start_and_end", "true or false"),
+        ("title", "string, at most 90 characters"),
+        ("hook", "string, at most 120 characters"),
+        ("scores", "object with integer 0-100 values for exactly these keys: "
+                   + ", ".join(SCORE_COMPONENTS)),
+        ("confidence", "number between 0 and 1"),
+        ("evidence", "list of 1 to 12 objects, each {\"ids\": [1 to 40 evidence ids], "
+                     "\"claim\": string (at most 240 characters), \"basis\": one of "
+                     + ", ".join(BASES) + ", optional \"quote\": exact words from the cited "
+                     "word ids}"),
+        ("uncertainty", "string, at most 300 characters (may be empty)"),
+    ]
+    skeleton = {
+        "schema": HIGHLIGHT_SCHEMA,
+        "candidates": [{
+            "window_id": "<window id>", "start_id": "<word or event id>",
+            "end_id": "<word or event id>", "category": "<category>",
+            "what_happens": "<text>", "why_entertaining": "<text>", "standalone": True,
+            "clear_start_and_end": True, "title": "<text>", "hook": "<text>",
+            "scores": {k: 0 for k in SCORE_COMPONENTS}, "confidence": 0.0,
+            "evidence": [{"ids": ["<id>", "<id>"], "claim": "<text>",
+                          "basis": "transcript"}],
+            "uncertainty": "<text>"}],
+        "rejected_window_ids": ["<window id>", "..."],
+    }
+    lines = [
+        "Top level: an object with exactly three keys: \"schema\" (the string "
+        f"\"{HIGHLIGHT_SCHEMA}\"), \"candidates\" (a list of 0 to 20 candidate objects) and "
+        "\"rejected_window_ids\" (a list of window ids you did not choose).",
+        "Each candidate object has exactly these keys, and no others:",
+        *[f"- {name}: {desc}" for name, desc in fields],
+        "Shape (placeholders, not real values):",
+        json.dumps(skeleton, separators=(", ", ": ")),
+        "Output only that JSON object: no prose, no code fences, no extra keys.",
+    ]
+    return "\n".join(lines)

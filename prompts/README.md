@@ -12,4 +12,5 @@ one `## system` and one `## user` section. Placeholders are `{{name}}`.
 
 | id | version | file | status |
 |---|---|---|---|
-| `gaming.gta.v1` | 1 | `gaming/gta/highlight.v1.md` | initial; not yet evaluated on real footage |
+| `gaming.gta.v1` | 1 | `gaming/gta/highlight.v1.md` | superseded: no explicit output contract; failed 8/10 synthetic tasks unconstrained (Mac, 2026-11-25) |
+| `gaming.gta.v2` | 2 | `gaming/gta/highlight.v2.md` | current: adds the output contract generated from the schema (`{{output_contract}}`) |

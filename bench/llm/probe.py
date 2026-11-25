@@ -104,7 +104,7 @@ def run(model: str, base_url: str) -> list[dict]:
     def provider_path():
         task = TASKS[0]
         bundle, _ = build(task)
-        out = evaluate(bundle, p, prompts.load("gaming.gta.v1"),
+        out = evaluate(bundle, p, prompts.load("gaming.gta.v2"),
                        target_count=task.target_count, channel="rumbleframe",
                        max_repairs=1, timeout_s=300)
         detail = {"outcome": out.status, "error": out.error,

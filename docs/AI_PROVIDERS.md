@@ -88,6 +88,27 @@ recommendation backed by benchmark evidence.
   `~/.ollama/id_ed25519` (used for ollama.com accounts). Cloud features are off. The key
   is left in place and noted.
 
+## Second native run (05:29Z, `9f7b499`): inference verified, benchmark failed
+- **Inference works:**
+  - plain text, 26 generations, 0 provider errors;
+  - output about 36 tokens/s, prompt about 735 tokens/s;
+  - Ollama's resident size peaked at 4.45 GB;
+  - memory was back to 60 % free after server shutdown.
+- **Constrained output:** neither JSON mode nor JSON-schema mode is available on this
+  engine build.
+- **Grounded tasks: 2/10 accepted,** and both were the empty-answer task. With no output
+  constraint, prompt v1 never showed the field list, so the model invented one.
+- **Fix:** prompt **`gaming.gta.v2`**, which adds an output contract generated from the
+  schema (`schemas.output_contract()`).
+- **Gate:** the benchmark now has a second gate:
+  - at least 80 % accepted;
+  - at least one accepted answer that selects a highlight;
+  - no trap selected;
+  - no unsupported claim.
+
+  The script reports **inference** and **benchmark** separately.
+- **Evidence:** `docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/`.
+
 ## Benchmark (`bench/llm/llm_bench.py`)
 **What it measures:**
 - the model's identity and digest;

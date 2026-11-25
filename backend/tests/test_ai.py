@@ -360,3 +360,51 @@ def test_benchmark_gate_fails_on_provider_errors_or_zero_accepted(stub, tmp_path
     good = {"summary": {"inference_verified": True, "provider_errors": 0, "accepted": 3}}
     assert llm_bench.gate(good) == []
     assert llm_bench.gate({"error": "model_missing: x"})
+
+
+# ------------------------------------------- regressions from the second Mac run (05:29Z)
+def test_output_contract_lists_exactly_the_schema_fields():
+    """Unconstrained, the model only knows the format from the prompt; with prompt v1 it
+    invented "id", "description" and nested objects on every highlight task."""
+    from app.ai.schemas import CATEGORIES, SCORE_COMPONENTS, Candidate, output_contract
+    text = output_contract()
+    for name in Candidate.model_fields:
+        assert f"- {name}:" in text, name
+    assert all(c in text for c in CATEGORIES) and all(k in text for k in SCORE_COMPONENTS)
+    assert '"rejected_window_ids"' in text and "1 to 12 objects" in text
+
+
+def test_prompt_v2_carries_the_contract_and_v1_stays_loadable():
+    from app.ai.schemas import output_contract
+    v2 = prompts.load("gaming.gta.v2")
+    assert v2.version == 2 and v2.sha256 != prompts.load("gaming.gta.v1").sha256
+    system, _ = v2.render(evidence="x", target_count="3", output_contract=output_contract(),
+                          channel_voice=prompts.channel_voice("rumbleframe"))
+    assert "- window_id:" in system and "{{" not in system
+    with pytest.raises(prompts.PromptError, match="output_contract"):
+        v2.render(evidence="x", target_count="3", channel_voice="v")
+
+
+def test_analysis_sends_the_contract_and_keeps_raw_heads():
+    b = bundle()
+    prov = _Scripted(['{"schema": "highlight_eval.v1", "candidates": [{"id": "c:2"}]}',
+                      json.dumps(answer(b))])
+    out = analyze.evaluate(b, prov, prompts.load("gaming.gta.v2"), target_count=3)
+    assert "- window_id:" in prov.requests[0].system
+    assert "output contract" in prov.requests[1].user
+    assert out.status == "accepted" and out.attempts[0].response_head.startswith('{"schema"')
+
+
+def test_benchmark_gate_rejects_empty_only_acceptance():
+    import llm_bench
+    second_run = {"summary": {"tasks_run": 10, "accepted": 2, "accepted_with_candidates": 0,
+                              "highlight_tasks": 8, "trap_selected": 0,
+                              "unsupported_claims": 0}}
+    reasons = llm_bench.benchmark_gate(second_run)
+    assert any("acceptance 2/10" in r for r in reasons)
+    assert any("no accepted answer selected a highlight" in r for r in reasons)
+    good = {"summary": {"tasks_run": 10, "accepted": 9, "accepted_with_candidates": 7,
+                        "highlight_tasks": 8, "trap_selected": 0, "unsupported_claims": 0}}
+    assert llm_bench.benchmark_gate(good) == []
+    trap = {"summary": {**good["summary"], "trap_selected": 1}}
+    assert any("injection trap" in r for r in llm_bench.benchmark_gate(trap))

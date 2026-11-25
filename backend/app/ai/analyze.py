@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 
 from app.ai import prompts as prompt_registry
 from app.ai.providers.base import Identity, Provider, ProviderError, Request
-from app.ai.schemas import EvidenceBundle, HighlightEval, response_json_schema
+from app.ai.schemas import EvidenceBundle, HighlightEval, output_contract, response_json_schema
 from app.ai.validate import Clip, validate
 
 
@@ -25,6 +25,7 @@ class Attempt:
     warnings: list[str]
     metrics: dict
     response_chars: int
+    response_head: str = ""          # first 4 000 characters, kept for diagnosis
 
 
 @dataclass
@@ -61,7 +62,8 @@ def evaluate(bundle: EvidenceBundle, provider: Provider, prompt: prompt_registry
     gen = prompt.meta.get("generation", {})
     system, user = prompt.render(evidence=prompt_registry.render_evidence(bundle),
                                  target_count=str(target_count),
-                                 channel_voice=prompt_registry.channel_voice(channel))
+                                 channel_voice=prompt_registry.channel_voice(channel),
+                                 output_contract=output_contract())
     mins = int(prompt.meta.get("defaults", {}).get("min_clip_s", 8)) * 1000
     maxs = int(prompt.meta.get("defaults", {}).get("max_clip_s", 60)) * 1000
     out = Outcome(status="provider_error", identity=identity, prompt_id=prompt.id,
@@ -82,13 +84,14 @@ def evaluate(bundle: EvidenceBundle, provider: Provider, prompt: prompt_registry
         res = validate(resp.text, bundle, min_clip_ms=mins, max_clip_ms=maxs)
         out.raw_last = resp.text
         out.attempts.append(Attempt(n, res.ok, res.errors, res.warnings, resp.metrics,
-                                    len(resp.text)))
+                                    len(resp.text), resp.text[:4000]))
         if res.ok:
             out.status, out.value, out.clips = "accepted", res.value, res.clips
             return out
         message = (user + "\n\nYour previous answer was rejected for these reasons:\n- "
                    + "\n- ".join(res.errors[:15])
-                   + "\nReturn one corrected JSON object that fixes every reason.")
+                   + "\nReturn one corrected JSON object that fixes every reason and follows "
+                   "the output contract exactly (same keys, nothing else).")
     out.status = "failed_validation"
     out.error = "; ".join(out.attempts[-1].errors[:5])
     return out

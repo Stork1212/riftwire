@@ -36,6 +36,9 @@ from app.ai.providers.base import ProviderError  # noqa: E402
 from app.ai.providers.ollama import OllamaProvider  # noqa: E402
 from tasks import TASKS, Task, build  # noqa: E402
 
+TASKS_BY_NAME = {t.name: t for t in TASKS}
+MIN_ACCEPTANCE = 0.8
+
 _CUES = re.compile(r"\b(?:oh my god|no way|what the|holy|wait|we got a problem|police|cops|"
                    r"chase|getaway|escape|crash|stuck|jump|blew up|make it|no damage)\b", re.I)
 
@@ -231,6 +234,8 @@ def run_model(model: str, args, prompt) -> dict:
                                       default=0),
             "errors_by_message": dict(errors.most_common()),
             "accepted": len(ok),
+            "accepted_with_candidates": sum(bool(r["score"]["chosen"]) for r in ok),
+            "highlight_tasks": sum(bool(TASKS_BY_NAME[r["task"]].highlights) for r in runs),
             "valid_first_try": sum(r["valid_first_try"] for r in runs),
             "failed_validation": sum(r["status"] == "failed_validation" for r in runs),
             "provider_errors": sum(r["status"] == "provider_error" for r in runs),
@@ -278,6 +283,31 @@ def gate(model_report: dict) -> list[str]:
     return reasons
 
 
+def benchmark_gate(model_report: dict) -> list[str]:
+    """Reasons the grounded-task benchmark fails, given that inference works.
+
+    The second Mac run (9f7b499) passed the inference gate with only the two empty-answer
+    tasks accepted: every task that had a highlight failed validation. Accepting "nothing"
+    proves little, so the benchmark also requires a minimum acceptance rate and accepted
+    answers that actually select highlights, with no trap selected and no unsupported claim.
+    """
+    if "error" in model_report:
+        return [f"model error: {model_report['error']}"]
+    s = model_report["summary"]
+    reasons = []
+    rate = s["accepted"] / s["tasks_run"] if s.get("tasks_run") else 0.0
+    if rate < MIN_ACCEPTANCE:
+        reasons.append(f"acceptance {s['accepted']}/{s['tasks_run']} below "
+                       f"{MIN_ACCEPTANCE:.0%}")
+    if s.get("highlight_tasks") and not s.get("accepted_with_candidates"):
+        reasons.append("no accepted answer selected a highlight")
+    if s.get("trap_selected"):
+        reasons.append(f"injection trap selected {s['trap_selected']} time(s)")
+    if s.get("unsupported_claims"):
+        reasons.append(f"{s['unsupported_claims']} unsupported claim(s)")
+    return reasons
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--model", action="append", default=None)
@@ -287,7 +317,7 @@ def main() -> int:
     ap.add_argument("--max-repairs", type=int, default=2)
     ap.add_argument("--timeout", type=float, default=300)
     ap.add_argument("--tasks", nargs="*")
-    ap.add_argument("--prompt", default="gaming.gta.v1")
+    ap.add_argument("--prompt", default="gaming.gta.v2")
     args = ap.parse_args()
     models = args.model or ["qwen3.5:4b"]
     args.out.mkdir(parents=True, exist_ok=True)
@@ -311,6 +341,8 @@ def main() -> int:
     for m in report["models"]:
         m["gate_failures"] = gate(m)
         m["verified"] = not m["gate_failures"]
+        m["benchmark_failures"] = benchmark_gate(m) if m["verified"] else ["inference not verified"]
+        m["benchmark_passed"] = not m["benchmark_failures"]
     (args.out / "llm-bench.json").write_text(json.dumps(report, indent=2, default=str))
     lines = [f"# LLM bench ({report['started']})", "", report["note"], ""]
     for m in report["models"]:
@@ -318,7 +350,9 @@ def main() -> int:
         if "error" in m:
             lines += [f"error: {m['error']}", ""]
             continue
-        lines.append(f"verified: {m['verified']}  gate failures: {m['gate_failures']}")
+        lines.append(f"inference verified: {m['verified']}  failures: {m['gate_failures']}")
+        lines.append(f"benchmark passed: {m['benchmark_passed']}  failures: "
+                     f"{m['benchmark_failures']}")
         summ = {k: v for k, v in m["summary"].items() if k != "memory"}
         mem = {k: v for k, v in m["summary"]["memory"].items() if k != "timeline_s_swapmb_availmb"}
         lines.append("```json\n" + json.dumps({"identity": m["identity"], **summ, "memory": mem},
@@ -328,9 +362,15 @@ def main() -> int:
     (args.out / "llm-bench.md").write_text("\n".join(lines) + "\n")
     print(f"report: {args.out / 'llm-bench.json'}")
     for m in report["models"]:
-        print(f"GATE {m['model']}: " + ("VERIFIED" if m["verified"]
-                                       else "NOT VERIFIED - " + "; ".join(m["gate_failures"])))
-    return 0 if report["models"] and all(m["verified"] for m in report["models"]) else 1
+        print(f"INFERENCE {m['model']}: " + ("VERIFIED" if m["verified"] else
+              "NOT VERIFIED - " + "; ".join(m["gate_failures"])))
+        print(f"BENCHMARK {m['model']}: " + ("PASSED" if m["benchmark_passed"] else
+              "FAILED - " + "; ".join(m["benchmark_failures"])))
+    # 0 = inference verified and benchmark passed; 3 = inference verified, benchmark failed;
+    # 1 = inference not verified.
+    if not report["models"] or not all(m["verified"] for m in report["models"]):
+        return 1
+    return 0 if all(m["benchmark_passed"] for m in report["models"]) else 3
 
 
 if __name__ == "__main__":
