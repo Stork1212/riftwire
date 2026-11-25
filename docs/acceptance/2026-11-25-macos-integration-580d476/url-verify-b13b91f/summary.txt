@@ -1,0 +1,36 @@
+RIFTWIRE URL-acquisition Mac verification  started 2026-11-25T02:42:57Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/url-verify-b13b91f-20261125T024257Z
+working tree: clean
+HEAD: b13b91f53fb63d023c7262f253670109f7b5d471 (matches)
+free space before: 127.60 GiB (floor 60 GiB, abort below 62 GiB)
+
+== test: scripts/test.sh
+   exit code 0  (95 s)  free now 127.47 GiB
+
+== acceptance: backend/.venv/bin/python scripts/acceptance.py --port 18901 --min-free-gib 60 --report /Users/gregstork/Claude/riftwire-env/url-verify-b13b91f-20261125T024257Z/acceptance.json
+   exit code 0  (31 s)  free now 127.48 GiB
+stopping leftover smoke-test instance: smoke-data-20261124T212303Z
+
+== smoke: scripts/smoke_test.sh /Users/gregstork/Claude/riftwire-env/url-verify-b13b91f-20261125T024257Z/smoke-report.txt
+   exit code 0  (10 s)  free now 127.49 GiB
+
+free space after: 127.49 GiB (before 127.60 GiB)
+
+== counts
+417 passed, 3 skipped, 1 warning in 66.80s (0:01:06)
+47 passed, 1 skipped in 17.35s
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m38 passed[39m[22m[90m (38)[39m
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m38 passed[39m[22m[90m (38)[39m
+29/29 steps passed
+smoke PASS lines: 30
+smoke FAIL lines: 0
+smoke SKIP lines: 0
+
+== warnings (all logs)
+warning lines: 4  (details in warnings.txt)
+working tree after: clean
+
+RESULT  test=0  acceptance=0  smoke=0
+ALL PASSED

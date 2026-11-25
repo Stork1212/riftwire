@@ -77,9 +77,24 @@ class Settings(BaseSettings):
     # Evidence files (supporting documentation for rights records), internal disk.
     evidence_max_file_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
     evidence_max_total_bytes: int = Field(default=1 * GIB, gt=0)
-    # Global switch for generic URL fetching (acquisition method url_fetch). Off by default
-    # (owner decision R1); M2 implements no fetcher either way.
+    # Global switch for URL fetching (acquisition method url_fetch, services/url_download).
+    # Off by default (owner decision 2026-11-25, superseding 2026-11-24). Even when on, a
+    # link is fetched only under a user-confirmed record that allows ``acquire`` by
+    # ``url_fetch`` with written platform permission attached; public availability is
+    # never permission.
     url_acquisition_enabled: bool = False
+
+    clip_whisper_python: Path | None = None
+    clip_whisper_model: Path | None = None
+    clip_outro_path: Path | None = None
+    # Outro handling (services/outro.py). The duration always comes from the asset; this
+    # optional brand value is validated against it (a mismatch refuses, never trims).
+    clip_outro_duration_seconds: float | None = Field(default=None, gt=0, le=10)
+    # continue: gameplay audio runs under the outro, outro audio mixed beneath (PR #6
+    # handoff). outro: gameplay audio ends at the cut; the outro's audio or silence plays.
+    clip_outro_audio: Literal["continue", "outro"] = "continue"
+    clip_outro_fade_ms: int = Field(default=500, ge=0, le=10_000)
+    clip_outro_sting_gain_db: float = Field(default=-6.0, ge=-60, le=0)
 
     thumbnail_width: int = Field(default=480, ge=16, le=3840)
     thumbnail_height: int = Field(default=270, ge=16, le=2160)

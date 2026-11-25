@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.api.routes import CFG, DB, Limit, Offset, rec_out, require_schema
+from app.api.routes import CFG, DB, Limit, Offset, job_out, rec_out, require_schema
 from app.core.errors import NotFoundError, ValidationFailed
 from app.db.base import utcnow
 from app.models import (
@@ -20,6 +20,8 @@ from app.models import (
     Creator,
     CreatorChannel,
     Game,
+    Job,
+    JobType,
     ProvenanceEvent,
     Recording,
     RightsEvidence,
@@ -29,7 +31,7 @@ from app.models import (
     Source,
     SourceAssignment,
 )
-from app.schemas.api import Page
+from app.schemas.api import AcquireOut, Page
 from app.schemas.rights import (
     AcquisitionMethodOut,
     AssignmentsIn,
@@ -61,7 +63,7 @@ from app.schemas.rights import (
     SourcePatch,
     SupersedeIn,
 )
-from app.services import acquisition, evidence, rights, sources
+from app.services import acquisition, evidence, queue, rights, sources, url_download
 from app.services.sources import channel_coverage
 
 m2 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_schema)])
@@ -110,7 +112,8 @@ def record_out(s: Session, r: RightsRecord) -> RightsRecordOut:
         basis=r.basis, coverage=r.coverage,
         scope=scope.model_dump(mode="json") if scope else None,
         scope_sha256=r.scope_sha256, valid_from=r.valid_from, valid_until=r.valid_until,
-        attestation_text=r.attestation_text, attested_at=r.attested_at,
+        attestation_text=r.attestation_text, attested_by=r.attested_by,
+        attested_at=r.attested_at,
         superseded_by_id=r.superseded_by_id, revoked_at=r.revoked_at,
         revoked_reason=r.revoked_reason, created_at=r.created_at,
         state=rights.record_state(r, utcnow()),
@@ -342,8 +345,9 @@ def evidence_file(record_id: str, evidence_id: str, db: DB, cfg: CFG):
 # --------------------------------------------------------------------------- sources
 
 @m2.get("/acquisition-methods", response_model=list[AcquisitionMethodOut])
-def acquisition_methods():
-    return [AcquisitionMethodOut(method=p.method, available=p.available,
+def acquisition_methods(cfg: CFG):
+    return [AcquisitionMethodOut(method=p.method,
+                                 available=acquisition.is_available(p.method, cfg),
                                  description=p.description)
             for p in acquisition.PROVIDERS.values()]
 
@@ -389,13 +393,14 @@ def list_sources(db: DB, limit: Limit = 50, offset: Offset = 0,
 
 
 @m2.post("/sources", response_model=SourceOut, status_code=201)
-def create_source(body: SourceIn, db: DB):
+def create_source(body: SourceIn, db: DB, cfg: CFG):
     with db.session() as s:
         src = sources.create_source(
             s, url=body.url, kind=body.kind, creator_channel_id=body.creator_channel_id,
             game_id=body.game_id, title_user=body.title_user,
             acquisition_method=body.acquisition_method,
             brand_channel_ids=body.brand_channel_ids)
+        url_download.queue_for_new_source(s, cfg, src)
         return source_out(s, src)
 
 
@@ -413,7 +418,16 @@ def get_source(source_id: str, db: DB, cfg: CFG):
             acquire=decision_out(rights.evaluate(
                 s, src.id, "acquire", url_acquisition_enabled=cfg.url_acquisition_enabled)),
             records=[record_out(s, r) for r in recs],
-            recordings=[rec_out(r) for r in recordings])
+            recordings=[rec_out(r) for r in recordings],
+            acquire_job=_acquire_job(s, src.id))
+
+
+def _acquire_job(s: Session, source_id: str):
+    j = s.scalar(select(Job).where(Job.source_id == source_id,
+                                   Job.job_type == JobType.ACQUIRE.value))
+    if j is None:
+        return None
+    return job_out(j, j.recording.original_filename if j.recording else None)
 
 
 @m2.patch("/sources/{source_id}", response_model=SourceOut)
@@ -427,6 +441,17 @@ def put_assignments(source_id: str, body: AssignmentsIn, db: DB):
     with db.session() as s:
         sources.set_assignments(s, source_id, body.brand_channel_ids)
         return source_out(s, sources.get_source(s, source_id))
+
+
+@m2.post("/sources/{source_id}/acquire", response_model=AcquireOut, status_code=202)
+def acquire_source(source_id: str, db: DB, cfg: CFG):
+    """Queue fetching the saved link into a recording linked to this source. Idempotent:
+    the source's existing ACQUIRE job is returned (retry a failed one from the queue)."""
+    with db.session() as s:
+        job = queue.enqueue_acquire(s, cfg, source_id, cfg.job_max_attempts)
+        rec = s.get(Recording, job.recording_id) if job.recording_id else None
+        return AcquireOut(source_id=source_id, job=job_out(job, rec and rec.original_filename),
+                          recording=rec_out(rec) if rec else None)
 
 
 @m2.post("/sources/{source_id}/recordings", response_model=SourceOut)

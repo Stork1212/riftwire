@@ -17,6 +17,7 @@ REPORT="${1:-$ENVDIR/smoke-$STAMP.txt}"
 export RIFTWIRE_DATA_DIR="$ENVDIR/smoke-data-$STAMP"
 export RIFTWIRE_API_PORT="${RIFTWIRE_SMOKE_PORT:-8000}"
 export RIFTWIRE_CAFFEINATE=1
+export RIFTWIRE_URL_ACQUISITION_ENABLED=false   # an isolated test never contacts a platform
 PY="$ROOT/backend/.venv/bin/python"
 BASE="http://127.0.0.1:$RIFTWIRE_API_PORT"
 MEDIA="$RIFTWIRE_DATA_DIR-media"

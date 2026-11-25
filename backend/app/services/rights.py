@@ -58,6 +58,11 @@ from app.models import (
 
 Use = Literal["acquire", "analyze", "edit", "publish"]
 USES: tuple[str, ...] = ("acquire", "analyze", "edit", "publish")
+# ``public_web`` is a classification of footage, never permission (owner decision
+# 2026-11-25, superseding the download-by-default policy of 2026-11-24). Records with this
+# basis were written automatically by ``b13b91f``; they stay as immutable history and
+# authorize nothing, whatever their stored scope says. No new ones are written.
+PUBLIC_WEB_USES: frozenset[str] = frozenset()
 
 # Which use each job type needs. ``None`` = technical housekeeping, not rights-gated (R2).
 # A test fails if a job type is missing here, so a new gated job type cannot be added
@@ -66,6 +71,11 @@ JOB_USE: dict[JobType, str | None] = {
     JobType.INGEST: None,
     JobType.METADATA: None,
     JobType.THUMBNAIL: None,
+    # Gated, but at the source level: the job has no recording yet. ``enqueue_acquire`` and
+    # ``url_download.acquire`` check ``acquire`` by ``url_fetch`` before queueing, before
+    # the download, after it, and again in the transaction that links the recording.
+    JobType.ACQUIRE: None,
+    JobType.HIGHLIGHT_SCAN: "analyze",
 }
 
 # Reason codes (stable; API, UI, events).
@@ -94,6 +104,7 @@ MONETIZATION_NOT_PERMITTED = "monetization_not_permitted"
 CLIP_LENGTH_REQUIRED = "clip_length_required"
 CLIP_TOO_LONG = "clip_too_long"
 TERRITORIES_UNSUPPORTED = "territories_unsupported"
+CREATOR_PERMISSION_NEEDED = "creator_permission_needed"
 RIGHTS_CHANGED = "rights_changed"
 OBLIGATION_UNSATISFIED = "obligation_unsatisfied"
 
@@ -114,6 +125,9 @@ REASON_TEXT = {
     METHOD_NOT_PERMITTED: "this acquisition method is not permitted by the rights",
     METHOD_UNKNOWN: "how this recording's footage was obtained is not on record",
     PLATFORM_PERMISSION_MISSING: "URL fetching needs written platform permission on record",
+    CREATOR_PERMISSION_NEEDED: "this footage is only classified as public web footage; "
+                               "public availability is not permission to download, "
+                               "analyse, edit or publish it",
     URL_ACQUISITION_DISABLED: "URL fetching is switched off",
     PLATFORM_NOT_IN_SCOPE: "publishing to this platform is not covered",
     BRAND_CHANNEL_REQUIRED: "a brand channel must be specified",
@@ -133,7 +147,9 @@ REASON_ACTION = {
     SOURCE_BLOCKED: "Reactivate the source on its page if it was blocked by mistake.",
     NOT_ATTESTED_MEDIA: "Link the recording to a source (Import with a rights link, or "
                         "attach it on the source's page).",
-    NO_RIGHTS_RECORD: "Add a licence for this creator on Creators & Rights.",
+    NO_RIGHTS_RECORD: "Record the creator's permission or a licence on Creators & Rights. "
+                      "To fetch from the link, it must allow URL fetching and have written "
+                      "platform permission attached.",
     NOT_ATTESTED: "Attest the draft licence on Creators & Rights.",
     SUPERSEDED: "A newer version exists; it is used automatically if it covers this.",
     REVOKED: "Attest a new licence on Creators & Rights if permission was granted again.",
@@ -146,7 +162,12 @@ REASON_ACTION = {
                           "to allow this method.",
     METHOD_UNKNOWN: "On the source's page, record how this recording's footage was obtained.",
     PLATFORM_PERMISSION_MISSING: "Attach written platform permission as evidence first.",
-    URL_ACQUISITION_DISABLED: "URL fetching is not available in this version.",
+    CREATOR_PERMISSION_NEEDED: "Ask the creator; when they agree, record their permission "
+                               "on Creators & Rights (with written platform permission "
+                               "attached, to fetch from the link).",
+    URL_ACQUISITION_DISABLED: "URL fetching is switched off "
+                              "(RIFTWIRE_URL_ACQUISITION_ENABLED). Import the file you were "
+                              "given instead (Import → Local file).",
     PLATFORM_NOT_IN_SCOPE: "Edit the licence to allow this platform.",
     BRAND_CHANNEL_REQUIRED: "Choose the brand channel.",
     BRAND_CHANNEL_NOT_ASSIGNED: "Assign the source to this brand channel on its page.",
@@ -299,20 +320,22 @@ def _check_record(s: Session, r: RightsRecord, scope: Scope, source: Source, use
                   url_acquisition_enabled: bool) -> str:
     if use not in scope.uses:
         return USE_NOT_IN_SCOPE
+    declared = source.acquisition_method
     if use == "acquire":
-        m = method or source.acquisition_method
+        m = method or declared
         if m not in scope.acquisition_methods:
             return METHOD_NOT_PERMITTED
         if m == AcquisitionMethod.URL_FETCH.value:
             if not url_acquisition_enabled:
                 return URL_ACQUISITION_DISABLED
+            # Written platform permission is required for every basis (R1).
             if not _has_platform_permission(s, r.id):
                 return PLATFORM_PERMISSION_MISSING
         return OK
     # Media must have been obtained by a method these rights permit (R1). For a recording
     # this is its actual method, always known here (``evaluate_recording`` refuses when it
     # is not); the source's declared method applies only to source-level questions.
-    if (media_method or source.acquisition_method) not in scope.acquisition_methods:
+    if (media_method or declared) not in scope.acquisition_methods:
         return METHOD_NOT_PERMITTED
     if use in ("edit", "publish"):
         if scope.max_clip_seconds is not None:
@@ -358,6 +381,8 @@ def evaluate(s: Session, source_id: str | None, use: str, *, platform: str | Non
     params = {k: v for k, v in (("platform", platform), ("brand_channel_id", brand_channel_id),
                                 ("clip_ms", clip_ms), ("method", method),
                                 ("media_method", media_method)) if v is not None}
+    if url_acquisition_enabled and use == "acquire" and method == "url_fetch":
+        params["url_acquisition_enabled"] = True
 
     def no(reason: str, r: RightsRecord | None = None) -> Decision:
         return Decision(False, reason, use, source_id, r.id if r else None,
@@ -385,7 +410,9 @@ def evaluate(s: Session, source_id: str | None, use: str, *, platform: str | Non
     for r in active:
         scope: Scope | None = None
         creator = s.get(Creator, r.creator_id)
-        if creator is None or creator.archived_at is not None:
+        if r.basis == RightsBasis.PUBLIC_WEB.value and use not in PUBLIC_WEB_USES:
+            reason = CREATOR_PERMISSION_NEEDED        # a classification, never permission
+        elif creator is None or creator.archived_at is not None:
             reason = CREATOR_ARCHIVED
         else:
             scope = parse_scope(r.scope_json)
@@ -400,9 +427,21 @@ def evaluate(s: Session, source_id: str | None, use: str, *, platform: str | Non
                 obligations.append({"type": "attribution", "text": scope.attribution_required})
             return Decision(True, OK, use, source.id, r.id, r.lineage_id, r.version,
                             r.scope_sha256, tuple(obligations), params)
-        if first_refusal is None:
+        # The public_web record's "ask the creator" is the least informative answer: a
+        # creator's permission or licence explains its own refusal better.
+        if first_refusal is None or (first_refusal.reason == CREATOR_PERMISSION_NEEDED
+                                     and r.basis != RightsBasis.PUBLIC_WEB.value):
             first_refusal = no(reason, r)
     assert first_refusal is not None
+    if first_refusal.reason == CREATOR_PERMISSION_NEEDED and all(
+            r.basis == RightsBasis.PUBLIC_WEB.value for r in active):
+        # Only public footage is left. If a creator's permission or licence existed and
+        # lapsed, say so: "revoked" is more useful than "ask the creator".
+        for reason in REFUSAL_PRIORITY:
+            hit = [r for r in recs if states[r.id] == reason
+                   and r.basis != RightsBasis.PUBLIC_WEB.value]
+            if hit:
+                return no(reason, max(hit, key=lambda r: r.created_at))
     return first_refusal
 
 
@@ -530,6 +569,11 @@ def create_record(s: Session, *, creator_id: str, basis: str, coverage: str,
                   source_ids: list[str] = (), attestation_text: str | None = None,
                   attest: bool = True, lineage_id: str | None = None,
                   version: int = 1) -> RightsRecord:
+    if basis == RightsBasis.PUBLIC_WEB.value:
+        raise ValidationFailed("public_web is a classification, not permission, and cannot be "
+                               "recorded by hand; record a creator's permission or a licence "
+                               "instead",
+                               code="public_web_automatic")
     creator = s.get(Creator, creator_id)
     if creator is None:
         raise NotFoundError("Creator not found")
@@ -591,6 +635,10 @@ def supersede(s: Session, record_id: str, *, scope: dict | Scope, attestation_te
     """Edit = a new attested version; the old one is marked superseded in the same
     transaction. Jobs authorized under the old version fail at their output fence."""
     old = current_record(s, record_id)
+    if old.basis == RightsBasis.PUBLIC_WEB.value:
+        raise ValidationFailed("A public_web record cannot be edited into a licence; record "
+                               "the creator's permission as a new record instead.",
+                               code="public_web_automatic")
     if old.attested_at is None or old.revoked_at is not None or old.superseded_by_id:
         raise ConflictError("Only the current, attested, unrevoked version can be edited")
     if channel_ids is None:
@@ -627,8 +675,12 @@ def revoke(s: Session, record_id: str, reason: str) -> RightsRecord:
 
 def status_summary(s: Session, source: Source, at: datetime | None = None,
                    soon: timedelta = timedelta(days=14)) -> str:
-    """Licence state for badges: active | expires_soon | unusable | expired | revoked |
-    not_attested | not_yet_valid | none | blocked.
+    """Licence state for badges: active | expires_soon | public_web | unusable | expired |
+    revoked | not_attested | not_yet_valid | none | blocked.
+
+    ``public_web`` is a **classification**, not a permission: a saved platform link with no
+    creator permission or licence on record (legacy ``public_web`` rows are ignored here,
+    as everywhere). It authorizes nothing.
 
     "active" only says a usable licence is in force; which uses it authorizes is
     reported separately (``authorized_uses``), because a licence may allow acquiring but
@@ -636,9 +688,9 @@ def status_summary(s: Session, source: Source, at: datetime | None = None,
     at = at or utcnow()
     if source.status != SourceStatus.ACTIVE.value:
         return "blocked"
-    recs = covering_records(s, source)
+    recs = [r for r in covering_records(s, source) if r.basis != RightsBasis.PUBLIC_WEB.value]
     if not recs:
-        return "none"
+        return "public_web" if source.url_canonical else "none"
     states = [(r, record_state(r, at)) for r in recs]
     active = [r for r, st in states if st == OK]
     usable = [r for r in active if parse_scope(r.scope_json) is not None

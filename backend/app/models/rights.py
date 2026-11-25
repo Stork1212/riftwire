@@ -74,12 +74,19 @@ class CreatorRelationship(enum.StrEnum):
     SELF = "self"
     PARTNER = "partner"
     LICENSOR = "licensor"
+    # No relationship: a creator whose public footage was saved by link. Says nothing
+    # about permission.
+    UNAFFILIATED = "unaffiliated"
 
 
 class RightsBasis(enum.StrEnum):
     OWNERSHIP = "ownership"
     CREATOR_PERMISSION = "creator_permission"
     LICENCE = "licence"
+    # Legacy classification written automatically by b13b91f for saved links. Kept so that
+    # immutable history stays valid; it authorizes nothing (rights.PUBLIC_WEB_USES is
+    # empty) and no new records use it (owner decision 2026-11-25).
+    PUBLIC_WEB = "public_web"
 
 
 class RightsCoverage(enum.StrEnum):
@@ -173,6 +180,8 @@ class RightsRecord(Base):
     __table_args__ = (
         CheckConstraint(_check("basis", RightsBasis), name="basis_valid"),
         CheckConstraint(_check("coverage", RightsCoverage), name="coverage_valid"),
+        CheckConstraint("basis != 'public_web' OR coverage = 'sources'",
+                        name="public_web_per_source"),
         CheckConstraint("version >= 1", name="version_positive"),
         UniqueConstraint("lineage_id", "version", name="uq_rights_lineage_version"),
         Index("ix_rights_creator", "creator_id"),

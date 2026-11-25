@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ActionableError } from "../components/ActionableError";
-import { DecisionLine, METHODS, RightsBadge, ScopeSummary, UseChips } from "../components/rights";
+import { basisLabel, DecisionLine, METHODS, RightsBadge, ScopeSummary, UseChips } from "../components/rights";
+import { SourceAcquire } from "../components/SourceAcquire";
 import { EmptyState, ErrorBanner, Loading, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { api } from "../services/api";
 import { formatDate } from "../services/format";
@@ -153,6 +154,7 @@ export function SourceDetailPage() {
     <>
       <PageHeader eyebrow={<Link to="/sources" className="muted">← Sources</Link>}
         title={s.title_user || s.url_canonical || "Local source"} actions={<RightsBadge status={s.rights_status} />} />
+      {s.url_canonical && <SourceAcquire key={s.id} sourceId={s.id} job={s.acquire_job} onChange={refresh} decision={s.acquire} />}
       {err && <ErrorBanner error={err} />}
       <div className="grid-2">
         <Panel title="Source" actions={
@@ -177,11 +179,16 @@ export function SourceDetailPage() {
           <DecisionLine label="Analyse" d={s.analyze} />
           <p className="hint">Editing and publishing are checked for each clip, platform and
             brand channel when those steps exist (M3 onwards).</p>
-          {s.records.length === 0 && <EmptyState title="No licence covers this source">
-            Add one on the <Link to="/creators">Creators</Link> page.</EmptyState>}
+          {s.rights_status === "public_web" && (
+            <p className="hint">Public footage is not permission. Nothing can be fetched,
+              analysed, edited or published until the creator agrees: record their permission
+              on the <Link to="/creators">Creators</Link> page. To fetch from the link, the
+              permission must allow URL fetching and have written platform permission attached.</p>)}
+          {s.records.length === 0 && <EmptyState title="No permission or licence covers this source">
+            Record one on the <Link to="/creators">Creators</Link> page.</EmptyState>}
           {s.records.map((r) => (
             <div key={r.id} className="record">
-              <div><strong>v{r.version}</strong> · {r.basis} · covers {r.coverage}{" "}
+              <div><strong>v{r.version}</strong> · {basisLabel(r)} · covers {r.coverage}{" "}
                 <RightsBadge status={r.state} /></div>
               <ScopeSummary scope={r.scope} brands={brands.data ?? []} />
             </div>

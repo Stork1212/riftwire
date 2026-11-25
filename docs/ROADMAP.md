@@ -3,17 +3,20 @@
 _Status: **approved by the owner** (2026-11-23) with decisions D1–D10 (see
 [`PRODUCT_SPEC.md`](PRODUCT_SPEC.md#owner-decisions-log-2026-11-23)). Phase 1 is complete
 (v0.1.0). Phases 2–3 are delivered as milestones M0–M7 ([`PHASE2_PROPOSAL.md`](PHASE2_PROPOSAL.md));
-M0 is complete (v0.2.0-m0). **Next gate:** owner approval of the
-[M1 checklist](M1_STORAGE_CHECKLIST.md) → M1 implementation._
+M0 is complete (v0.2.0-m0); M1 and M2 are merged. **Current gate (2026-11-25):**
+the integration draft PR #14 ([`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md)). Its scope
+(M3 acquisition infrastructure, the rule-based highlight baseline, review, the Shorts
+prototype and the corrected outro) is approved for inclusion, subject to review. Next is
+M4 (shared transcripts, approved in principle), then contextual AI highlights._
 
 ## Overview
 
 | Phase | Name | Outcome | Status |
 |---|---|---|---|
 | 1 | **Foundation** | Crash-safe local ingestion, metadata, thumbnails, persistent queue, dashboard | **Complete** (v0.1.0) |
-| 2 | **Sources & Signals** | Rights confirmation + provenance; permitted acquisition (local, authorized YouTube/Twitch, selective sections); configurable storage locations; small local Whisper with word timestamps + benchmark; audio/scene signals | **In progress:** M0 complete (v0.2.0-m0); M1 merged (PR #9; SSD acceptance pending); M2 in progress |
+| 2 | **Sources & Signals** | Rights confirmation + provenance; permitted acquisition (local, authorized YouTube/Twitch, selective sections); configurable storage locations; small local Whisper with word timestamps + benchmark; audio/scene signals | **In progress:** M0 complete (v0.2.0-m0); M1 merged (PR #9; SSD acceptance pending); M2 merged (PR #12); integration draft PR in review |
 | 3 | **Highlight Detection & Review** | Interchangeable AI provider interface (Ollama default; OpenAI/Anthropic optional at $0 budget), usage ledger + spending limits; per-game highlight prompts; validated, ranked records; review table; exports; auto-submit | Approved; delivered as M5–M7 |
-| 4 | **Editing Preset Studio & Rendering** | Per-channel brand kits (uploaded logos/fonts/outros); 1080×1920 35/65 presets, hooks, word-level subtitles, 2 s outro, live preview, VideoToolbox renders + QC; per-game editing prompts; **artifact registry for generated files (retention foundations)** | Approved in principle |
+| 4 | **Editing Preset Studio & Rendering** | Per-channel brand kits (uploaded logos/fonts/outros); 1080×1920 35/65 presets, hooks, word-level subtitles, outro (the approved RumbleFrame outro, **2.5 s**, used whole since PR #14), live preview, VideoToolbox renders + QC; per-game editing prompts; **artifact registry for generated files (retention foundations)** | Approved in principle |
 | 5 | **Publishing** | **YouTube Shorts first**; multi-account channels, scheduling, generated metadata + thumbnails, mandatory human approval; then Instagram Reels, TikTok, Facebook Reels, X via official APIs; **storage lifecycle & retention manager (72 h after verified publication)** | Approved in principle |
 | 6 | **Analytics & Optimization** | Performance ingestion, scoring feedback, prompt/model A/B evaluation | Approved in principle |
 
@@ -32,12 +35,12 @@ independently reviewed, and needs the owner's approval before it starts.
 |---|---|---|---|
 | M0 | 2 | Benchmark spike (transcription engine/model, signal throughput) | **Complete**: [`BENCHMARKS.md`](BENCHMARKS.md), tag `v0.2.0-m0` |
 | M1 | 2 | Storage architecture: locations, volume identity, offline handling, persistent per-volume reservations, cross-volume transfers, verified migration | **Merged** (PR #9) after independent review; verified on the Mac (internal disk); [physical-SSD acceptance pending](M1_STORAGE_CHECKLIST.md#11-acceptance-checks-that-depend-on-the-external-ssd-deferred) |
-| M2 | 2 | Rights & sources | **Implemented, in review** (PR #12; R1–R6) |
-| M3 | 2 | Permitted acquisition | Not started |
-| M4 | 2 | Transcription & signals (MLX Whisper `base` default; `small` optional after chunked memory testing; raw timestamps preserved) | Not started |
+| M2 | 2 | Rights & sources | **Merged** (PR #12, `d9c878e`; R1–R6) |
+| M3 | 2 | Permitted acquisition | **Infrastructure in PR #14** (approved for inclusion, in review): URL `ACQUIRE` job; public availability is not permission (owner, 2026-11-25); fetching off by default. Stand-in downloader only; real downloads and `yt-dlp` not authorized |
+| M4 | 2 | Transcription & signals (MLX Whisper `base` default; `small` optional after chunked memory testing; raw timestamps preserved) | **Next.** [Shared transcript architecture](TRANSCRIPT_ARCHITECTURE_PROPOSAL.md) approved in principle (2026-11-25); detailed plan after PR #14 merges |
 | M5 | 3 | AI providers & prompts ($0 budget; Ollama deferred) | Not started |
-| M6 | 3 | Highlight detection & validation | Not started |
-| M7 | 3 | Review dashboard & exports | Not started |
+| M6 | 3 | Highlight detection & validation | Not started. **Rule-based baseline** in PR #14 (frame activity + keyword cues), approved for inclusion; not contextual AI |
+| M7 | 3 | Review dashboard & exports | Not started. Prototype `clips.txt` review and the 35/65 Short export (with the approved 2.5 s outro) in PR #14 |
 
 **M0 findings that shape later milestones** (details in [`BENCHMARKS.md`](BENCHMARKS.md)):
 - **WER** on synthetic natural speech: base 1.4 / 3.8 / 3.7 %, small 0.7 / 2.1 / 0.2 %
@@ -200,6 +203,11 @@ independently reviewed, and needs the owner's approval before it starts.
   results on the Mac.
 
 ## Next steps
+
+_Current (2026-11-25):_ Mac verification and independent review of PR #14, then the merge
+decision. Then the M4 implementation plan (shared transcripts), then contextual AI
+highlights. The list below is the
+original Phase 1 sequence, kept for history.
 
 1. Phase 1: independent review of PR #1 → owner approval → squash-merge.
 2. Then: update `CLAUDE.md` §1 (phase list) to match this roadmap. This is an architecture

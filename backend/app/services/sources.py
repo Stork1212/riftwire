@@ -241,6 +241,8 @@ def create_source(s: Session, *, url: str | None = None, kind: str | None = None
                   title_user: str | None = None, acquisition_method: str | None = None,
                   brand_channel_ids: list[str] | None = None,
                   actor: str = "owner") -> Source:
+    """Save a source. Saving grants nothing: a saved link is classified as public footage
+    (``rights.status_summary``) until a creator's permission or a licence covers it."""
     parsed = parse_url(url) if url else None
     if parsed is not None:
         kind = parsed.platform

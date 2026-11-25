@@ -102,6 +102,9 @@ def settings(tmp_path, monkeypatch) -> Iterator[Settings]:
         "RIFTWIRE_WORKER_POLL_SECONDS": "0.1",
         "RIFTWIRE_WORKER_HEARTBEAT_SECONDS": "0.5",
         "RIFTWIRE_STALE_TEMP_SECONDS": "3600",
+        # Tests never contact a platform: URL fetching is on by default in the app, off
+        # here; acquisition tests switch it on with a stand-in downloader.
+        "RIFTWIRE_URL_ACQUISITION_ENABLED": "false",
     }
     for k, v in env.items():
         monkeypatch.setenv(k, v)

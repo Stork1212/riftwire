@@ -1,6 +1,68 @@
 # RIFTWIRE — Project Status
 
-_Last updated: 2026-11-24_
+_Last updated: 2026-11-25_
+
+## Integration PR #14 (`phase2/integration`, draft; not merged)
+It combines URL acquisition with the highlight queue and the Shorts export, on `main` @
+`d9c878e`. **The scope is approved for inclusion by the owner (2026-11-25), subject to
+independent review:**
+- M3 acquisition infrastructure;
+- durable acquire and highlight-scan jobs;
+- rule-based highlight baseline;
+- timestamp and candidate review;
+- the vertical Shorts prototype with animated captions;
+- Pillow 13.0.0;
+- the corrected outro.
+
+Review package: [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md).
+
+**Final corrections, `51c8fa4` (2026-11-25):**
+- **Acquisition policy.** Public availability is not permission; this supersedes the
+  2026-11-24 download-by-default decision.
+  - URL fetching is off by default.
+  - `public_web` is a classification that authorizes nothing, including existing rows,
+    which stay as history.
+  - URL fetching needs a user-confirmed record allowing `acquire` by `url_fetch` with
+    written platform permission.
+  - Standing permission queues new links without a prompt.
+  - Missing permission is saved and explained.
+- **Outro.** The whole approved RumbleFrame outro (75 frames, 2.5 s) is used, with its
+  duration read from the asset; no 2 s trim.
+  - Outros with a sting, a silent track or no track are supported.
+  - Gameplay audio is preserved, with `continue` / `outro` audio modes, a fade and a
+    limited sting.
+  - 15 s + outro = 17.5 s.
+- **Tests:** 33 new or rewritten regression tests.
+- **Container results:**
+  - backend 450 + 1 skip, bench 48, frontend 38 and build;
+  - acceptance 29/29, smoke 28/0;
+  - end-to-end 14/14 with both real outro assets.
+
+**Verified natively on the Mac:**
+- `b13b91f` and `580d476` (2026-11-25, real 60 GiB floor), evidence in
+  `docs/acceptance/2026-11-25-macos-integration-580d476/`.
+- **The corrected head `ef969f1`: all passed** (owner, 2026-11-25 04:43Z):
+  - suites, acceptance 29/29, smoke 30/0;
+  - Alembic checks and the demo-DB copy migration;
+  - end-to-end 14/14 with real Whisper and both approved outros (17.5 s, 525 frames).
+
+  Evidence: `docs/acceptance/2026-11-25-macos-pr14-ef969f1/`.
+
+**Not verified or not authorized:**
+- real platform downloads and `yt-dlp` (stand-in downloader only);
+- publishing;
+- contextual AI;
+- M4.
+
+**Transcripts:** a shared, versioned transcript architecture is approved in principle for
+M4 ([proposal](TRANSCRIPT_ARCHITECTURE_PROPOSAL.md)). It is not in PR #14.
+
+**Pending:**
+- ChatGPT's independent source review;
+- the owner's merge decision;
+- a documentation-only conflict resolution with PR #13 (`docs/ROADMAP.md`).
+
+The live demo database is not migrated.
 
 ## Current phase
 **Phase 2 — Sources & Signals: in progress.** Phases 2–3 are delivered as milestones M0–M7
@@ -18,9 +80,9 @@ _Last updated: 2026-11-24_
     physical-SSD checks pass
     ([checklist §11](M1_STORAGE_CHECKLIST.md#11-acceptance-checks-that-depend-on-the-external-ssd-deferred)).
   - Design: [`ARCHITECTURE.md`](ARCHITECTURE.md) §19.
-- **M2, Rights & Source Management: approved** (owner decisions R1–R6,
-  [`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12). In progress on branch
-  `phase2/m2-rights-sources`.
+- **M2, Rights & Source Management: merged** into `main` as **`d9c878e`** (PR #12, squash,
+  2026-11-24 19:58 UTC) after the updated independent review. Approved with owner
+  decisions R1–R6 ([`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12).
   - **Implemented (2026-11-24), draft PR #12, ready for independent review.** Review
     package: [`M2_REVIEW.md`](M2_REVIEW.md); design: ARCHITECTURE §20.
     - Schema `0004` with 12 database triggers for immutable rights and provenance.
@@ -71,10 +133,8 @@ _Last updated: 2026-11-24_
     - a malformed URL returned HTTP 500.
   - **Mac verification of `57c6b16`** (2026-11-24): all stages exit 0. Backend 391 + 3
     skipped, bench 47 + 1, frontend 36, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
-  - **Pending:**
-    - updated independent review;
-    - merge (owner).
-    M3 is not started.
+  - **Merged** (owner) as `d9c878e`. M3 is not started; the integration branch pulls some
+    M3 work forward for review only (see the top of this file).
 
 ### Merged state of `main` (2026-11-24)
 | PR | Content | Reviewed head | Squash commit on `main` |
@@ -331,7 +391,9 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
     - every physical-SSD check (checklist §11).
 
 ## Blockers
-None for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB SSD
+**Integration PR #14:** merge waits for the native Mac verification of the corrected head
+and ChatGPT's independent review ([`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §13). No
+code blocker is known. Otherwise none for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB SSD
 (owner-formatted APFS). Real footage at scale needs the SSD.
 
 ## Decisions pending
@@ -342,7 +404,11 @@ None for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB 
   un-deferred, Higgsfield use cases, brand assets).
 
 ## Next steps
-1. Mac verification and independent review of M2 (PR #12); merge after approval.
+0. Mac verification of the corrected PR #14 head, then ChatGPT's independent review and
+   the owner's merge decision ([`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §13). After
+   the merge: the detailed M4 implementation plan (shared transcripts), then contextual AI
+   highlights. No merge, M4 work or live-demo migration before that.
+1. M2 is merged (PR #12, `d9c878e`).
 2. When the SSD arrives: physical-SSD acceptance (checklist §11), then tag `v0.3.0-m1`
    (owner).
 

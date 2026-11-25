@@ -1,5 +1,5 @@
 // Mirrors backend/app/schemas/rights.py (M2 rights & sources).
-import type { Recording } from "./api";
+import type { Job, Recording } from "./api";
 
 export type Use = "acquire" | "analyze" | "edit" | "publish";
 
@@ -36,7 +36,7 @@ export interface CreatorChannel {
 export interface Creator {
   id: string;
   display_name: string;
-  relationship: "self" | "partner" | "licensor";
+  relationship: "self" | "partner" | "licensor" | "unaffiliated";
   contact: string | null;
   notes: string | null;
   archived: boolean;
@@ -84,6 +84,7 @@ export interface RightsRecord {
   valid_from: string;
   valid_until: string | null;
   attestation_text: string | null;
+  attested_by?: string | null;
   attested_at: string | null;
   superseded_by_id: string | null;
   revoked_at: string | null;
@@ -105,6 +106,14 @@ export interface Decision {
   version: number | null;
   obligations: Record<string, unknown>[];
   action: string | null;
+}
+
+/** POST /sources/{id}/acquire: fetching the saved link is queued as an ACQUIRE job
+ * (one per source); ``recording`` is set once the job has linked it. */
+export interface Acquired {
+  source_id: string;
+  job: Job;
+  recording: Recording | null;
 }
 
 export interface Source {
@@ -135,6 +144,8 @@ export interface SourceDetail extends Source {
   acquire: Decision;
   records: RightsRecord[];
   recordings: Recording[];
+  /** the source's ACQUIRE job, if one was queued */
+  acquire_job?: Job | null;
 }
 
 export interface Resolved {

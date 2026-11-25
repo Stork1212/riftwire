@@ -1,5 +1,6 @@
-import type { Page } from "../types/api";
+import type { Job, Page } from "../types/api";
 import type {
+  Acquired,
   AcquisitionMethodInfo,
   BrandChannel,
   Creator,
@@ -76,6 +77,9 @@ export const rightsApi = {
     request<Source>(`/api/v1/sources/${enc(id)}`, json("PATCH", patch)),
   setAssignments: (id: string, brand_channel_ids: string[]) =>
     request<Source>(`/api/v1/sources/${enc(id)}/assignments`, json("PUT", { brand_channel_ids })),
+  acquireSource: (id: string) =>
+    request<Acquired>(`/api/v1/sources/${enc(id)}/acquire`, { method: "POST" }),
+  acquireJob: (jobId: string) => request<Job>(`/api/v1/jobs/${enc(jobId)}`),
   attachRecording: (id: string, recording_id: string, acquisition_method?: string) =>
     request<Source>(`/api/v1/sources/${enc(id)}/recordings`,
       json("POST", acquisition_method ? { recording_id, acquisition_method } : { recording_id })),

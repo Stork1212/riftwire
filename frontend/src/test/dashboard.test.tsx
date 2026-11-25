@@ -76,6 +76,21 @@ describe("Overview", () => {
 });
 
 describe("Recordings", () => {
+  it("links an acquisition job to its source until the recording exists", async () => {
+    m.listJobs.mockResolvedValue(page([
+      { ...job({ id: "acq", job_type: "ACQUIRE", status: "RUNNING", progress_percent: 40 }),
+        recording_id: null, recording_filename: null, source_id: "src-1" },
+      { ...job({ id: "acq2", job_type: "ACQUIRE", status: "COMPLETED", progress_percent: 100 }),
+        recording_id: "rec-2", recording_filename: "twitch-2.mp4", source_id: "src-2" },
+    ]));
+    renderAt("/queue");
+    const pending = await screen.findByTestId("job-acq");
+    expect(within(pending).getByRole("link", { name: "Source link (not acquired yet)" }))
+      .toHaveAttribute("href", "/sources/src-1");
+    expect(within(screen.getByTestId("job-acq2")).getByRole("link", { name: "twitch-2.mp4" }))
+      .toHaveAttribute("href", "/recordings/rec-2");
+  });
+
   it("shows the empty state", async () => {
     renderAt("/recordings");
     expect(await screen.findByText("No recordings yet")).toBeInTheDocument();

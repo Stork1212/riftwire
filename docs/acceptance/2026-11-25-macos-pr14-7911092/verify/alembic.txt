@@ -1,0 +1,32 @@
+-- alembic heads (exit 0)
+0009 (head)
+
+-- alembic upgrade head (exit 0)
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, initial schema
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, storage locations, reservations, migrations (M1)
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, migration journal records the destination drive's OS volume UUID (M1 review)
+INFO  [alembic.runtime.migration] Running upgrade 0003 -> 0004, rights and sources (M2)
+INFO  [alembic.runtime.migration] Running upgrade 0004 -> 0005, recordings.acquisition_method: how linked media was actually obtained (M2 review)
+INFO  [alembic.runtime.migration] Running upgrade 0005 -> 0006, freeze attested coverage against UPDATE (independent audit of 63a2e5e, finding 3)
+INFO  [alembic.runtime.migration] Running upgrade 0006 -> 0007, ACQUIRE jobs: fetching a saved source URL is a durable queued job
+INFO  [alembic.runtime.migration] Running upgrade 0007 -> 0008, Persist completed highlight scans in the recording job queue.
+INFO  [alembic.runtime.migration] Running upgrade 0008 -> 0009, public_web rights basis (a classification; authorizes nothing since 2026-11-25)
+
+-- alembic downgrade 0006 (exit 0)
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running downgrade 0009 -> 0008, public_web rights basis (a classification; authorizes nothing since 2026-11-25)
+INFO  [alembic.runtime.migration] Running downgrade 0008 -> 0007, Persist completed highlight scans in the recording job queue.
+INFO  [alembic.runtime.migration] Running downgrade 0007 -> 0006, ACQUIRE jobs: fetching a saved source URL is a durable queued job
+
+-- alembic upgrade head (exit 0)
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 0006 -> 0007, ACQUIRE jobs: fetching a saved source URL is a durable queued job
+INFO  [alembic.runtime.migration] Running upgrade 0007 -> 0008, Persist completed highlight scans in the recording job queue.
+INFO  [alembic.runtime.migration] Running upgrade 0008 -> 0009, public_web rights basis (a classification; authorizes nothing since 2026-11-25)
+
+heads=['0009 (head)'] version=0009 triggers=14 fk_violations=0
+RESULT PASS

@@ -2,13 +2,16 @@ import type { Job, JobType } from "../types/api";
 import { ProgressBar, StatusBadge } from "./ui";
 
 const ORDER: JobType[] = ["INGEST", "METADATA", "THUMBNAIL"];
-const LABEL: Record<JobType, string> = { INGEST: "Store & verify", METADATA: "Metadata", THUMBNAIL: "Thumbnail" };
+const LABEL: Record<JobType, string> = {
+  HIGHLIGHT_SCAN: "Find highlights",
+  ACQUIRE: "Acquire from link", INGEST: "Store & verify", METADATA: "Metadata", THUMBNAIL: "Thumbnail",
+};
 
 /** Per-stage processing progress for one recording. */
 export function JobStages({ jobs }: { jobs: Job[] }) {
   return (
     <div aria-label="Processing stages">
-      {ORDER.map((t) => {
+      {(jobs.some((x) => x.job_type === "ACQUIRE") ? (["ACQUIRE", ...ORDER] as JobType[]) : ORDER).map((t) => {
         const j = jobs.find((x) => x.job_type === t);
         const tone = j?.status === "FAILED" ? "bad" : j?.status === "COMPLETED" ? "ok" : "info";
         return (

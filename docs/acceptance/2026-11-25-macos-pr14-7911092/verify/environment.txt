@@ -1,0 +1,22 @@
+== machine
+ProductName:		macOS
+ProductVersion:		26.5.2
+BuildVersion:		25F84
+arm64
+Apple M3 Pro
+== tools
+Python 3.13.2
+ffmpeg version 9.1 Copyright (c) 2000-2026 the FFmpeg developers
+v24.17.0
+git version 2.39.3 (Apple Git-146)
+Pillow 13.0.0
+mlx-whisper 0.4.3
+== whisper model
+total 280720
+-rw-r--r--  1 gregstork  staff        262 Nov 23 22:25 config.json
+-rw-r--r--  1 gregstork  staff  143724204 Nov 23 22:25 weights.npz
+2f57d5f3ef473054c638961f90716f4ee415e8108de81313eccb2c5fd62eff0b  /Users/gregstork/Claude/riftwire/data/models/mlx-community--whisper-base-mlx/weights.npz
+== outro assets
+df4ba7289f049780b572799077c26d3729f9426fb5e6c6b59c28d4fea9fbab3e  /Users/gregstork/Claude/riftwire-env/pr14-verify-7911092-20261125T150543Z/assets/RumbleFrame_Outro_PR6.mp4
+b76742bc3f4bcb51439c9efd011ea21b98f2921c05e7f8e249853d35efd8844c  /Users/gregstork/Claude/riftwire-env/pr14-verify-7911092-20261125T150543Z/assets/RumbleFrame_Outro_v1.mp4
+Argument '/Users/gregstork/Claude/riftwire-env/pr14-verify-7911092-20261125T150543Z/assets/RumbleFrame_Outro_v1.mp4' provided as input filename, but '/Users/gregstork/Claude/riftwire-env/pr14-verify-7911092-20261125T150543Z/assets/RumbleFrame_Outro_PR6.mp4' was already specified.

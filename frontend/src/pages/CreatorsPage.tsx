@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { LicenceForm, RightsBadge, ScopeSummary } from "../components/rights";
+import { basisLabel, LicenceForm, RightsBadge, ScopeSummary } from "../components/rights";
 import type { LicenceFormValue } from "../components/rights";
 import { EmptyState, ErrorBanner, Loading, PageHeader, Panel } from "../components/ui";
 import { formatBytes, formatDate } from "../services/format";
@@ -35,6 +35,7 @@ function NewCreator({ onCreated }: { onCreated: (c: Creator) => void }) {
         <option value="self">Me (own footage)</option>
         <option value="partner">Partner creator</option>
         <option value="licensor">Licensor</option>
+            <option value="unaffiliated">No relationship yet (no permission on record)</option>
       </select>
       <button className="btn btn-primary" type="submit" disabled={!name.trim()}>Add creator</button>
       {err && <ErrorBanner error={err} />}
@@ -157,11 +158,12 @@ function RecordCard({ r, brands, creator, onChanged }: { r: RightsRecord; brands
   return (
     <div className="record" data-testid={`record-${r.id}`}>
       <div className="record-head">
-        <strong>Licence v{r.version}</strong> · {r.basis} · covers {r.coverage === "creator" ? "every video" : r.coverage}
+        <strong>{r.basis === "public_web" ? "Record" : "Licence"} v{r.version}</strong> · {basisLabel(r)} · covers {r.coverage === "creator" ? "every video" : r.coverage === "sources" && r.basis === "public_web" ? "one saved link" : r.coverage}
         <RightsBadge status={r.state} />
         {current && r.revoked_at === null && r.superseded_by_id === null && (
           <span className="toolbar">
-            <button className="btn btn-sm btn-ghost" onClick={() => setEditing(!editing)}>Edit</button>
+            {r.basis !== "public_web" &&
+              <button className="btn btn-sm btn-ghost" onClick={() => setEditing(!editing)}>Edit</button>}
             <button className="btn btn-sm btn-ghost" onClick={revoke}>Revoke</button>
           </span>
         )}
@@ -189,7 +191,8 @@ function CreatorPanel({ creator, brands, onChanged }: { creator: Creator; brands
     setBusy(true);
     setErr(undefined);
     try {
-      await rightsApi.createRights({ creator_id: creator.id, basis: creator.relationship === "self" ? "ownership" : "licence",
+      await rightsApi.createRights({ creator_id: creator.id, basis: creator.relationship === "self" ? "ownership"
+        : creator.relationship === "unaffiliated" ? "creator_permission" : "licence",
         coverage: v.coverage, channel_ids: v.channel_ids, scope: v.scope, valid_until: v.valid_until,
         attestation_text: v.attestation_text });
       setAdding(false);

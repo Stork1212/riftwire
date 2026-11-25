@@ -1,0 +1,124 @@
+/Users/gregstork/Claude/riftwire-env/riftwire-pr14-ef969f1.bundle is okay
+The bundle contains these 3 refs:
+ef969f1334a0c9c044a732774959d67526253d08 refs/heads/phase2/integration
+29f6a7b43fdff333f1ec4bd4816301622674f11d refs/rf/outro-pr6
+724d1be7ca79bcde5522f1431b95247140dcc323 refs/rf/outro-v1
+The bundle requires these 3 refs:
+8ca5c371c6fc4c7476005cbd6cee05259972092e 
+9f3d87efdc87db9dacbf4759895c5be313b62a2e 
+580d4765ca71ccf66c21030f34270ff9dba49547 
+The bundle uses this hash algorithm: sha1
+From /Users/gregstork/Claude/riftwire-env/riftwire-pr14-ef969f1.bundle
+   580d476..ef969f1  phase2/integration -> bundle/integration
+ * [new ref]         refs/rf/outro-pr6  -> bundle/outro-pr6
+ * [new ref]         refs/rf/outro-v1   -> bundle/outro-v1
+Already on 'phase2/integration'
+Updating 580d476..ef969f1
+Fast-forward
+ .env.example                                       |  16 +-
+ backend/alembic/versions/0009_public_web_basis.py  |  14 +-
+ backend/app/core/config.py                         |  17 +-
+ backend/app/models/rights.py                       |   9 +-
+ backend/app/services/clips.py                      |  32 +-
+ backend/app/services/outro.py                      | 170 +++++++
+ backend/app/services/queue.py                      |   1 -
+ backend/app/services/rights.py                     | 103 ++--
+ backend/app/services/sources.py                    |   9 +-
+ backend/app/services/url_download.py               |   9 +-
+ backend/tests/helpers.py                           |  39 ++
+ backend/tests/test_integration_highlights.py       |  65 ++-
+ backend/tests/test_outro.py                        | 271 ++++++++++
+ backend/tests/test_public_web.py                   | 375 +++++++++-----
+ backend/tests/test_rights.py                       |  16 +-
+ backend/tests/test_rights_review.py                |   2 +-
+ backend/tests/test_url_acquisition.py              |  31 +-
+ docs/ARCHITECTURE.md                               |  45 ++
+ docs/INSTALLATION.md                               |  15 +
+ docs/INTEGRATION_REVIEW.md                         | 265 ++++++++++
+ docs/PRODUCT_SPEC.md                               |   3 +-
+ docs/PROJECT_STATUS.md                             |  98 +++-
+ docs/ROADMAP.md                                    |  26 +-
+ docs/TRANSCRIPT_ARCHITECTURE_PROPOSAL.md           |  95 ++++
+ docs/URL_ACQUISITION.md                            | 105 ++--
+ .../CHECKSUMS.sha256                               |  36 ++
+ .../2026-11-25-macos-integration-580d476/README.md |  57 +++
+ .../integration-580d476/acceptance.json            | 214 ++++++++
+ .../integration-580d476/acceptance.txt             |  33 ++
+ .../integration-580d476/demo-migration.txt         |  10 +
+ .../integration-580d476/e2e-caption-frame.png      | Bin 0 -> 268612 bytes
+ .../integration-580d476/e2e-clips.txt              |   2 +
+ .../integration-580d476/e2e-driver.txt             |  11 +
+ .../integration-580d476/e2e-highlight-scan.json    |  30 ++
+ .../integration-580d476/e2e-logs/api.txt           |  19 +
+ .../integration-580d476/e2e-logs/worker.txt        |  20 +
+ .../integration-580d476/e2e-provenance.json        | 101 ++++
+ .../integration-580d476/e2e-results.json           |  70 +++
+ .../integration-580d476/e2e-sampled-frame.jpg      | Bin 0 -> 7050 bytes
+ .../integration-580d476/e2e.py                     | 396 +++++++++++++++
+ .../integration-580d476/environment.txt            |  13 +
+ .../integration-580d476/git.txt                    |  11 +
+ .../integration-580d476/smoke-report.txt           |  76 +++
+ .../integration-580d476/summary.txt                |  46 ++
+ .../integration-580d476/test.txt                   | 116 +++++
+ .../integration-580d476/tree-after.txt             |   0
+ .../integration-580d476/verify-script.sh           | 556 +++++++++++++++++++++
+ .../url-verify-b13b91f/acceptance.json             | 214 ++++++++
+ .../url-verify-b13b91f/acceptance.txt              |  33 ++
+ .../url-verify-b13b91f/df-after.txt                |   2 +
+ .../url-verify-b13b91f/df-before.txt               |   2 +
+ .../url-verify-b13b91f/environment.txt             |  17 +
+ .../url-verify-b13b91f/git.txt                     |  42 ++
+ .../url-verify-b13b91f/smoke-cleanup.txt           |   4 +
+ .../url-verify-b13b91f/smoke-report.txt            |  75 +++
+ .../url-verify-b13b91f/summary.txt                 |  36 ++
+ .../url-verify-b13b91f/test.txt                    | 115 +++++
+ .../url-verify-b13b91f/tree-after.txt              |   0
+ .../url-verify-b13b91f/verify-script.sh            |  98 ++++
+ .../url-verify-b13b91f/warnings.txt                |   4 +
+ frontend/src/components/LinkResolver.tsx           |   2 +-
+ frontend/src/components/SourceAcquire.tsx          |  21 +-
+ frontend/src/components/rights.tsx                 |   6 +-
+ frontend/src/pages/CreatorsPage.tsx                |   2 +-
+ frontend/src/pages/SourceDetailPage.tsx            |  13 +-
+ frontend/src/test/rights.test.tsx                  |  19 +-
+ scripts/acceptance.py                              |  63 ++-
+ 67 files changed, 3998 insertions(+), 418 deletions(-)
+ create mode 100644 backend/app/services/outro.py
+ create mode 100644 backend/tests/test_outro.py
+ create mode 100644 docs/INTEGRATION_REVIEW.md
+ create mode 100644 docs/TRANSCRIPT_ARCHITECTURE_PROPOSAL.md
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/CHECKSUMS.sha256
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/README.md
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/acceptance.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/acceptance.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/demo-migration.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/e2e-caption-frame.png
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/e2e-clips.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/e2e-driver.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/e2e-highlight-scan.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/e2e-logs/api.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/e2e-logs/worker.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/e2e-provenance.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/e2e-results.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/e2e-sampled-frame.jpg
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/e2e.py
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/environment.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/git.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/smoke-report.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/summary.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/test.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/tree-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/integration-580d476/verify-script.sh
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/acceptance.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/acceptance.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/df-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/df-before.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/environment.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/git.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/smoke-cleanup.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/smoke-report.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/summary.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/test.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/tree-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/verify-script.sh
+ create mode 100644 docs/acceptance/2026-11-25-macos-integration-580d476/url-verify-b13b91f/warnings.txt

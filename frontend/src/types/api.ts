@@ -2,7 +2,7 @@
 
 export type RecordingStatus = "STAGED" | "PROCESSING" | "READY" | "FAILED";
 export type ThumbnailStatus = "PENDING" | "READY" | "FAILED";
-export type JobType = "INGEST" | "METADATA" | "THUMBNAIL";
+export type JobType = "ACQUIRE" | "HIGHLIGHT_SCAN" | "INGEST" | "METADATA" | "THUMBNAIL";
 export type JobStatus =
   | "PENDING"
   | "RUNNING"
@@ -20,7 +20,10 @@ export interface Page<T> {
 
 export interface Job {
   id: string;
-  recording_id: string;
+  /** null for an ACQUIRE job until its recording exists */
+  recording_id: string | null;
+  /** set for ACQUIRE jobs (fetching a saved source link) */
+  source_id?: string | null;
   recording_filename: string | null;
   job_type: JobType;
   status: JobStatus;

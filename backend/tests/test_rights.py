@@ -31,11 +31,21 @@ from app.models import (
     Source,
     SystemEvent,
 )
-from app.services import acquisition, evidence, matching, queue, rights, sources
+from app.services import (
+    acquisition,
+    clips,
+    evidence,
+    highlight_scan,
+    matching,
+    media,
+    queue,
+    rights,
+    sources,
+)
 from app.services.source_urls import parse_source_url
 from tests.conftest import requires_ffmpeg
 from tests.helpers import import_file
-from tests.test_ingest import drain
+from tests.test_ingest import drain, get_rec
 
 CLIP = "https://www.twitch.tv/somestreamer/clip/BigHeistMoment-AbC_123"
 VOD = "https://www.twitch.tv/videos/2201234567"
@@ -69,8 +79,7 @@ class World:
 
     def source(self, url=CLIP, **kw) -> str:
         with self.db.session() as s:
-            src = sources.create_source(s, url=url, **kw)
-            return src.id
+            return sources.create_source(s, url=url, **kw).id
 
     def decide(self, source_id, use, **kw) -> rights.Decision:
         with self.db.session() as s:
@@ -571,10 +580,20 @@ def test_api_end_to_end_paste_url_flow(client, db):
                         "brand_channel_id": bc["id"], "clip_ms": 30000}).json()
     assert chk["allowed"] is True
     detail = c.get(f"/api/v1/sources/{src['id']}").json()
-    assert detail["analyze"]["allowed"] and detail["records"][0]["id"] == lic["id"]
+    assert detail["analyze"]["allowed"]
+    bases = {r["basis"]: r for r in detail["records"]}
+    assert bases == {"licence": bases["licence"]} and bases["licence"]["id"] == lic["id"]
     rv = c.post(f"/api/v1/rights/{lic['id']}/revoke", json={"reason": "ended"})
     assert rv.json()["state"] == "revoked"
-    assert c.get(f"/api/v1/sources/{src['id']}").json()["rights_status"] == "revoked"
+    after = c.get(f"/api/v1/sources/{src['id']}").json()
+    # The licence is gone: public availability authorizes nothing.
+    assert after["rights_status"] == "revoked"
+    assert after["authorized_uses"] == []
+    chk = c.get(f"/api/v1/sources/{src['id']}/rights-check",
+                params={"use": "publish", "platform": "youtube_shorts",
+                        "brand_channel_id": bc["id"], "clip_ms": 30000}).json()
+    # Publishing is refused; the licence that allowed it was revoked, which is reported.
+    assert not chk["allowed"] and chk["reason"] == "revoked"
     prov = c.get(f"/api/v1/sources/{src['id']}/provenance").json()
     actions = [(p["entity"], p["action"]) for p in prov]
     for expected in [("creator", "created"), ("creator", "channel_added"),
@@ -648,3 +667,86 @@ def test_api_import_refused_before_any_byte_without_rights(client, w, media_dir,
         assert s.scalar(select(func.count()).select_from(Recording)) == 0
         assert s.scalar(select(func.count()).select_from(Source)) == 0   # dry run rolled back
     assert [p.name for p in settings.temp_dir.iterdir() if not p.name.startswith(".")] == []
+
+
+@requires_ffmpeg
+def test_clip_cut_checks_edit_rights_and_length(w, client, db, settings, media_dir, monkeypatch):
+    scope = {**FULL_SCOPE, "max_clip_seconds": 1}
+    licence = w.licence(scope=scope)
+    source_id = w.source(url=None, kind="local", creator_channel_id=w.local)
+    recording = import_file(db, settings, media_dir / "basic.mp4").recording
+    drain(db, settings)
+    path = f"/api/v1/recordings/{recording.id}/clip"
+    params = {"start_ms": 0, "end_ms": 1000}
+    assert client.post(path, params=params).status_code == 403
+
+    with db.session() as session:
+        acquisition.attach_media(session, settings, source_id, recording.id)
+    too_long = client.post(path, params={"start_ms": 0, "end_ms": 1500})
+    assert too_long.status_code == 403
+    assert too_long.json()["error"]["details"]["reason"] == rights.CLIP_TOO_LONG
+    result = client.post(path, params=params)
+    assert result.status_code == 200, result.text
+    assert result.headers["content-type"] == "video/mp4"
+    assert result.content[4:8] == b"ftyp"
+
+    monkeypatch.setattr(clips, "_transcribe", lambda *_: [
+        {"w": "Clutch!", "start_ms": 100, "end_ms": 800},
+    ])
+    result = client.post(path, params={**params, "subtitles": "true"})
+    assert result.status_code == 200, result.text
+    assert b"tx3g" in result.content
+    assert b"Clutch!" in result.content
+
+    settings.clip_outro_path = media_dir / "basic.mp4"
+    result = client.post(path, params={**params, "layout": "split_facecam", "title": "Clutch!"})
+    assert result.status_code == 200, result.text
+    assert b"tx3g" not in result.content
+    rendered = settings.temp_dir / "verified-short.mp4"
+    rendered.write_bytes(result.content)
+    info = media.probe(settings.ffprobe_path, rendered, settings.ffprobe_timeout_seconds)
+    assert (info.width, info.height) == (1080, 1920)
+    assert 2950 <= info.duration_ms <= 3100
+
+    with db.session() as session:
+        rights.revoke(session, licence, "rights withdrawn")
+    assert client.post(path, params=params).status_code == 403
+
+
+@requires_ffmpeg
+def test_queued_highlight_scan_persists_evidence_and_respects_revocation(
+        w, client, db, settings, media_dir, monkeypatch):
+    licence = w.licence()
+    source_id = w.source(url=None, kind="local", creator_channel_id=w.local)
+    rec = import_file(db, settings, media_dir / "basic.mp4").recording
+    drain(db, settings)
+    url = f"/api/v1/recordings/{rec.id}/highlight-scan"
+    assert client.post(url).status_code == 403
+    with db.session() as s:
+        acquisition.attach_media(s, settings, source_id, rec.id)
+
+    def analyze(path, duration_ms, **kwargs):
+        kwargs["checkpoint"](60)
+        return {"duration_ms": duration_ms, "coverage_ms": duration_ms,
+                "speech_available": True, "items": [
+                    {"start_ms": 0, "end_ms": 1000, "peak_ms": 500, "score": 2,
+                     "motion": 4, "speech_cues": ["reaction"], "excerpt": "No way"},
+                ]}
+
+    monkeypatch.setattr(highlight_scan, "scan_video", analyze)
+    response = client.post(url)
+    assert response.status_code == 200, response.text
+    assert response.json()["job_type"] == "HIGHLIGHT_SCAN"
+    assert client.post(url).json()["id"] == response.json()["id"]
+    drain(db, settings)
+    result = client.get(url).json()
+    assert result["job"]["status"] == "COMPLETED"
+    assert result["result"]["items"][0]["excerpt"] == "No way"
+    frame = client.get(f"{url}/frame/0")
+    assert frame.status_code == 200, frame.text
+    assert frame.content.startswith(b"\xff\xd8")
+    with db.session() as s:
+        rights.revoke(s, licence, "rights withdrawn")
+    assert client.get(url).status_code == 403
+    assert client.get(f"{url}/frame/0").status_code == 403
+    assert get_rec(db, rec.id).status == "READY"

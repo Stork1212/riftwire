@@ -1,11 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
 import { ApiError, api } from "../services/api";
 import { rightsApi } from "../services/rightsApi";
-import { recording } from "./fixtures";
+import { job, recording } from "./fixtures";
 import type { Creator, Decision, Resolved, RightsRecord, Source, SourceDetail } from "../types/rights";
 
 vi.mock("../services/api", async (orig) => {
@@ -18,7 +18,7 @@ vi.mock("../services/rightsApi", () => ({
     "updateBrandChannel", "listCreators", "createCreator", "updateCreator", "addChannel",
     "creatorRights", "createRights", "supersedeRights", "revokeRights", "addEvidenceNote",
     "addEvidenceFile", "acquisitionMethods", "resolve", "listSources", "createSource", "getSource",
-    "updateSource", "setAssignments", "attachRecording", "rightsCheck", "provenance",
+    "updateSource", "setAssignments", "attachRecording", "acquireSource", "acquireJob", "rightsCheck", "provenance",
   ].map((k) => [k, vi.fn()])),
 }));
 
@@ -90,9 +90,16 @@ describe("Sources", () => {
       records: [], recordings: [] } as SourceDetail);
     r.provenance.mockResolvedValue([]);
     renderAt("/sources");
-    await userEvent.type(screen.getByLabelText("Video link"), "https://www.twitch.tv/somestreamer/clip/Clip");
-    await userEvent.click(screen.getByRole("button", { name: "Check link" }));
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("Video link"));
+    await user.paste("https://www.twitch.tv/somestreamer/clip/Clip");
     const box = await screen.findByTestId("resolve-result");
+    expect(within(box).queryByTitle("Twitch video preview")).not.toBeInTheDocument();
+    await user.click(within(box).getByRole("button", { name: "Load Twitch preview" }));
+    const player = new URL(within(box).getByTitle("Twitch video preview").getAttribute("src")!);
+    expect(player.origin).toBe("https://clips.twitch.tv");
+    expect(player.searchParams.get("clip")).toBe("Clip");
+    expect(player.searchParams.get("parent")).toBe(window.location.hostname);
     expect(within(box).getByText("Some Streamer")).toBeInTheDocument();
     expect(within(box).getByText("(matched automatically)")).toBeInTheDocument();
     expect(box.querySelector('[data-rights="active"]')).not.toBeNull();
@@ -102,17 +109,22 @@ describe("Sources", () => {
     expect(await screen.findByText("History (provenance)")).toBeInTheDocument();
   });
 
-  it("accepts scheme-less links (only the backend validates)", async () => {
+  it("checks a dropped scheme-less link and preserves the preview start time", async () => {
     r.resolve.mockResolvedValue({
       platform: "youtube", media: "video", video_id: "dQw4w9WgXcQ", canonical_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      start_ms: null, channel_login: null, existing_source: null,
+      start_ms: 30000, channel_login: null, existing_source: null,
       match: { status: "unmatched", matcher: null, reason: "choose", creator_channel_id: null, candidates: [] },
       channel: null, creator_name: null, covered: false, covering_record_ids: [],
     });
     renderAt("/sources");
-    await userEvent.type(screen.getByLabelText("Video link"), "youtu.be/dQw4w9WgXcQ");
-    await userEvent.click(screen.getByRole("button", { name: "Check link" }));
-    await waitFor(() => expect(r.resolve).toHaveBeenCalledWith("youtu.be/dQw4w9WgXcQ"));
+    fireEvent.drop(screen.getByLabelText("Video link"), {
+      dataTransfer: { getData: (type: string) => type === "text/uri-list"
+        ? "# source URL\r\nyoutu.be/dQw4w9WgXcQ?t=30" : "" },
+    });
+    await waitFor(() => expect(r.resolve).toHaveBeenCalledWith("youtu.be/dQw4w9WgXcQ?t=30"));
+    await userEvent.click(await screen.findByRole("button", { name: "Load YouTube preview" }));
+    expect(screen.getByTitle("YouTube video preview")).toHaveAttribute(
+      "src", "https://www.youtube.com/embed/dQw4w9WgXcQ?start=30");
   });
 
   it("never shows a stale resolution for an older link", async () => {
@@ -231,6 +243,29 @@ describe("Source detail", () => {
     expect(await screen.findByText(/— withdrawn/)).toBeInTheDocument();
   });
 
+  it("shows public footage as no permission and blocks fetching with the reason", async () => {
+    const pub = record({ id: "pub-1", basis: "public_web", coverage: "sources", attested_by: "system",
+      scope: { v: 1, uses: ["acquire", "analyze"], acquisition_methods: ["url_fetch"], publish_platforms: [],
+        brand_channels: [], monetization: false, attribution_required: null, max_clip_seconds: null,
+        territories: null, notes: "" } });
+    const refused = decision({ use: "acquire", allowed: false, reason: "creator_permission_needed",
+      message: "this footage is only classified as public web footage; public availability is not permission to download, analyse, edit or publish it",
+      action: "Ask the creator; when they agree, record their permission on Creators & Rights." });
+    r.getSource.mockResolvedValue({
+      ...source({ rights_status: "public_web", authorized_uses: [], url_canonical: "https://www.twitch.tv/videos/1" }),
+      analyze: decision({ allowed: false, reason: "creator_permission_needed" }), acquire: refused,
+      records: [pub], recordings: [], acquire_job: null,
+    } as SourceDetail);
+    r.provenance.mockResolvedValue([]);
+    renderAt("/sources/src-1");
+    expect(await screen.findByText("Public footage · no permission on record")).toBeInTheDocument();
+    expect(screen.getByText(/Public footage classification \(not permission\), recorded automatically/)).toBeInTheDocument();
+    expect(screen.getByText(/Public footage is not permission/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Acquire footage" })).toBeDisabled();
+    expect(screen.getByTestId("acquire-blocked")).toHaveTextContent(/public availability is not permission/);
+    expect(screen.getByText(/the creator agrees/)).toBeInTheDocument();
+  });
+
   it("asks once how footage was obtained when the method is not on record", async () => {
     const detailWith = (method: string | null) => ({
       ...source(), analyze: decision(), acquire: decision({ use: "acquire" }), records: [],
@@ -328,13 +363,21 @@ describe("Games & channels", () => {
 });
 
 describe("Import and navigation", () => {
-  it("offers Local file and Video URL; the URL path never offers a download", async () => {
+  it("queues acquisition of a saved link, follows the job and explains refusals", async () => {
     r.resolve.mockResolvedValue({
       platform: "twitch", media: "vod", video_id: "1", canonical_url: "https://www.twitch.tv/videos/1",
       start_ms: null, channel_login: null, existing_source: source(),
       match: { status: "matched", matcher: "existing_source", reason: "", creator_channel_id: "ch-1", candidates: [] },
       channel: null, creator_name: null, covered: true, covering_record_ids: [],
     });
+    const acqJob = { ...job({ id: "job-a", job_type: "ACQUIRE", status: "PENDING", progress_percent: 0 }),
+      recording_id: null, source_id: source().id, recording_filename: null };
+    r.acquireSource
+      .mockRejectedValueOnce(new ApiError(403, "rights_refused", "Written platform permission is required.",
+        { reason: "platform_permission_missing" }))
+      .mockResolvedValueOnce({ source_id: source().id, job: acqJob, recording: null });
+    r.acquireJob.mockResolvedValue({ ...acqJob, status: "COMPLETED", progress_percent: 100,
+      recording_id: "rec-9", recording_filename: "twitch-1.mp4" });
     renderAt("/import");
     expect(screen.getByRole("tab", { name: "Local file" })).toHaveAttribute("aria-selected", "true");
     await userEvent.click(screen.getByRole("tab", { name: "Video URL" }));
@@ -342,8 +385,16 @@ describe("Import and navigation", () => {
     await userEvent.click(screen.getByRole("button", { name: "Check link" }));
     await userEvent.click(await screen.findByRole("button", { name: "Already a source: use it" }));
     expect(screen.getByLabelText("How this file was obtained")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
-    expect(screen.getByText(/does not download from YouTube or Twitch/)).toBeInTheDocument();
+    const acquire = screen.getAllByRole("button", { name: "Acquire footage" })[0] as HTMLElement;
+    await userEvent.click(acquire);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Written platform permission is required.");
+    expect(r.acquireSource).toHaveBeenCalledWith(source().id);
+    await userEvent.click(acquire);
+    expect(await screen.findByRole("status")).toHaveTextContent("Acquiring in the background");
+    expect(acquire).toBeDisabled();                        // one ACQUIRE job per source
+    const link = await screen.findByRole("link", { name: "twitch-1.mp4" }, { timeout: 4000 });
+    expect(link).toHaveAttribute("href", "/recordings/rec-9");
+    expect(r.acquireJob).toHaveBeenCalledWith("job-a");
   });
 
   it("groups navigation into Workspace, Management and System", () => {

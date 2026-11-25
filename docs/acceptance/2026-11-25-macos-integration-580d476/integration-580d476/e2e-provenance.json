@@ -1,0 +1,101 @@
+[
+  {
+    "id": 1,
+    "entity": "creator",
+    "entity_id": "b219adef-60fb-46b2-9ef6-0c70f58eeb8b",
+    "action": "created",
+    "actor": "owner",
+    "details": {
+      "display_name": "E2E Public Streamer",
+      "relationship": "unaffiliated"
+    },
+    "at": "2026-11-25T02:47:57.859906Z"
+  },
+  {
+    "id": 2,
+    "entity": "creator",
+    "entity_id": "b219adef-60fb-46b2-9ef6-0c70f58eeb8b",
+    "action": "channel_added",
+    "actor": "owner",
+    "details": {
+      "channel_id": "bfd800ad-e04f-4956-94f1-8889a58fe34e",
+      "handle": "e2epublicstreamer",
+      "platform": "twitch",
+      "platform_channel_id": null
+    },
+    "at": "2026-11-25T02:47:57.878234Z"
+  },
+  {
+    "id": 3,
+    "entity": "source",
+    "entity_id": "cbc2c412-b25b-4250-834a-77b2809ec05c",
+    "action": "created",
+    "actor": "owner",
+    "details": {
+      "acquisition_method": "platform_export",
+      "creator_channel_id": "bfd800ad-e04f-4956-94f1-8889a58fe34e",
+      "game_id": null,
+      "kind": "twitch",
+      "url": "https://www.twitch.tv/videos/777000111"
+    },
+    "at": "2026-11-25T02:47:57.892339Z"
+  },
+  {
+    "id": 4,
+    "entity": "rights",
+    "entity_id": "af92be4a-11d8-4752-b8a9-516ebd282bdc",
+    "action": "recorded_public_web",
+    "actor": "system",
+    "details": {
+      "basis": "public_web",
+      "coverage": "sources",
+      "scope_sha256": "cfe3129b5b87e94571eae89441969914f3dbceb26b985ea2c65f520b9f26bf25",
+      "source_id": "cbc2c412-b25b-4250-834a-77b2809ec05c"
+    },
+    "at": "2026-11-25T02:47:57.894340Z"
+  },
+  {
+    "id": 5,
+    "entity": "recording",
+    "entity_id": "d9196eae-6893-4112-847d-e984cc0c130a",
+    "action": "attached_to_source",
+    "actor": "system",
+    "details": {
+      "method": "url_fetch",
+      "rights_record_id": "af92be4a-11d8-4752-b8a9-516ebd282bdc",
+      "rights_version": 1,
+      "sha256": "573b4a29f45df163827dfa28ec804f41a865e5716502aa5c0940bf53f18a3fcc",
+      "source_id": "cbc2c412-b25b-4250-834a-77b2809ec05c"
+    },
+    "at": "2026-11-25T02:47:58.499944Z"
+  },
+  {
+    "id": 6,
+    "entity": "source",
+    "entity_id": "cbc2c412-b25b-4250-834a-77b2809ec05c",
+    "action": "media_attached",
+    "actor": "system",
+    "details": {
+      "method": "url_fetch",
+      "recording_id": "d9196eae-6893-4112-847d-e984cc0c130a",
+      "rights_record_id": "af92be4a-11d8-4752-b8a9-516ebd282bdc"
+    },
+    "at": "2026-11-25T02:47:58.499976Z"
+  },
+  {
+    "id": 7,
+    "entity": "source",
+    "entity_id": "cbc2c412-b25b-4250-834a-77b2809ec05c",
+    "action": "acquired_by_url",
+    "actor": "system",
+    "details": {
+      "bytes": 6393477,
+      "downloader": "yt-dlp",
+      "downloader_version": "e2e-stand-in",
+      "recording_id": "d9196eae-6893-4112-847d-e984cc0c130a",
+      "sha256": "573b4a29f45df163827dfa28ec804f41a865e5716502aa5c0940bf53f18a3fcc",
+      "url": "https://www.twitch.tv/videos/777000111"
+    },
+    "at": "2026-11-25T02:47:58.500660Z"
+  }
+]

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")
 
@@ -21,7 +21,8 @@ class JobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    recording_id: str
+    recording_id: str | None              # None for an ACQUIRE job until its recording exists
+    source_id: str | None = None          # ACQUIRE jobs
     recording_filename: str | None = None
     job_type: str
     status: str
@@ -82,6 +83,13 @@ class EventOut(BaseModel):
     related_recording_id: str | None
 
 
+class AcquireOut(BaseModel):
+    """Acquisition of a saved link, queued as an ACQUIRE job (one per source)."""
+    source_id: str
+    job: JobOut
+    recording: RecordingOut | None = None   # set once the job has linked it
+
+
 class ImportResponse(BaseModel):
     recording: RecordingOut
     job_id: str
@@ -89,3 +97,7 @@ class ImportResponse(BaseModel):
     # that happened after the bytes were received (the recording is kept, unlinked).
     source_id: str | None = None
     source_error: str | None = None
+
+
+class ClipListIn(BaseModel):
+    text: str = Field(min_length=1, max_length=32_768)

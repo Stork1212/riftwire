@@ -1,0 +1,127 @@
+[
+  {
+    "id": 1,
+    "entity": "creator",
+    "entity_id": "154a47e2-2ba6-48e9-9681-1efd408a4b53",
+    "action": "created",
+    "actor": "owner",
+    "details": {
+      "display_name": "E2E Test Streamer",
+      "relationship": "unaffiliated"
+    },
+    "at": "2026-11-25T15:08:44.387097Z"
+  },
+  {
+    "id": 2,
+    "entity": "creator",
+    "entity_id": "154a47e2-2ba6-48e9-9681-1efd408a4b53",
+    "action": "channel_added",
+    "actor": "owner",
+    "details": {
+      "channel_id": "ec3d8032-597f-4c05-ad4d-6752c0a5473e",
+      "handle": "e2eteststreamer",
+      "platform": "twitch",
+      "platform_channel_id": null
+    },
+    "at": "2026-11-25T15:08:44.403062Z"
+  },
+  {
+    "id": 4,
+    "entity": "rights",
+    "entity_id": "829e7201-8c71-4e93-9c88-def6ae5bf67d",
+    "action": "created",
+    "actor": "owner",
+    "details": {
+      "basis": "creator_permission",
+      "coverage": "creator",
+      "lineage_id": "5b90012d-626d-4a55-981c-d79503d6164e",
+      "scope_sha256": "e47f8ac24f7d7be68dc532515ff144294c50edc1ea282f15feb820d1441de28d",
+      "version": 1
+    },
+    "at": "2026-11-25T15:08:44.459414Z"
+  },
+  {
+    "id": 5,
+    "entity": "rights",
+    "entity_id": "829e7201-8c71-4e93-9c88-def6ae5bf67d",
+    "action": "attested",
+    "actor": "owner",
+    "details": {
+      "scope_sha256": "e47f8ac24f7d7be68dc532515ff144294c50edc1ea282f15feb820d1441de28d",
+      "version": 1
+    },
+    "at": "2026-11-25T15:08:44.459824Z"
+  },
+  {
+    "id": 6,
+    "entity": "rights",
+    "entity_id": "829e7201-8c71-4e93-9c88-def6ae5bf67d",
+    "action": "evidence_added",
+    "actor": "owner",
+    "details": {
+      "evidence_id": "c5559c26-fc22-4a3b-a829-e99f7b807ea8",
+      "kind": "platform_permission",
+      "with_file": false
+    },
+    "at": "2026-11-25T15:08:44.473352Z"
+  },
+  {
+    "id": 7,
+    "entity": "source",
+    "entity_id": "a1156954-8c16-4255-be02-093811b917af",
+    "action": "created",
+    "actor": "owner",
+    "details": {
+      "acquisition_method": "platform_export",
+      "creator_channel_id": "ec3d8032-597f-4c05-ad4d-6752c0a5473e",
+      "game_id": null,
+      "kind": "twitch",
+      "url": "https://www.twitch.tv/videos/777000111"
+    },
+    "at": "2026-11-25T15:08:44.484626Z"
+  },
+  {
+    "id": 8,
+    "entity": "recording",
+    "entity_id": "a49d3e3c-f361-4ac7-9d48-abab29c44d12",
+    "action": "attached_to_source",
+    "actor": "system",
+    "details": {
+      "method": "url_fetch",
+      "rights_record_id": "829e7201-8c71-4e93-9c88-def6ae5bf67d",
+      "rights_version": 1,
+      "sha256": "573b4a29f45df163827dfa28ec804f41a865e5716502aa5c0940bf53f18a3fcc",
+      "source_id": "a1156954-8c16-4255-be02-093811b917af"
+    },
+    "at": "2026-11-25T15:08:44.998089Z"
+  },
+  {
+    "id": 9,
+    "entity": "source",
+    "entity_id": "a1156954-8c16-4255-be02-093811b917af",
+    "action": "media_attached",
+    "actor": "system",
+    "details": {
+      "method": "url_fetch",
+      "recording_id": "a49d3e3c-f361-4ac7-9d48-abab29c44d12",
+      "rights_record_id": "829e7201-8c71-4e93-9c88-def6ae5bf67d"
+    },
+    "at": "2026-11-25T15:08:44.998121Z"
+  },
+  {
+    "id": 10,
+    "entity": "source",
+    "entity_id": "a1156954-8c16-4255-be02-093811b917af",
+    "action": "acquired_by_url",
+    "actor": "system",
+    "details": {
+      "bytes": 6393477,
+      "downloader": "yt-dlp",
+      "downloader_version": "e2e-stand-in",
+      "recording_id": "a49d3e3c-f361-4ac7-9d48-abab29c44d12",
+      "sha256": "573b4a29f45df163827dfa28ec804f41a865e5716502aa5c0940bf53f18a3fcc",
+      "url": "https://www.twitch.tv/videos/777000111"
+    },
+    "at": "2026-11-25T15:08:44.998780Z"
+  }
+]

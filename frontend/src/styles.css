@@ -379,6 +379,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 .evidence .toolbar { margin-top: var(--s3); }
 blockquote { margin: var(--s2) 0; padding: var(--s2) var(--s4); border-left: 3px solid var(--line-strong); color: var(--muted); overflow-wrap: anywhere; }
 .resolve { margin-top: var(--s5); padding-top: var(--s5); border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: var(--s4); }
+.video-preview { display: grid; gap: var(--s3); }
+.video-preview iframe {
+  width: 100%;
+  max-width: 720px;
+  aspect-ratio: 16 / 9;
+  min-height: 300px;
+  border: 0;
+  background: #000;
+}
+
 .use-chips { display: inline-flex; gap: var(--s1); flex-wrap: wrap; }
 .use-chip { font-size: var(--fs-xs); font-weight: 500; padding: 2px var(--s2); border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); white-space: nowrap; }
 .authorized { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s3); }
