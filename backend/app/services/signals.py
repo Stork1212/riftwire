@@ -78,9 +78,9 @@ def fingerprint(cfg: dict) -> str:
 # ------------------------------------------------------------------- FFmpeg metadata
 def iter_metadata(lines, offset_s: float = 0.0):
     """Stream ``metadata=print`` / ``ametadata=print`` lines -> ``(pts_seconds, {key:
-    value})`` per frame, in decode order, with ``offset_s`` (the stream's start time)
-    subtracted so times are relative to the recording's start, like the transcript's. A
-    frame without a timestamp (``NOPTS``) is skipped with its values."""
+    value})`` per frame, in decode order, minus ``offset_s`` (0 for FFmpeg's own output: it
+    already starts each input at 0 unless ``-copyts`` is given, which RIFTWIRE never passes).
+    A frame without a timestamp (``NOPTS``) is skipped with its values."""
     t: float | None = None
     kv: dict[str, str] = {}
     have = False
@@ -280,9 +280,10 @@ def visual_command(ffmpeg: str, source: Path, cfg: dict = VISUAL_CONFIG,
 
 
 def start_offset_s(ffprobe: str, source: Path, run) -> float:
-    """The file's start time. FFmpeg's metadata reports absolute presentation times, while
-    transcript chunks and keyframe seeks are relative to the file start, so signal times
-    are shifted by this to share the recording's time base."""
+    """The container's start time, recorded for reference only. FFmpeg (without
+    ``-copyts``) already removes it before the metadata filters run, so signal times are
+    relative to the recording's start like transcript chunks and keyframe seeks; subtracting
+    it again would shift every signal early (Codex review of 0be24ef, verified)."""
     r = run([ffprobe, "-v", "error", "-show_entries", "format=start_time", "-of",
              "default=nw=1:nk=1", str(source)], 60)
     out = getattr(r, "stdout", b"")
@@ -320,18 +321,18 @@ def measure(kind: SignalKind, ffmpeg: str, source: Path, duration_ms: int,
         fh = None
         lines = (out.decode("utf-8", "replace") if isinstance(out, bytes) else out).splitlines()
     try:
-        frames = iter_metadata(lines, offset)
+        frames = iter_metadata(lines)              # already relative to the start
         if kind == SignalKind.AUDIO:
             frames = list(frames)                 # ~10 rows per second: small
             if not frames:
                 raise PermanentJobError("FFmpeg reported no audio frames for this recording")
             series, events = analyse_audio(frames, duration_ms)
-            series["start_offset_s"] = offset
+            series["container_start_s"] = offset    # reference only; not applied
             return series, events, []
         series, events, scenes = analyse_visual(frames, duration_ms)
         if not series["frames"]:
             raise PermanentJobError("FFmpeg reported no video frames for this recording")
-        series["start_offset_s"] = offset
+        series["container_start_s"] = offset        # reference only; not applied
         return series, events, scenes
     finally:
         if fh is not None:

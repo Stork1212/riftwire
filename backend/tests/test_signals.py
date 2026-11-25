@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -293,7 +294,7 @@ def test_review_signal_metadata_streams_through_a_file(tmp_path):
     work.mkdir()
     series, _, scenes = signals.measure(SignalKind.VISUAL, "ffmpeg", clip, 10_000,
                                         run_command, 120, work=work)
-    assert series["frames"] > 100 and scenes and series["start_offset_s"] >= 0
+    assert series["frames"] > 100 and scenes and series["container_start_s"] >= 0
     assert list(work.iterdir()) == []                      # the metadata file is removed
 
 
@@ -305,3 +306,27 @@ def test_review_evidence_windows_are_bounded(db, settings, tmp_path, monkeypatch
     monkeypatch.setattr(analysis_evidence, "MAX_WINDOW_MS", 5_000)   # 10 min in production
     with db.session() as s, pytest.raises(ValidationFailed):
         analysis_evidence.window(s, settings, rec.id, 0, 8_000)
+
+
+@requires_ffmpeg
+def test_codex_review_a_container_start_offset_is_not_subtracted_twice(tmp_path):
+    # Codex review of 0be24ef: FFmpeg already starts each input at 0 (no -copyts).
+    from app.services.media import run_command
+
+    clip = marker_clip(tmp_path / "m.mp4", MARKERS, 10.0)
+    shifted = tmp_path / "shifted.mp4"
+    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", str(clip), "-c", "copy",
+                    "-output_ts_offset", "5", str(shifted)], check=True, timeout=60)
+    base, _, base_scenes = signals.measure(SignalKind.VISUAL, "ffmpeg", clip, 10_000,
+                                           run_command, 120)
+    got, _, scenes = signals.measure(SignalKind.VISUAL, "ffmpeg", shifted, 10_000,
+                                     run_command, 120)
+    assert got["container_start_s"] > 4.5
+    # Same times within the audio priming (the earliest stream defines 0), not 5 s early.
+    assert len(scenes) == len(base_scenes)
+    assert all(abs(x["start_ms"] - y["start_ms"]) <= 50
+               for x, y in zip(scenes, base_scenes, strict=True))
+    assert all(s["start_ms"] >= 0 for s in scenes)
+    a, _, _ = signals.measure(SignalKind.AUDIO, "ffmpeg", shifted, 10_000, run_command, 120)
+    b, _, _ = signals.measure(SignalKind.AUDIO, "ffmpeg", clip, 10_000, run_command, 120)
+    assert a["t_ms"][0] >= 0 and abs(a["t_ms"][0] - b["t_ms"][0]) <= 50
