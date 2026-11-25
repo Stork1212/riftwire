@@ -69,6 +69,24 @@ export function suggestClips(id: string): Promise<{ items: ClipSuggestion[] }> {
   return request(`/api/v1/recordings/${encodeURIComponent(id)}/clip-suggestions`, { method: "POST" });
 }
 
+export interface ClipRange {
+  line: number;
+  label: string;
+  start_ms: number;
+  end_ms: number;
+  from_ms: number;
+  to_ms: number;
+}
+
+export function validateClipList(recordingId: string, text: string):
+  Promise<{ source_url: string | null; items: ClipRange[] }> {
+  return request(`/api/v1/recordings/${encodeURIComponent(recordingId)}/clip-list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+}
+
 export type ClipLayout = "original" | "split" | "split_facecam";
 
 export async function downloadClip(id: string, start: number, end: number, subtitles = false,

@@ -16,8 +16,9 @@ from app.core.config import Settings
 from app.core.errors import NotFoundError, ServiceUnavailable, ValidationFailed
 from app.core.logging import get_logger
 from app.db.session import Database
-from app.models import Job, JobStatus, Recording, Severity, SystemEvent
+from app.models import Job, JobStatus, Recording, Severity, Source, SystemEvent
 from app.schemas.api import (
+    ClipListIn,
     EventOut,
     ImportResponse,
     JobOut,
@@ -25,7 +26,7 @@ from app.schemas.api import (
     RecordingDetail,
     RecordingOut,
 )
-from app.services import clips, media, queue, rights_import, system
+from app.services import clip_lists, clips, media, queue, rights_import, system
 from app.services.events import record_event
 from app.services.ingest import UploadSession, complete_upload
 from app.services.storage import safe_join
@@ -204,6 +205,20 @@ async def import_recording(request: Request, db: DB, cfg: CFG,
             acquisition_method, filename)
     return ImportResponse(recording=rec_out(result.recording, source_id=linked),
                           job_id=result.job_id, source_id=linked, source_error=error)
+
+
+@api.post("/recordings/{recording_id}/clip-list", dependencies=[Depends(require_schema)])
+def validate_clip_list(recording_id: str, body: ClipListIn, db: DB):
+    with db.session() as session:
+        recording = session.get(Recording, recording_id)
+        if recording is None:
+            raise NotFoundError("Recording not found")
+        if not recording.duration_ms:
+            raise ValidationFailed("Wait for this recording's duration to be available.")
+        source = session.get(Source, recording.source_id) if recording.source_id else None
+        url, items = clip_lists.parse(body.text, source.url_canonical if source else None,
+                                      recording.source_offset_ms, recording.duration_ms)
+    return {"source_url": url, "items": items}
 
 
 @api.post("/recordings/{recording_id}/clip-suggestions", dependencies=[Depends(require_schema)])

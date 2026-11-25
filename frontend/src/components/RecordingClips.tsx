@@ -3,13 +3,14 @@ import { Link } from "react-router-dom";
 import { downloadClip, suggestClips, type ClipLayout, type ClipSuggestion } from "../services/api";
 import { formatDuration } from "../services/format";
 import type { Recording } from "../types/api";
+import { ClipListReview, timecode } from "./ClipListReview";
 import { ActionableError } from "./ActionableError";
 import { Panel } from "./ui";
 
 function timestamp(value: string): number | undefined {
-  const parts = /^(\d{1,3}):([0-5]\d):([0-5]\d)$/.exec(value.trim());
+  const parts = /^(\d{1,3}):([0-5]\d):([0-5]\d)(?:\.(\d{3}))?$/.exec(value.trim());
   if (!parts) return undefined;
-  return (Number(parts[1]) * 3600 + Number(parts[2]) * 60 + Number(parts[3])) * 1000;
+  return (Number(parts[1]) * 3600 + Number(parts[2]) * 60 + Number(parts[3])) * 1000 + Number(parts[4] ?? 0);
 }
 
 export function RecordingClips({ recording }: { recording: Recording }) {
@@ -60,6 +61,12 @@ export function RecordingClips({ recording }: { recording: Recording }) {
             </button>
             <Link to={`/sources/${recording.source_id}`}>View source and rights</Link>
           </div>
+          <ClipListReview recordingId={recording.id} disabled={Boolean(busy)} onSelect={(clip) => {
+            setStart(timecode(clip.from_ms));
+            setEnd(timecode(clip.to_ms));
+            setTitle(clip.label.replaceAll("_", " ").slice(0, 80));
+            setError(undefined);
+          }} />
           <div className="subsection stack">
             <strong>35/65 Short</strong>
             <div className="toolbar">
