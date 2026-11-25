@@ -1,14 +1,14 @@
-"""public_web rights basis: fetch and analyse public footage, nothing more
+"""public_web rights basis (a classification; authorizes nothing since 2026-11-25)
 
 Also adds the creator relationship ``unaffiliated`` (no relationship: a creator whose public
 footage was saved by link), so such creators are not recorded as partners or licensors.
 
-A ``public_web`` record is written automatically when a URL source is saved. It claims only
-that the footage is publicly accessible and may be fetched, never that anyone agreed. It
-names the source's creator (every source belongs to a creator channel) but claims nothing
-from them, covers exactly one source (``coverage = 'sources'``), and authorizes ``acquire``
-and ``analyze`` only: ``rights.evaluate`` refuses edit and
-publish with ``creator_permission_needed``.
+Schema only. When written (``b13b91f``), the application recorded a ``public_web`` row
+automatically for each saved link, authorizing fetch and analysis. Owner decision
+2026-11-25 superseded that: public availability is not permission. The application writes
+no new ``public_web`` rows, and ``rights.evaluate`` refuses every use under existing ones
+(``creator_permission_needed``). The basis stays in the schema so that this immutable
+history remains valid.
 
 Rebuilds ``rights_records`` (SQLite batch). Every trigger that mentions the table is dropped
 first and recreated afterwards from the frozen copies below, inside the same migration
