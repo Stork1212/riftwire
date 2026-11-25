@@ -17,7 +17,8 @@ windows are kept, up to ``max_windows``.
 
 **F. Boundaries.** After the model picks a start word and an end word, the clip is
 refined without inventing anything: it never starts or ends inside a word; a reaction that
-continues straight after the chosen end (no pause of ``reaction_gap_ms``) is kept; a short
+continues straight after the chosen end (no pause of ``reaction_gap_ms``) is kept, for at
+most ``reaction_max_ms`` (continuous commentary is not a reaction); a short
 pre-roll and post-roll is added only where there is no other speech; the clip stays within
 the limits. Every change is recorded.
 """
@@ -35,6 +36,7 @@ CONFIG = {
     "version": 1, "pre_ms": 12_000, "post_ms": 18_000, "min_window_ms": 20_000,
     "max_window_ms": 60_000, "speech_burst_ms": 5_000, "reaction_gap_ms": 700,
     "pre_roll_ms": 300, "post_roll_ms": 600, "nearby_speech_ms": 4_000,
+    "reaction_max_ms": 5_000,
     "dead_gap_ms": 4_000,
 }
 
@@ -245,13 +247,18 @@ def refine(start_ms: int, end_ms: int, words: list[dict], duration_ms: int, *,
             notes.append("end moved to the end of a word it cut")
     after = [w for w in ws if w["start_ms"] >= b]
     tail = b
+    capped = False
     for w in after:                                 # keep a reaction that runs straight on
         if w["start_ms"] - tail > cfg["reaction_gap_ms"] or w["end_ms"] - a > max_ms:
+            break
+        if w["end_ms"] - b > cfg["reaction_max_ms"]:  # continuous talk: not a reaction
+            capped = True
             break
         tail = w["end_ms"]
     if tail > b:
         notes.append(f"end extended {tail - b} ms to keep speech that continues without "
-                     "a pause")
+                     "a pause" + (f" (capped at {cfg['reaction_max_ms'] // 1000} s; "
+                                  "the speech goes on)" if capped else ""))
         b = tail
     prev_end = max((w["end_ms"] for w in ws if w["end_ms"] <= a), default=0)
     next_start = min((w["start_ms"] for w in ws if w["start_ms"] >= b), default=duration_ms)
