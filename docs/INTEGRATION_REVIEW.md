@@ -67,6 +67,11 @@ rights-checked length.
 - the fade-mode tail is used only when it fits;
 - a recording that ends at the clip boundary has no tail.
 
+**Native Mac verification of `7911092`: all passed.** Test suites, acceptance 29/29,
+Alembic checks, the demo-DB copy migration and end-to-end 14/14 passed at 15:05Z. The smoke
+test was re-run at 15:13Z after stopping a leftover smoke instance that held its port:
+30/0/0. Evidence: [`acceptance/2026-11-25-macos-pr14-7911092/`](acceptance/2026-11-25-macos-pr14-7911092/README.md).
+
 ## 2. Pillow (approved by the owner, 2026-11-25)
 | | |
 |---|---|
