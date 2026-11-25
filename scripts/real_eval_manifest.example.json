@@ -1,0 +1,19 @@
+{
+  "_comment": "Copy to ~/Claude/riftwire-env/real-eval/manifest.json (outside Git) and fill in. Times are HH:MM:SS(.mmm) or seconds. Mark every span you would actually clip; the system never sees the marks.",
+  "recordings": [
+    {
+      "name": "gta-session-01",
+      "path": "/Users/you/Movies/GTA/session-01.mp4",
+      "authorized": true,
+      "authorization": "I recorded this gameplay myself and authorize its use for the RIFTWIRE highlight evaluation (no publishing).",
+      "basis": "ownership",
+      "game": "gta",
+      "channel": "rumbleframe",
+      "request": 5,
+      "marked": [
+        {"start": "00:04:12", "end": "00:04:41", "label": "police chase ends in the harbour"},
+        {"start": "00:17:03.5", "end": "00:17:25", "label": "ragdoll fail"}
+      ]
+    }
+  ]
+}
