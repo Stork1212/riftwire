@@ -22,5 +22,13 @@ scripted reaction (informative only). Two AI batches: one failed validation afte
 attempts, one accepted first time; 171 s end to end; $0. The rendered Short (not committed:
 media) is 1080x1920, 30 fps, 14.70 s = 12.2 s clip + 2.5 s outro; inspected by contact
 sheet: 35/65 layout, captions word-highlighted in sync with the speech, full RumbleFrame
-outro. `CHECKSUMS.sha256` lists the original run folder (files not copied here: raw logs,
-media, git output).
+outro. `CHECKSUMS.sha256` covers exactly the files committed in this folder (README.md included;
+regenerated in a docs-only correction). Before regeneration it was the run folder's own
+manifest, which listed files not committed here (raw logs, `acceptance.json`, port probes,
+`git.txt`) and was written before the script appended its last two lines to `summary.txt`.
+Integrity of the copies was checked against that original manifest before it was replaced:
+`ai-runs.json`, `highlights.json` and `m6-native.json` (from the run's `m6-native/` subfolder)
+match their original hashes, and `summary.txt` matches its original hash without its two
+last lines ("ALL PASSED at dcf5a94…" and "Evidence: …"), which the script appended after
+writing the manifest. Every other committed file matched its original
+hash unchanged.
