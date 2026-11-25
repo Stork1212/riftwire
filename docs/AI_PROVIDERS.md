@@ -13,7 +13,7 @@ the job queue**; M5 does that after the M4 gate. Real local inference is measure
 | `prompts.py` | Versioned registry over `prompts/`: TOML front matter, `## system` and `## user` sections, `{{placeholders}}`, and a SHA-256 per file. Evidence text is JSON-quoted with `<` and `>` escaped, so it cannot close the `<EVIDENCE>` block. |
 | `analyze.py` | One evaluation: render → provider → validate, with at most 2 repair retries that feed back the validator's errors. The outcome records the provider identity, prompt id/version/SHA, evidence fingerprint and per-attempt metrics. It ends in `accepted`, `failed_validation` or `provider_error`; there is no silent fallback. |
 | `providers/base.py` | The engine-neutral contract: `identity()`, `health()`, `generate(Request)`, `unload()`. |
-| `providers/ollama.py` | Ollama `/api/chat`, standard library only. **Loopback only**: anything else is refused before a socket opens, and environment proxies are bypassed. JSON-schema `format`, `think: false`, temperature 0 with a fixed seed, bounded `num_ctx` and `num_predict`, and `keep_alive: 0` (unload after the call). |
+| `providers/ollama.py` | Ollama `/api/chat`, standard library only. **Loopback only**: anything else is refused before a socket opens, and environment proxies are bypassed. `think: false`, temperature 0 with a fixed seed, **repetition penalties forced off** (the model ships `presence_penalty 1.5`, which penalizes the repeated keys of JSON), bounded `num_ctx` and `num_predict`, and `keep_alive: 0`. **Output constraint** `structured="auto"` sends the JSON schema as `format`; if the engine answers `501 structured output is unavailable`, it retries without `format` and records `output_constraint: "none"` plus the engine's reason. `"schema"` refuses instead; `"none"` never constrains. Engine errors keep their code and message (`structured_output_unavailable`, `model_missing`, `provider_unreachable`, …). |
 | `providers/cloud.py` | OpenAI and Anthropic placeholders that **refuse at construction** ($0 budget). They contain no network code and read no keys. |
 
 **Replacing or upgrading a model is configuration only:** the model tag (and later the
@@ -44,8 +44,7 @@ so old and new results stay distinguishable.
 | | |
 |---|---|
 | Tag | `qwen3.5:4b` (Ollama library) |
-| Weights | Q4_K_M, about 4.2 B parameters, plus a BF16 vision projector |
-| Download | 3.3 GB or 4.0 GB, depending on which manifest Ollama serves (both are listed); the Mac run records the actual digest and size |
+| What Ollama 0.40 actually installed on the Mac | **MLX build:** safetensors, **NVFP4**, runner `mlx`, 4.5 B parameters including vision; digest `7f3251fa6878…` (4.0 GB listed; 3.70 GiB on disk, 733 layers). On Apple Silicon, Ollama 0.40 picks the MLX variant when one exists; the GGUF Q4_K_M build (llama.cpp runner) is a different tag. The plan's "Q4_K_M" expectation was wrong |
 | Licence | Apache 2.0 (Ollama page, and the Qwen3.5 family release). The Mac script saves `ollama show --license` and fails if it is not Apache 2.0 |
 | Context | 256K native; RIFTWIRE uses 8 192 |
 | Inputs | Text and image. Keyframe input is a later option; the first benchmark is text-only |
@@ -55,6 +54,39 @@ so old and new results stay distinguishable.
 benchmark, the next candidates are `qwen3.5:9b` and then `gemma4:e4b`
 ([plan §5](M5_M6_AI_HIGHLIGHTS_PLAN.md)). Either one is downloaded **only after** a
 recommendation backed by benchmark evidence.
+
+## First native run (2026-11-25 05:13Z, `c7179ad`): no inference verified
+- **Result:** all 10 benchmark requests failed with `provider_error`, and none were
+  accepted. The script still printed "ALL PASSED". That was a gate bug, now fixed.
+- **Root cause, from Ollama's own log:**
+  - the request reached the MLX runner, which logged `Structured output is unavailable`,
+    because `libollama_xgrammar.dylib` is missing from the Homebrew 0.40.18 bottle;
+  - it answered `501 Not Implemented` to every `/api/chat` carrying `format`.
+- **It was not a model-quality problem:** the model loaded in 2.3 s, and no token was ever
+  generated.
+- **Fixes:**
+  - the engine's message is kept (`structured_output_unavailable: … HTTP 501: structured
+    output is unavailable`);
+  - `structured="auto"` falls back explicitly to unconstrained output, which the
+    validator checks as before;
+  - repetition penalties are forced off;
+  - the benchmark gate fails on any provider error, on zero accepted answers, or on no
+    generated tokens;
+  - `bench/llm/probe.py` isolates health → model → plain text → JSON mode → schema mode →
+    RIFTWIRE path.
+- **Swap went from 1 829 to 3 334 MB** (the swap file grew from 3 to 4 GB):
+  - when the model loaded, Ollama logged `free="3.7 GiB"` against 3.78 GB of weights, so
+    macOS swapped **other processes'** pages out;
+  - Ollama stopped its runner afterwards (`stopping mlx runner subprocess`, `ollama ps`
+    empty), and the memory-pressure free figure rose from 40 % to 44 %;
+  - macOS keeps swapped pages in swap until their owners touch them, so "used" does not fall
+    at once. That alone does not show that Ollama held memory. The next run samples swap
+    and available memory every 0.25 s on a thread that no longer blocks on `/api/ps`
+    (it blocked for the whole load the first time), and again after unload, after server
+    shutdown, and 30 s and 60 s later.
+- **Side effect:** on first start, `ollama serve` created an identity key in
+  `~/.ollama/id_ed25519` (used for ollama.com accounts). Cloud features are off. The key
+  is left in place and noted.
 
 ## Benchmark (`bench/llm/llm_bench.py`)
 **What it measures:**

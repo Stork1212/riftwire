@@ -43,6 +43,10 @@ class Request:
     seed: int = 7
     timeout_s: float = 300.0
     think: bool = False
+    # Repetition penalties are forced off: model defaults (qwen3.5 ships presence_penalty
+    # 1.5) penalize tokens already used, which corrupts JSON that repeats keys.
+    presence_penalty: float = 0.0
+    repeat_penalty: float = 1.0
 
 
 @dataclass(frozen=True)

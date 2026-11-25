@@ -3,8 +3,14 @@
 * **Loopback only.** The base URL must resolve to 127.0.0.1, ::1 or ``localhost``; anything
   else is refused before a socket is opened. Environment proxies are bypassed, so a call
   can never leave the machine through ``HTTP(S)_PROXY``.
-* **Constrained output.** The ``highlight_eval.v1`` JSON schema is passed as ``format``;
-  acceptance still belongs to :mod:`app.ai.validate`.
+* **Constrained output, explicit and recorded.** ``structured="auto"`` (default) passes the
+  JSON schema as ``format``. Some engine builds cannot constrain output: Ollama's MLX
+  runner needs its xgrammar library, which the Homebrew 0.40.18 bottle does not ship, and
+  answers ``501 structured output is unavailable``. In ``auto`` the adapter then retries the
+  same request **without** ``format`` and records ``output_constraint: "none"`` with the
+  engine's reason in every response's metrics. ``structured="schema"`` refuses instead;
+  ``"none"`` never sends ``format``. Acceptance always belongs to :mod:`app.ai.validate`,
+  so an unconstrained answer is checked exactly like a constrained one.
 * **Thinking off by default** (``think: false``), deterministic options (temperature 0,
   fixed seed), a bounded ``num_ctx`` and ``num_predict``.
 * **Memory.** ``keep_alive`` defaults to ``0`` so the model is unloaded after each call;
@@ -17,6 +23,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from typing import Literal
 from urllib.parse import urlsplit
 
 from app.ai.providers.base import Identity, ProviderError, Request, Response
@@ -35,10 +42,13 @@ def _check_loopback(base_url: str) -> str:
 
 class OllamaProvider:
     def __init__(self, model: str, *, base_url: str = "http://127.0.0.1:11434",
-                 keep_alive: str | int = 0):
+                 keep_alive: str | int = 0,
+                 structured: Literal["auto", "schema", "none"] = "auto"):
         self.model = model
         self.base_url = _check_loopback(base_url)
         self.keep_alive = keep_alive
+        self.structured = structured
+        self.schema_unavailable_reason: str | None = None
 
     # ------------------------------------------------------------------ transport
     def _call(self, path: str, payload: dict | None, timeout: float) -> dict:
@@ -51,9 +61,19 @@ class OllamaProvider:
                 body = r.read(8 * 1024 * 1024 + 1)
         except urllib.error.HTTPError as e:
             detail = e.read(2000).decode(errors="replace")
-            transient = e.code >= 500 or e.code == 429
-            code = "model_missing" if e.code == 404 else "provider_http_error"
-            raise ProviderError(f"Ollama {path} returned {e.code}: {detail}",
+            try:
+                message = str(json.loads(detail).get("error") or detail)
+            except (json.JSONDecodeError, AttributeError):
+                message = detail
+            if e.code == 404:
+                code, transient = "model_missing", False
+            elif e.code == 501 and "structured output" in message.lower():
+                code, transient = "structured_output_unavailable", False
+            elif e.code == 501:
+                code, transient = "engine_not_implemented", False
+            else:
+                code, transient = "provider_http_error", e.code >= 500 or e.code == 429
+            raise ProviderError(f"Ollama {path} returned HTTP {e.code}: {message}",
                                 transient=transient, code=code) from e
         except TimeoutError as e:
             raise ProviderError(f"Ollama {path} timed out after {timeout:.0f} s",
@@ -96,11 +116,25 @@ class OllamaProvider:
             "think": request.think,
             "keep_alive": self.keep_alive,
             "options": {"num_ctx": request.num_ctx, "num_predict": request.max_tokens,
-                        "temperature": request.temperature, "seed": request.seed},
+                        "temperature": request.temperature, "seed": request.seed,
+                        "presence_penalty": request.presence_penalty,
+                        "repeat_penalty": request.repeat_penalty},
         }
-        if request.json_schema is not None:
+        constraint = "none"
+        if (request.json_schema is not None and self.structured != "none"
+                and self.schema_unavailable_reason is None):
             payload["format"] = request.json_schema
-        r = self._call("/api/chat", payload, request.timeout_s)
+            constraint = "json_schema"
+        try:
+            r = self._call("/api/chat", payload, request.timeout_s)
+        except ProviderError as e:
+            if e.code != "structured_output_unavailable" or self.structured != "auto":
+                raise
+            # Remembered for this provider instance: later calls skip the failing request.
+            self.schema_unavailable_reason = str(e)
+            payload.pop("format", None)
+            constraint = "none"
+            r = self._call("/api/chat", payload, request.timeout_s)
         msg = r.get("message") or {}
         ns = 1_000_000
         metrics = {
@@ -111,6 +145,10 @@ class OllamaProvider:
             "output_tokens": r.get("eval_count", 0),
             "output_ms": round(r.get("eval_duration", 0) / ns, 1),
             "done_reason": r.get("done_reason"),
+            "output_constraint": constraint,
+            "constraint_note": self.schema_unavailable_reason if constraint == "none"
+            and request.json_schema is not None else None,
+            "thinking_chars": len(msg.get("thinking", "") or ""),
         }
         return Response(text=msg.get("content", ""), thinking=msg.get("thinking", "") or "",
                         metrics=metrics, cost_usd=0.0)

@@ -172,6 +172,7 @@ class _Stub(BaseHTTPRequestHandler):
     calls: list[dict] = []
     reply: dict | None = None
     status = 200
+    reject_format = False          # behave like Ollama's MLX runner without xgrammar
 
     def log_message(self, *a):
         pass
@@ -197,6 +198,9 @@ class _Stub(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         type(self).calls.append({"path": self.path, "body": body})
+        if type(self).reject_format and "format" in body:
+            self._send(501, {"error": "structured output is unavailable"})
+            return
         if type(self).status != 200:
             self._send(type(self).status, {"error": "model not found"})
             return
@@ -206,7 +210,7 @@ class _Stub(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def stub():
-    _Stub.calls, _Stub.reply, _Stub.status = [], None, 200
+    _Stub.calls, _Stub.reply, _Stub.status, _Stub.reject_format = [], None, 200, False
     srv = HTTPServer(("127.0.0.1", 0), _Stub)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -233,7 +237,7 @@ def test_generate_sends_schema_no_thinking_and_unloads(stub, monkeypatch):
     assert body["think"] is False and body["keep_alive"] == 0 and body["stream"] is False
     assert body["format"] == {"type": "object"}
     assert body["options"] == {"num_ctx": 4096, "num_predict": 100, "temperature": 0.0,
-                               "seed": 7}
+                               "seed": 7, "presence_penalty": 0.0, "repeat_penalty": 1.0}
     assert r.cost_usd == 0.0 and r.metrics["output_tokens"] == 10
     p.unload()
     assert _Stub.calls[-1]["body"] == {"model": "qwen3.5:4b", "keep_alive": 0}
@@ -303,3 +307,56 @@ def test_injection_text_reaches_the_model_only_inside_the_evidence_block():
     assert "ignore" not in req.system.lower().split("rules")[0]
     inside = req.user.split("<EVIDENCE>")[1].split("</EVIDENCE>")[0]
     assert "ignore" in inside and "ignore" not in req.user.split("<EVIDENCE>")[0]
+
+
+# ------------------------------------------- regressions from the first Mac run (05:13Z)
+def test_engine_without_structured_output_falls_back_explicitly_in_auto_mode(stub):
+    """Ollama 0.40.18 (Homebrew) runs qwen3.5:4b on MLX, whose structured output needs a
+    library the bottle lacks: every request with ``format`` got HTTP 501."""
+    _Stub.reject_format = True
+    p = OllamaProvider("qwen3.5:4b", base_url=stub)              # structured="auto"
+    r = p.generate(Request(system="s", user="u", json_schema={"type": "object"}))
+    assert [("format" in c["body"]) for c in _Stub.calls] == [True, False]
+    assert r.metrics["output_constraint"] == "none"
+    assert "structured output is unavailable" in r.metrics["constraint_note"]
+    p.generate(Request(system="s", user="u", json_schema={"type": "object"}))
+    assert "format" not in _Stub.calls[-1]["body"] and len(_Stub.calls) == 3   # no 2nd 501
+
+
+def test_schema_mode_refuses_with_an_actionable_error(stub):
+    _Stub.reject_format = True
+    p = OllamaProvider("qwen3.5:4b", base_url=stub, structured="schema")
+    with pytest.raises(ProviderError) as e:
+        p.generate(Request(system="s", user="u", json_schema={"type": "object"}))
+    assert e.value.code == "structured_output_unavailable" and not e.value.transient
+    assert "HTTP 501: structured output is unavailable" in str(e.value)
+
+
+def test_constrained_output_is_recorded_when_supported(stub):
+    r = OllamaProvider("qwen3.5:4b", base_url=stub).generate(
+        Request(system="s", user="u", json_schema={"type": "object"}))
+    assert r.metrics["output_constraint"] == "json_schema" and r.metrics["constraint_note"] is None
+
+
+def test_none_mode_never_sends_format(stub):
+    OllamaProvider("qwen3.5:4b", base_url=stub, structured="none").generate(
+        Request(system="s", user="u", json_schema={"type": "object"}))
+    assert "format" not in _Stub.calls[-1]["body"]
+
+
+def test_benchmark_gate_fails_on_provider_errors_or_zero_accepted(stub, tmp_path):
+    import argparse
+
+    import llm_bench
+    _Stub.status = 501                                             # every chat fails
+    args = argparse.Namespace(base_url=stub, repeat=1, tasks=["pursuit_escape"],
+                              max_repairs=0, timeout=10)
+    report = llm_bench.run_model("qwen3.5:4b", args, prompts.load("gaming.gta.v1"))
+    reasons = llm_bench.gate(report)
+    assert any("provider error" in r for r in reasons)
+    assert any("zero accepted" in r for r in reasons)
+    assert any("no generation" in r for r in reasons)
+    assert report["summary"]["errors_by_message"]                  # the engine's message
+    good = {"summary": {"inference_verified": True, "provider_errors": 0, "accepted": 3}}
+    assert llm_bench.gate(good) == []
+    assert llm_bench.gate({"error": "model_missing: x"})

@@ -14,6 +14,7 @@ Results are synthetic engineering measurements, not highlight-quality evidence.
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import platform
 import re
@@ -62,18 +63,31 @@ def ollama_rss_mb() -> float:
 
 
 def free_mb() -> float | None:
+    """Available memory: free + inactive + speculative + purgeable pages. ("Pages free"
+    alone is near zero on a healthy Mac, because macOS keeps memory in use as cache.)"""
     out = _sh(["vm_stat"])
     page = re.search(r"page size of (\d+)", out)
-    free = re.search(r"Pages free:\s+(\d+)", out)
-    spec = re.search(r"Pages speculative:\s+(\d+)", out)
-    if not (page and free):
+    if not page:
         return None
-    pages = int(free.group(1)) + (int(spec.group(1)) if spec else 0)
+    pages = 0
+    for label in ("Pages free", "Pages inactive", "Pages speculative", "Pages purgeable"):
+        m = re.search(label + r":\s+(\d+)", out)
+        pages += int(m.group(1)) if m else 0
     return round(pages * int(page.group(1)) / 2**20, 1)
 
 
+def pressure_free_pct() -> int | None:
+    m = re.search(r"free percentage: (\d+)%", _sh(["memory_pressure", "-Q"]))
+    return int(m.group(1)) if m else None
+
+
 class Sampler(threading.Thread):
-    def __init__(self, provider: OllamaProvider, every: float = 0.5):
+    """OS memory sampling on its own thread, every 0.25 s. It never calls Ollama: in the
+    first Mac run the sampler's /api/ps call blocked for the whole 2.3 s model load, so the
+    swap peak during loading was never sampled. Ollama's resident size is sampled by a
+    second thread with a short timeout."""
+
+    def __init__(self, provider: OllamaProvider, every: float = 0.25):
         super().__init__(daemon=True)
         self.provider, self.every = provider, every
         self.stop_flag = threading.Event()
@@ -81,21 +95,30 @@ class Sampler(threading.Thread):
         self.peak_swap = 0.0
         self.min_free: float | None = None
         self.peak_loaded = 0
+        self.timeline: list[tuple[float, float | None, float | None]] = []
+        self._t0 = time.perf_counter()
+        self._ps = threading.Thread(target=self._poll_loaded, daemon=True)
 
-    def run(self) -> None:
+    def _poll_loaded(self) -> None:
         while not self.stop_flag.is_set():
-            self.peak_rss = max(self.peak_rss, ollama_rss_mb())
-            s = swap_used_mb()
-            if s is not None:
-                self.peak_swap = max(self.peak_swap, s)
-            f = free_mb()
-            if f is not None:
-                self.min_free = f if self.min_free is None else min(self.min_free, f)
             try:
                 size = sum(m.get("size", 0) for m in self.provider.loaded())
                 self.peak_loaded = max(self.peak_loaded, size)
             except ProviderError:
                 pass
+            self.stop_flag.wait(1.0)
+
+    def run(self) -> None:
+        self._ps.start()
+        while not self.stop_flag.is_set():
+            self.peak_rss = max(self.peak_rss, ollama_rss_mb())
+            s, f = swap_used_mb(), free_mb()
+            if s is not None:
+                self.peak_swap = max(self.peak_swap, s)
+            if f is not None:
+                self.min_free = f if self.min_free is None else min(self.min_free, f)
+            if len(self.timeline) < 20_000:
+                self.timeline.append((round(time.perf_counter() - self._t0, 2), s, f))
             self.stop_flag.wait(self.every)
 
 
@@ -151,7 +174,7 @@ def heuristic(task: Task, bundle) -> dict:
 def run_model(model: str, args, prompt) -> dict:
     p = OllamaProvider(model, base_url=args.base_url, keep_alive="10m")
     ident = p.identity()
-    swap0, free0, rss0 = swap_used_mb(), free_mb(), ollama_rss_mb()
+    swap0, free0, rss0, press0 = swap_used_mb(), free_mb(), ollama_rss_mb(), pressure_free_pct()
     sampler = Sampler(p)
     sampler.start()
     runs = []
@@ -175,8 +198,11 @@ def run_model(model: str, args, prompt) -> dict:
                        "score": score_task(task, bundle, out),
                        "record": out.record()}
                 runs.append(row)
+                why = f" error={out.error}" if out.status != "accepted" else ""
+                cons = {a.metrics.get("output_constraint") for a in out.attempts}
                 print(f"  {model} {task.name} r{rep}: {out.status} attempts={len(out.attempts)}"
-                      f" chosen={row['score']['chosen']} wall={wall}s", flush=True)
+                      f" chosen={row['score']['chosen']} constraint={sorted(map(str, cons))}"
+                      f" wall={wall}s{why}", flush=True)
     finally:
         sampler.stop_flag.set()
         sampler.join(2)
@@ -190,10 +216,20 @@ def run_model(model: str, args, prompt) -> dict:
     tps = [m["output_tokens"] / (m["output_ms"] / 1000) for m in gen if m["output_ms"] > 0]
     pps = [m["prompt_tokens"] / (m["prompt_ms"] / 1000) for m in gen if m.get("prompt_ms")]
     loads = [m["load_ms"] for r in runs for m in r["metrics"][:1]]
+    errors = collections.Counter(r["record"]["error"] for r in runs if r["status"] != "accepted")
+    generated = [m for r in runs for m in r["metrics"] if m.get("output_tokens", 0) > 0]
     return {
         "model": model, "identity": ident.__dict__, "runs": runs,
         "summary": {
             "tasks_run": len(runs),
+            "inference_verified": bool(generated),
+            "generations_with_output": len(generated),
+            "output_constraint": sorted({str(m.get("output_constraint")) for m in generated}),
+            "constraint_notes": sorted({m["constraint_note"] for m in generated
+                                        if m.get("constraint_note")}),
+            "thinking_chars_max": max((m.get("thinking_chars", 0) for m in generated),
+                                      default=0),
+            "errors_by_message": dict(errors.most_common()),
             "accepted": len(ok),
             "valid_first_try": sum(r["valid_first_try"] for r in runs),
             "failed_validation": sum(r["status"] == "failed_validation" for r in runs),
@@ -214,9 +250,32 @@ def run_model(model: str, args, prompt) -> dict:
                        "ollama_rss_peak_mb": sampler.peak_rss, "ollama_rss_before_mb": rss0,
                        "swap_used_before_mb": swap0, "swap_used_peak_mb": sampler.peak_swap,
                        "swap_used_after_mb": swap_used_mb(), "free_before_mb": free0,
-                       "free_min_mb": sampler.min_free},
+                       "free_min_mb": sampler.min_free,
+                       "pressure_free_pct_before": press0,
+                       "pressure_free_pct_after": pressure_free_pct(),
+                       "timeline_s_swapmb_availmb": sampler.timeline},
         },
     }
+
+
+def gate(model_report: dict) -> list[str]:
+    """Reasons a model run does NOT verify local inference (empty list = verified).
+
+    Zero accepted answers, any provider error, or no generation with output tokens is a
+    failure, whatever else passed. (The first Mac run reported ALL PASSED with 10/10
+    provider errors because only a missing model counted as an error.)"""
+    if "error" in model_report:
+        return [f"model error: {model_report['error']}"]
+    s = model_report["summary"]
+    reasons = []
+    if not s.get("inference_verified"):
+        reasons.append("no generation produced output tokens")
+    if s.get("provider_errors"):
+        reasons.append(f"{s['provider_errors']} provider error(s): "
+                       + "; ".join(list(s.get("errors_by_message", {}))[:3]))
+    if not s.get("accepted"):
+        reasons.append("zero accepted answers")
+    return reasons
 
 
 def main() -> int:
@@ -249,6 +308,9 @@ def main() -> int:
             report["models"].append({"model": m, "error": f"{e.code}: {e}"})
             print(f"  {m}: {e.code}: {e}", flush=True)
     report["finished"] = datetime.now(UTC).isoformat()
+    for m in report["models"]:
+        m["gate_failures"] = gate(m)
+        m["verified"] = not m["gate_failures"]
     (args.out / "llm-bench.json").write_text(json.dumps(report, indent=2, default=str))
     lines = [f"# LLM bench ({report['started']})", "", report["note"], ""]
     for m in report["models"]:
@@ -256,13 +318,19 @@ def main() -> int:
         if "error" in m:
             lines += [f"error: {m['error']}", ""]
             continue
-        lines.append("```json\n" + json.dumps({"identity": m["identity"], **m["summary"]},
+        lines.append(f"verified: {m['verified']}  gate failures: {m['gate_failures']}")
+        summ = {k: v for k, v in m["summary"].items() if k != "memory"}
+        mem = {k: v for k, v in m["summary"]["memory"].items() if k != "timeline_s_swapmb_availmb"}
+        lines.append("```json\n" + json.dumps({"identity": m["identity"], **summ, "memory": mem},
                                               indent=2, default=str) + "\n```")
     lines += ["## Keyword heuristic (reference)", "```json",
               json.dumps(report["heuristic"], indent=2), "```"]
     (args.out / "llm-bench.md").write_text("\n".join(lines) + "\n")
     print(f"report: {args.out / 'llm-bench.json'}")
-    return 0 if all("error" not in m for m in report["models"]) else 1
+    for m in report["models"]:
+        print(f"GATE {m['model']}: " + ("VERIFIED" if m["verified"]
+                                       else "NOT VERIFIED - " + "; ".join(m["gate_failures"])))
+    return 0 if report["models"] and all(m["verified"] for m in report["models"]) else 1
 
 
 if __name__ == "__main__":
