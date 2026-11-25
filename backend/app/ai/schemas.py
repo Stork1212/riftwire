@@ -132,7 +132,10 @@ class HighlightEval(_Strict):
     def _unique_windows(cls, v: list[Candidate]) -> list[Candidate]:
         ids = [c.window_id for c in v]
         if len(ids) != len(set(ids)):
-            raise ValueError("each window may be selected at most once")
+            dup = sorted({i for i in ids if ids.count(i) > 1})
+            raise ValueError("each window may be selected at most once; "
+                             + ", ".join(f"{i} appears {ids.count(i)} times" for i in dup)
+                             + ": return one candidate per window (keep the stronger one)")
         return v
 
 

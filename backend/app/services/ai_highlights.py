@@ -65,9 +65,13 @@ from app.services import (
     signals,
     transcripts,
 )
+from app.services.clips import SHORT_MAX_MS
 from app.services.highlight_candidates import PlannedWindow
 
 MIN_CLIP_MS, MAX_CLIP_MS = 8_000, 60_000
+# The target format: a 35/65 Short (clips.SHORT_MAX_MS). Windows, refinement and the final
+# check all respect it, so every selected highlight can be rendered as planned.
+TARGET_MAX_MS = SHORT_MAX_MS
 MAX_WORDS_PER_WINDOW = 160
 MAX_EVENTS_PER_WINDOW = 24
 
@@ -145,7 +149,8 @@ def windows(session: Session, recording: Recording, *, transcript_id: str | None
         audio_events=signals.events(audio) if audio else [],
         visual_events=signals.events(visual), duration_ms=recording.duration_ms,
         transcript_id=transcript_id, audio_run_id=audio_run_id, visual_run_id=visual_run_id)
-    return highlight_candidates.plan(seed_list, segs, recording.duration_ms, max_windows)
+    return highlight_candidates.plan(seed_list, segs, recording.duration_ms, max_windows,
+                                     max_window_ms=TARGET_MAX_MS)
 
 
 def bundle_for(session: Session, settings: Settings, recording: Recording,
@@ -269,12 +274,24 @@ def _editorial(session: Session, req: HighlightRequest, row: dict, min_score: in
     reliability = {f"w:{row['transcript_id']}:{w['idx']}": a
                    for w, a in zip(words, assessed, strict=True)}
     usable = [w for w, a in zip(words, assessed, strict=True) if a["caption"] == "show"]
-    ref = highlight_candidates.refine(clip["start_ms"], clip["end_ms"], usable,
-                                      recording.duration_ms)
-    row["clip"] = {"start_ms": ref["start_ms"], "end_ms": ref["end_ms"]}
-    row["boundary_notes"] = ref["notes"]
     audio = signals.current(session, recording.id, SignalKind.AUDIO)
     silences = signals.series(audio).get("silences_ms", []) if audio else []
+    cited = []
+    for ref_ in c.get("evidence", []):
+        for item in ref_.get("ids", []):
+            try:
+                r_ = analysis_evidence.resolve(session, item)
+            except NotFoundError:
+                continue
+            if "start_ms" in r_:
+                cited.append((int(r_["start_ms"]), int(r_.get("end_ms", r_["start_ms"]))))
+            elif "pts_ms" in r_:
+                cited.append((int(r_["pts_ms"]), int(r_["pts_ms"])))
+    ref = highlight_candidates.refine(clip["start_ms"], clip["end_ms"], usable,
+                                      recording.duration_ms, max_ms=TARGET_MAX_MS,
+                                      silences=silences if audio else None, cited=cited)
+    row["clip"] = {"start_ms": ref["start_ms"], "end_ms": ref["end_ms"]}
+    row["boundary_notes"] = ref["notes"]
     reliable_words = [w for w, a in zip(words, assessed, strict=True) if a["can_trigger"]]
     row["penalties"] = highlight_candidates.penalties(
         start_ms=ref["start_ms"], end_ms=ref["end_ms"], candidate=c, words=reliable_words,
@@ -282,7 +299,11 @@ def _editorial(session: Session, req: HighlightRequest, row: dict, min_score: in
     row["score"] = max(0, row["model_score"] - sum(p["points"] for p in row["penalties"]))
     row["below_cut"] = row["score"] < min_score
     row["cut_reason"] = None
-    if row["below_cut"]:
+    if ref["end_ms"] - ref["start_ms"] > TARGET_MAX_MS:
+        row["below_cut"] = True
+        row["cut_reason"] = (f"{(ref['end_ms'] - ref['start_ms']) / 1000:.1f} s is longer "
+                             f"than the {TARGET_MAX_MS // 1000} s Short limit")
+    elif row["below_cut"]:
         why = f"editorial score {row['score']} below {min_score}"
         if row["penalties"]:
             why += " after penalties: " + ", ".join(p["name"] for p in row["penalties"])

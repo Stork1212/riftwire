@@ -183,7 +183,7 @@ def main() -> int:
         for h in hl:
             length = h["end_ms"] - h["start_ms"]
             if not (0 <= h["start_ms"] < h["end_ms"] <= rec.duration_ms and
-                    8_000 <= length <= 60_000):
+                    8_000 <= length <= 45_000):
                 grounded = False
                 problems.append(f"{h['id']}: bounds {h['start_ms']}-{h['end_ms']}")
             for ref in h["evidence"]:
@@ -210,8 +210,13 @@ def main() -> int:
           "(informative only; not a quality measurement)", gate=False)
     if hl:
         top = hl[0]
-        data = clips.cut(db, settings, rec.id, top["start_ms"], top["end_ms"],
-                         layout="split", title=top["title"])
+        try:
+            data = clips.cut(db, settings, rec.id, top["start_ms"], top["end_ms"],
+                             layout="split", title=top["title"])
+        except Exception as e:  # noqa: BLE001 - reported as a failed check
+            check("rendered Short", False, f"render refused: {e}")
+            db.dispose()
+            return finish()
         short = OUT / "top-highlight-short.mp4"
         short.write_bytes(data)
         probe = json.loads(subprocess.run(
@@ -230,6 +235,10 @@ def main() -> int:
     else:
         check("rendered Short", False, "no highlight to render")
     db.dispose()
+    return finish()
+
+
+def finish() -> int:
     ok = all(r["ok"] for r in results if r["gate"])
     (OUT / "m6-native.json").write_text(json.dumps({"ok": ok, "data_dir": str(DATA),
                                                     "results": results}, indent=1))

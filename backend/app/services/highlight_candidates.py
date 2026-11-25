@@ -35,6 +35,7 @@ CONFIG = {
     "version": 1, "pre_ms": 12_000, "post_ms": 18_000, "min_window_ms": 20_000,
     "max_window_ms": 60_000, "speech_burst_ms": 5_000, "reaction_gap_ms": 700,
     "pre_roll_ms": 300, "post_roll_ms": 600, "nearby_speech_ms": 4_000,
+    "dead_gap_ms": 4_000,
 }
 
 
@@ -109,9 +110,14 @@ def _snap(t: int, segments: list[dict], *, start: bool) -> int:
 
 
 def plan(seed_list: list[Seed], segments: list[dict], duration_ms: int,
-         max_windows: int) -> list[PlannedWindow]:
-    """Context, merge and selection (stage C). Deterministic for the same inputs."""
-    cfg = CONFIG
+         max_windows: int, max_window_ms: int | None = None) -> list[PlannedWindow]:
+    """Context, merge and selection (stage C). Deterministic for the same inputs.
+    ``max_window_ms`` is the target format's clip limit (a Short: 45 s): the model can
+    only pick start and end ids inside a window, so no clip it picks can exceed it."""
+    cfg = dict(CONFIG)
+    if max_window_ms:
+        cfg["max_window_ms"] = min(cfg["max_window_ms"], max_window_ms)
+        cfg["min_window_ms"] = min(cfg["min_window_ms"], cfg["max_window_ms"])
     raw: list[PlannedWindow] = []
     for s in seed_list:
         a = max(0, _snap(max(0, s.at_ms - cfg["pre_ms"]), segments, start=True))
@@ -147,12 +153,43 @@ def plan(seed_list: list[Seed], segments: list[dict], duration_ms: int,
     return best
 
 
-def refine(start_ms: int, end_ms: int, words: list[dict], duration_ms: int) -> dict:
-    """Stage F: refined clip bounds and the list of changes (nothing invented)."""
+def _split_dead_air(a: int, b: int, ws: list[dict], silences: list[list[int]],
+                    cited: list[tuple[int, int]], gap_ms: int) -> tuple[int, int, str | None]:
+    """If the clip contains a long gap with no speech that the audio measured as silence,
+    keep the side holding most of the model's cited evidence (ties: the earlier side)."""
+    inside = [w for w in ws if a <= w["start_ms"] and w["end_ms"] <= b]
+    for x, y in zip(inside, inside[1:], strict=False):
+        gap = (x["end_ms"], y["start_ms"])
+        if gap[1] - gap[0] <= gap_ms:
+            continue
+        covered = sum(max(0, min(gap[1], e) - max(gap[0], s)) for s, e in silences)
+        if covered < gap_ms:                    # the audio must confirm a long silence
+            continue
+        before = sum(1 for s, e in cited if (s + e) / 2 <= gap[0])
+        after = sum(1 for s, e in cited if (s + e) / 2 >= gap[1])
+        if before >= after:
+            return a, gap[0], (f"cut {gap[1] - gap[0]} ms of measured silence and what followed "
+                               f"it (the cited evidence lies before it)")
+        return gap[1], b, (f"cut what preceded {gap[1] - gap[0]} ms of measured silence (the "
+                           "cited evidence lies after it)")
+    return a, b, None
+
+
+def refine(start_ms: int, end_ms: int, words: list[dict], duration_ms: int, *,
+           max_ms: int = MAX_CLIP_MS, silences: list[list[int]] | None = None,
+           cited: list[tuple[int, int]] | None = None) -> dict:
+    """Stage F: refined clip bounds and the list of changes (nothing invented).
+    ``max_ms`` is the target format's limit; ``silences`` and ``cited`` (the time spans of
+    the model's evidence) allow cutting a long dead-air stretch away from the evidence."""
     cfg = CONFIG
     notes: list[str] = []
     ws = sorted(words, key=lambda w: w["start_ms"])
     a, b = start_ms, end_ms
+    if silences is not None:
+        na, nb, note = _split_dead_air(a, b, ws, silences, cited or [], cfg["dead_gap_ms"])
+        if note and nb - na >= MIN_CLIP_MS:
+            a, b = na, nb
+            notes.append(note)
     for w in ws:                                    # never inside a word
         if w["start_ms"] < a < w["end_ms"]:
             a = w["start_ms"]
@@ -163,7 +200,7 @@ def refine(start_ms: int, end_ms: int, words: list[dict], duration_ms: int) -> d
     after = [w for w in ws if w["start_ms"] >= b]
     tail = b
     for w in after:                                 # keep a reaction that runs straight on
-        if w["start_ms"] - tail > cfg["reaction_gap_ms"] or w["end_ms"] - a > MAX_CLIP_MS:
+        if w["start_ms"] - tail > cfg["reaction_gap_ms"] or w["end_ms"] - a > max_ms:
             break
         tail = w["end_ms"]
     if tail > b:
@@ -174,12 +211,17 @@ def refine(start_ms: int, end_ms: int, words: list[dict], duration_ms: int) -> d
     next_start = min((w["start_ms"] for w in ws if w["start_ms"] >= b), default=duration_ms)
     pre = min(cfg["pre_roll_ms"], max(0, a - prev_end))
     post = min(cfg["post_roll_ms"], max(0, next_start - b), duration_ms - b)
-    if b + post - (a - pre) <= MAX_CLIP_MS:
+    if b + post - (a - pre) > max_ms:
+        pre, post = 0, 0
+    if b + post - (a - pre) <= max_ms:
         a, b = a - pre, b + post
         if pre or post:
             notes.append(f"pre-roll {pre} ms and post-roll {post} ms in silence")
     if b - a < MIN_CLIP_MS:
         notes.append("kept as chosen: refinement would make it too short")
+        return {"start_ms": start_ms, "end_ms": end_ms, "notes": notes}
+    if b - a > max_ms:
+        notes.append(f"kept as chosen: refinement would exceed the {max_ms // 1000} s limit")
         return {"start_ms": start_ms, "end_ms": end_ms, "notes": notes}
     return {"start_ms": max(0, a), "end_ms": min(duration_ms, b), "notes": notes}
 

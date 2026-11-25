@@ -142,3 +142,56 @@ def test_recording_to_rendered_short(db, settings, recording, provider, tmp_path
     words, tr_id = clips._words(db, settings, recording, top["start_ms"],
                                 top["end_ms"] - top["start_ms"])
     assert words and tr_id == top["transcript_id"]           # captions = the stored words
+
+
+# ------------------------------------------- regressions from the native run at a22c2c7
+def _native_words():
+    """macOS speech placed in m6_native.py: reactions at 122-136 s, then 27 s of
+    silence, then "Mission complete. Thanks for watching." at 165 s."""
+    words = []
+    for start, n in ((122_000, 11), (130_000, 9), (165_000, 5)):
+        for i in range(n):
+            words.append(_w(f"w{start}_{i}", start + i * 380, start + i * 380 + 330))
+    return words
+
+
+def test_native_regression_dead_air_is_cut_away_from_the_cited_evidence():
+    # The model chose 121.62-165.78 s (44.2 s); refinement then grew it to 46.5 s, over
+    # the 45 s Short limit, and 77 % of it was measured silence.
+    words = _native_words()
+    silences = [[138_000, 165_000]]
+    cited = [(122_000, 122_330), (130_000, 133_400)]
+    r = highlight_candidates.refine(121_620, 165_780, words, 180_000, max_ms=45_000,
+                                    silences=silences, cited=cited)
+    assert r["end_ms"] - r["start_ms"] <= 45_000
+    assert r["end_ms"] < 140_000                       # the silence and what followed: cut
+    assert any("measured silence" in n for n in r["notes"])
+    later = highlight_candidates.refine(121_620, 165_780, words, 180_000, max_ms=45_000,
+                                        silences=silences, cited=[(165_000, 166_500)])
+    # Evidence after the silence leaves less than 8 s there: no split, limit still holds.
+    assert not any("measured silence" in n for n in later["notes"])
+    assert later["end_ms"] - later["start_ms"] <= 45_000
+
+
+def test_refinement_never_exceeds_the_target_limit():
+    words = _native_words()
+    r = highlight_candidates.refine(121_620, 165_780, words, 180_000, max_ms=45_000)
+    assert r["end_ms"] - r["start_ms"] <= 45_000
+
+
+def test_windows_respect_the_short_limit():
+    plan = highlight_candidates.plan([_seed(60_000, 2.0), _seed(70_000, 1.0)], [], 240_000,
+                                     max_windows=4, max_window_ms=45_000)
+    assert plan and all(w.end_ms - w.start_ms <= 45_000 for w in plan)
+
+
+def test_duplicate_window_error_names_the_window():
+    from app.ai.validate import validate
+    from tests.test_ai import answer, bundle
+
+    b = bundle()
+    data = answer(b)
+    data["candidates"].append(dict(data["candidates"][0]))
+    res = validate(json.dumps(data), b)
+    assert not res.ok
+    assert any("appears 2 times" in e and "one candidate per window" in e for e in res.errors)

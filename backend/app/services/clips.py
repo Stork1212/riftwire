@@ -41,6 +41,7 @@ log = get_logger(__name__)
 
 ANALYSIS_SECONDS = 300
 MAX_CLIP_MS = 30_000
+SHORT_MAX_MS = 45_000        # 35/65 Shorts (split layouts)
 WORK_BYTES = 32 * 1024 * 1024
 _TIMEOUT = 180
 _work_lock = Lock()
@@ -305,7 +306,7 @@ def cut(db: Database, settings: Settings, recording_id: str, start_ms: int, end_
         *, subtitles: bool = False, layout: ClipLayout = "original", title: str = "") -> bytes:
     length = end_ms - start_ms
     split = layout != "original"
-    maximum = 45_000 if split else MAX_CLIP_MS
+    maximum = SHORT_MAX_MS if split else MAX_CLIP_MS
     if start_ms < 0 or not 0 < length <= maximum:
         raise ValidationFailed(f"Choose a clip up to {maximum // 1000} seconds long.")
     recording, source, decision = _recording(db, settings, recording_id, "edit", length)
