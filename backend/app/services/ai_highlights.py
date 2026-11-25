@@ -22,7 +22,7 @@ cannot cite them. Cost is always 0 (a database check refuses anything else).
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -53,8 +53,19 @@ from app.models import (
     RecordingStatus,
     RequestStatus,
     RunStatus,
+    SignalKind,
+    SignalRun,
+    TranscriptSegment,
 )
-from app.services import analysis_evidence, highlight_scan, rights
+from app.services import (
+    analysis_evidence,
+    evidence_reliability,
+    highlight_candidates,
+    rights,
+    signals,
+    transcripts,
+)
+from app.services.highlight_candidates import PlannedWindow
 
 MIN_CLIP_MS, MAX_CLIP_MS = 8_000, 60_000
 MAX_WORDS_PER_WINDOW = 160
@@ -119,33 +130,22 @@ def active_request(session: Session, recording_id: str) -> HighlightRequest | No
 
 
 # ---------------------------------------------------------------------------- windows
-@dataclass(frozen=True)
-class PlannedWindow:
-    id: str
-    start_ms: int
-    end_ms: int
-    reason: str
-
-
-def windows(visual_series: dict, trigger_words: list[dict], duration_ms: int,
+def windows(session: Session, recording: Recording, *, transcript_id: str | None,
+            trigger_words: list[dict], audio_run_id: str | None, visual_run_id: str,
             max_windows: int) -> list[PlannedWindow]:
-    """Candidate windows from stored analysis (deterministic): the baseline scan's ranked
-    25 s windows (visual motion + reliable speech cues), at most ``max_windows``, in time
-    order. Each window is between the clip limits so a whole clip can fit inside it."""
-    result = highlight_scan.scan_signals(visual_series, trigger_words, duration_ms)
-    picked = sorted(result["items"][:max_windows], key=lambda c: c["start_ms"])
-    out = []
-    for n, c in enumerate(picked, 1):
-        start, end = int(c["start_ms"]), int(c["end_ms"])
-        if end - start > MAX_CLIP_MS:
-            end = start + MAX_CLIP_MS
-        if end - start < MIN_CLIP_MS:
-            continue
-        cues = ", ".join(c.get("speech_cues") or []) or "none"
-        out.append(PlannedWindow(f"c:{n}", start, end,
-                                 f"baseline score {c['score']}; motion {c['motion']}; "
-                                 f"speech cues: {cues}"))
-    return out
+    """Candidate windows (M6 stages B and C, deterministic, from stored analysis)."""
+    visual = session.get(SignalRun, visual_run_id)
+    audio = session.get(SignalRun, audio_run_id) if audio_run_id else None
+    segs = [] if transcript_id is None else [
+        {"start_ms": x.start_ms, "end_ms": x.end_ms} for x in session.scalars(
+            select(TranscriptSegment).where(TranscriptSegment.transcript_id == transcript_id)
+            .order_by(TranscriptSegment.idx))]
+    seed_list = highlight_candidates.seeds(
+        visual_series=signals.series(visual), trigger_words=trigger_words,
+        audio_events=signals.events(audio) if audio else [],
+        visual_events=signals.events(visual), duration_ms=recording.duration_ms,
+        transcript_id=transcript_id, audio_run_id=audio_run_id, visual_run_id=visual_run_id)
+    return highlight_candidates.plan(seed_list, segs, recording.duration_ms, max_windows)
 
 
 def bundle_for(session: Session, settings: Settings, recording: Recording,
@@ -254,6 +254,50 @@ def _iou(a: tuple[int, int], b: tuple[int, int]) -> float:
     return inter / union if inter > 0 and union > 0 else 0.0
 
 
+def _editorial(session: Session, req: HighlightRequest, row: dict, min_score: int) -> None:
+    """M6 stages E/F on one validated candidate: refine its boundaries, apply measured
+    penalties to the editorial score, re-apply the cut, and drop a title or hook that
+    makes a factual claim the clip's own words do not contain."""
+    c, clip = row["c"], row["model_clip"]
+    recording = session.get(Recording, req.recording_id)
+    words: list[dict] = []
+    if row["transcript_id"]:
+        words = transcripts.words(session, row["transcript_id"],
+                                  max(0, clip["start_ms"] - MAX_CLIP_MS),
+                                  clip["end_ms"] + MAX_CLIP_MS)
+    assessed = evidence_reliability.for_recording(session, recording, words)
+    reliability = {f"w:{row['transcript_id']}:{w['idx']}": a
+                   for w, a in zip(words, assessed, strict=True)}
+    usable = [w for w, a in zip(words, assessed, strict=True) if a["caption"] == "show"]
+    ref = highlight_candidates.refine(clip["start_ms"], clip["end_ms"], usable,
+                                      recording.duration_ms)
+    row["clip"] = {"start_ms": ref["start_ms"], "end_ms": ref["end_ms"]}
+    row["boundary_notes"] = ref["notes"]
+    audio = signals.current(session, recording.id, SignalKind.AUDIO)
+    silences = signals.series(audio).get("silences_ms", []) if audio else []
+    reliable_words = [w for w, a in zip(words, assessed, strict=True) if a["can_trigger"]]
+    row["penalties"] = highlight_candidates.penalties(
+        start_ms=ref["start_ms"], end_ms=ref["end_ms"], candidate=c, words=reliable_words,
+        silences=silences, word_reliability=reliability)
+    row["score"] = max(0, row["model_score"] - sum(p["points"] for p in row["penalties"]))
+    row["below_cut"] = row["score"] < min_score
+    row["cut_reason"] = None
+    if row["below_cut"]:
+        why = f"editorial score {row['score']} below {min_score}"
+        if row["penalties"]:
+            why += " after penalties: " + ", ".join(p["name"] for p in row["penalties"])
+        row["cut_reason"] = why
+    in_clip = [w for w in usable if ref["start_ms"] <= w["start_ms"] < ref["end_ms"]]
+    row["title"], row["hook"], row["text_checks"] = c["title"], c["hook"], []
+    for key, neutral in (("title", f"{c['category'].replace('_', ' ').capitalize()} moment"),
+                         ("hook", "")):
+        ok, bad = highlight_candidates.ground_text(c[key], in_clip)
+        if not ok:
+            row[key] = neutral
+            row["text_checks"].append(f"{key} dropped: unsupported claim(s) {bad}; the clip's "
+                                      "words do not contain them")
+
+
 def finalize(session: Session, req: HighlightRequest) -> dict:
     """Rank every accepted candidate across batches, suppress duplicates (IoU > 0.5 keeps
     the higher score), keep at most ``target_count`` and store every candidate with its
@@ -273,14 +317,17 @@ def finalize(session: Session, req: HighlightRequest) -> dict:
         rejected = {k["window_id"]: k for k in rec["ranking"]["rejected"]}
         fp = r.evidence_fingerprint
         tr = json.loads(r.evidence_json)["bundle"].get("transcript_id")
+        min_score = int(json.loads(r.scoring_json).get("min_score", scoring.DEFAULT_MIN_SCORE))
+        windows_meta = {w["id"]: w for w in json.loads(r.evidence_json)["meta"]["windows"]}
         for c in rec["result"]["candidates"]:
             clip = clips[c["window_id"]]
             score_row = kept.get(c["window_id"]) or rejected[c["window_id"]]
-            rows.append({"run": r, "c": c, "clip": clip, "score": score_row["editorial_score"],
-                         "below_cut": c["window_id"] in rejected,
-                         "cut_reason": rejected.get(c["window_id"], {}).get("reason"),
-                         "fingerprint": fp, "transcript_id": tr})
-    rows.sort(key=lambda x: (-x["score"], x["clip"]["start_ms"]))
+            row = {"run": r, "c": c, "model_clip": clip, "model_score":
+                   score_row["editorial_score"], "fingerprint": fp, "transcript_id": tr,
+                   "window": windows_meta.get(c["window_id"], {})}
+            _editorial(session, req, row, min_score)
+            rows.append(row)
+    rows.sort(key=lambda x: (-x["score"], x["clip"]["start_ms"], x["c"]["window_id"]))
     chosen: list[dict] = []
     for row in rows:
         span = (row["clip"]["start_ms"], row["clip"]["end_ms"])
@@ -303,11 +350,16 @@ def finalize(session: Session, req: HighlightRequest) -> dict:
             reject_reason=row["reason"], window_id=c["window_id"],
             start_ms=row["clip"]["start_ms"], end_ms=row["clip"]["end_ms"],
             start_id=c["start_id"], end_id=c["end_id"], category=c["category"],
-            title=c["title"], hook=c["hook"], what_happens=c["what_happens"],
+            title=row["title"], hook=row["hook"], what_happens=c["what_happens"],
             why_entertaining=c["why_entertaining"],
             scores_json=json.dumps(c["scores"], sort_keys=True),
             editorial_score=row["score"], confidence=c["confidence"],
-            evidence_json=json.dumps(c["evidence"], sort_keys=True, ensure_ascii=False),
+            evidence_json=json.dumps({
+                "refs": c["evidence"], "model_clip": [row["model_clip"]["start_ms"],
+                                                      row["model_clip"]["end_ms"]],
+                "boundary_notes": row["boundary_notes"], "penalties": row["penalties"],
+                "model_editorial_score": row["model_score"], "text_checks": row["text_checks"],
+                "window": row["window"]}, sort_keys=True, ensure_ascii=False),
             uncertainty=c.get("uncertainty", ""), transcript_id=row["transcript_id"],
             evidence_fingerprint=row["fingerprint"]))
     statuses = [r.status for r in final.values()]
@@ -355,12 +407,19 @@ def describe(session: Session, recording_id: str) -> dict:
                                 .order_by(AIRun.batch, AIRun.created_at)))
 
     def cand(c: HighlightCandidate) -> dict:
+        ev = json.loads(c.evidence_json)
+        if isinstance(ev, list):                      # M5 rows: the references only
+            ev = {"refs": ev}
         return {"id": c.id, "rank": c.rank, "status": c.status, "reason": c.reject_reason,
                 "start_ms": c.start_ms, "end_ms": c.end_ms, "category": c.category,
                 "title": c.title, "hook": c.hook, "what_happens": c.what_happens,
                 "why_entertaining": c.why_entertaining,
                 "editorial_score": c.editorial_score, "confidence": c.confidence,
-                "scores": json.loads(c.scores_json), "evidence": json.loads(c.evidence_json),
+                "scores": json.loads(c.scores_json), "evidence": ev.get("refs", []),
+                "model_clip": ev.get("model_clip"), "boundary_notes": ev.get("boundary_notes", []),
+                "penalties": ev.get("penalties", []),
+                "model_editorial_score": ev.get("model_editorial_score"),
+                "text_checks": ev.get("text_checks", []), "window": ev.get("window"),
                 "uncertainty": c.uncertainty, "review_status": c.review_status,
                 "transcript_id": c.transcript_id, "ai_run_id": c.ai_run_id}
     selected = sorted((c for c in cands if c.status == "selected"), key=lambda c: c.rank)

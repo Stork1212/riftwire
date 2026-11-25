@@ -4,6 +4,7 @@ import { downloadClip, suggestClips, type ClipLayout, type ClipSuggestion } from
 import { formatDuration } from "../services/format";
 import type { Recording } from "../types/api";
 import { HighlightReview } from "./HighlightReview";
+import { AIHighlights } from "./AIHighlights";
 import { TranscriptPanel } from "./TranscriptPanel";
 import { ClipListReview, timecode } from "./ClipListReview";
 import { ActionableError } from "./ActionableError";
@@ -64,6 +65,12 @@ export function RecordingClips({ recording }: { recording: Recording }) {
             <Link to={`/sources/${recording.source_id}`}>View source and rights</Link>
           </div>
           <TranscriptPanel recordingId={recording.id} disabled={Boolean(busy)} />
+          <AIHighlights recordingId={recording.id} disabled={Boolean(busy)} onSelect={(h) => {
+            setStart(timecode(h.start_ms));
+            setEnd(timecode(h.end_ms));
+            setTitle(h.title.slice(0, 80));
+            setError(undefined);
+          }} />
           <HighlightReview recordingId={recording.id} disabled={Boolean(busy)} onSelect={(candidate) => {
             setStart(timecode(candidate.start_ms));
             setEnd(timecode(candidate.end_ms));

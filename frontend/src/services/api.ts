@@ -246,3 +246,72 @@ export function uploadRecording(
   });
   return { promise, abort: () => xhr.abort() };
 }
+
+
+/* ------------------------------------------------------------- M5/M6 AI highlights */
+export interface EvidenceRef { ids: string[]; claim: string; basis: string; quote?: string | null }
+export interface Penalty { name: string; points: number; reason: string }
+
+export interface AIHighlight {
+  id: string;
+  rank: number | null;
+  status: "selected" | "rejected";
+  reason: string | null;
+  start_ms: number;
+  end_ms: number;
+  category: string;
+  title: string;
+  hook: string;
+  what_happens: string;
+  why_entertaining: string;
+  editorial_score: number;
+  confidence: number;
+  scores: Record<string, number>;
+  evidence: EvidenceRef[];
+  uncertainty: string;
+  review_status: "pending" | "approved" | "rejected";
+  model_clip: [number, number] | null;
+  boundary_notes: string[];
+  penalties: Penalty[];
+  model_editorial_score: number | null;
+  text_checks: string[];
+  window: { id: string; reason: string } | null;
+}
+
+export interface AIHighlightState {
+  request: {
+    id: string;
+    status: "PENDING" | "RUNNING" | "COMPLETE" | "FAILED" | "SUPERSEDED";
+    game: string | null;
+    channel: string | null;
+    prompt_id: string;
+    target_count: number;
+    error: string | null;
+    summary: { requested: number; returned: number; fewer_than_requested: boolean;
+      reason: string | null; editorial_score_meaning: string } | null;
+    created_at: string;
+  } | null;
+  job: { id: string; status: Job["status"]; progress_percent: number; last_error: string | null } | null;
+  highlights: AIHighlight[];
+  rejected: AIHighlight[];
+  runs: { id: string; batch: number; status: string; model: string; prompt: string;
+    attempts: number; wall_s: number; error: string | null; cost_usd: number }[];
+}
+
+export function getAIHighlights(id: string): Promise<AIHighlightState> {
+  return request(`/api/v1/recordings/${encodeURIComponent(id)}/highlights`);
+}
+
+export function requestAIHighlights(id: string, body: { game: string | null; channel: string | null;
+  target_count: number }): Promise<{ request_id: string; job_id: string; status: string }> {
+  return request(`/api/v1/recordings/${encodeURIComponent(id)}/highlights`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+
+export function reviewAIHighlight(recordingId: string, candidateId: string,
+  review_status: AIHighlight["review_status"]): Promise<{ id: string; review_status: string }> {
+  return request(`/api/v1/recordings/${encodeURIComponent(recordingId)}/highlights/${encodeURIComponent(candidateId)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review_status }),
+  });
+}

@@ -347,8 +347,8 @@ def _shared_transcript(ctx: JobContext, recording: Recording):
         tr = transcripts.current(s, ctx.settings, recording.id)
         if tr is not None:
             ws = transcripts.words(s, tr.id)
-            return tr.id, [{"w": w["w"], "start_ms": w["start_ms"], "end_ms": w["end_ms"],
-                            "prob": w["prob"] or 0.0} for w in ws]
+            return tr.id, [{"idx": w["idx"], "w": w["w"], "start_ms": w["start_ms"],
+                            "end_ms": w["end_ms"], "prob": w["prob"] or 0.0} for w in ws]
         _fail_if_failed(s, recording.id, JobType.TRANSCRIBE, "shared transcript")
         transcripts.request(s, ctx.settings, recording.id)
     return _PENDING
@@ -621,12 +621,15 @@ def handle_ai_highlights(ctx: JobContext) -> None:
                               ("audio signals", audio)) if v is _PENDING]
     if pending:
         raise DependencyPendingJobError(f"waiting for the shared {' and '.join(pending)}")
-    _transcript_id, words = transcript
+    transcript_id, words = transcript
     assessed = evidence_reliability.assess_words(
         words, audio[1] if audio else None, has_audio=recording.has_audio)
     triggering = [w for w, a in zip(words, assessed, strict=True) if a["can_trigger"]]
-    planned = ai_highlights.windows(visual[1], triggering, recording.duration_ms,
-                                    settings.ai_max_windows)
+    with ctx.db.session() as s:
+        planned = ai_highlights.windows(
+            s, recording, transcript_id=transcript_id, trigger_words=triggering,
+            audio_run_id=audio[0] if audio else None, visual_run_id=visual[0],
+            max_windows=settings.ai_max_windows)
     per = settings.ai_windows_per_call
     batches = [planned[i:i + per] for i in range(0, len(planned), per)]
     with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
