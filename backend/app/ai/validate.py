@@ -110,12 +110,16 @@ def validate(raw: str, bundle: EvidenceBundle, *, images_shown: bool = False,
                               "evidence")
             elif span[1] < win.t0 or span[0] > win.t1:
                 errors.append(f"{at}.{name}: {ref!r} lies outside window {win.id}")
+            elif ref.startswith("w:") and (span[0] < win.t0 or span[1] > win.t1):
+                # Clamping would cut the word itself: ask for a word fully inside instead.
+                errors.append(f"{at}.{name}: word {ref!r} straddles the edge of window "
+                              f"{win.id}; choose a word that lies fully inside it")
             else:
                 bounds.append(span)
         if len(bounds) == 2:
-            # The clip may not leave its window: an item that only overlaps the window
-            # (a long event, a word straddling the edge) is cut at the window edge, so a
-            # long event cannot pull footage the window never offered into the clip.
+            # The clip may not leave its window: an event or scene that only overlaps the
+            # window is cut at the window edge, so a long event cannot pull footage the
+            # window never offered into the clip. Words are never cut (refused above).
             start = max(bounds[0][0], win.t0)
             end = min(bounds[1][1], win.t1)
             if (start, end) != (bounds[0][0], bounds[1][1]):

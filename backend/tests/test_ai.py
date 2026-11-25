@@ -692,3 +692,19 @@ def test_review_partial_benchmark_runs_never_pass_the_gate():
 
     dev_only = {"summary": {"splits": {"dev": {"accepted": 5, "runs": 5}}}}
     assert any("not a full gate" in r for r in benchmark_gate(dev_only))
+
+
+def test_codex_review_a_boundary_word_straddling_the_window_is_refused_not_cut():
+    # Codex review of 1a108e6: clamping a straddling word accepted a clip that cut it.
+    from app.ai.schemas import Window, Word
+
+    b = _review_bundle()
+    edge = Word(id="w:t:50", t0=99_700, t1=100_300, text="hey")
+    tail = Word(id="w:t:51", t0=129_800, t1=130_400, text="bye")
+    b = b.model_copy(update={"words": (*b.words, edge, tail),
+                             "windows": (*b.windows[:1], Window(id="c:2", t0=100_000,
+                                                                t1=130_000))})
+    for start, end in (("w:t:50", "w:t:11"), ("w:t:0", "w:t:51")):
+        res = validate(_cand(start_id=start, end_id=end), b)
+        assert not res.ok and any("straddles the edge" in e for e in res.errors), res.errors
+    assert validate(_cand(), b).ok                       # words inside: accepted as before
