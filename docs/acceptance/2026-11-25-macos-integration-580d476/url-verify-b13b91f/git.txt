@@ -1,0 +1,42 @@
+/Users/gregstork/Claude/riftwire-env/riftwire-integration-580d476.bundle is okay
+The bundle contains these 2 refs:
+b13b91f53fb63d023c7262f253670109f7b5d471 refs/heads/phase2/url-download
+580d4765ca71ccf66c21030f34270ff9dba49547 refs/heads/phase2/integration
+The bundle requires these 2 refs:
+81fb773be87b60c77535bcdfec9e4e4d6f6b853a 
+1b73afe2c73dd83b8df82d04737d73dc9373c630 
+The bundle uses this hash algorithm: sha1
+From /Users/gregstork/Claude/riftwire-env/riftwire-integration-580d476.bundle
+   81fb773..b13b91f  phase2/url-download -> bundle/url-download
+Already on 'phase2/url-download'
+Updating 81fb773..b13b91f
+Fast-forward
+ backend/alembic/versions/0008_public_web_basis.py | 150 +++++++++++
+ backend/app/api/rights_routes.py                  |   8 +-
+ backend/app/core/config.py                        |   8 +-
+ backend/app/models/rights.py                      |  10 +
+ backend/app/schemas/rights.py                     |   1 +
+ backend/app/services/queue.py                     |   1 +
+ backend/app/services/rights.py                    | 102 +++++++-
+ backend/app/services/sources.py                   |   7 +-
+ backend/app/services/url_download.py              |  15 +-
+ backend/tests/conftest.py                         |   3 +
+ backend/tests/test_public_web.py                  | 288 ++++++++++++++++++++++
+ backend/tests/test_rights.py                      |  21 +-
+ backend/tests/test_rights_review.py               |   2 +-
+ backend/tests/test_url_acquisition.py             |  32 ++-
+ docs/PROJECT_STATUS.md                            |   4 +
+ docs/URL_ACQUISITION.md                           |  38 ++-
+ frontend/src/components/ActionableError.tsx       |   1 +
+ frontend/src/components/LinkResolver.tsx          |   1 +
+ frontend/src/components/SourceAcquire.tsx         |  10 +-
+ frontend/src/components/rights.tsx                |  16 +-
+ frontend/src/pages/CreatorsPage.tsx               |  11 +-
+ frontend/src/pages/SourceDetailPage.tsx           |   8 +-
+ frontend/src/test/rights.test.tsx                 |  16 ++
+ frontend/src/types/rights.ts                      |   3 +-
+ scripts/acceptance.py                             |  94 ++++---
+ scripts/smoke_test.sh                             |   1 +
+ 26 files changed, 767 insertions(+), 84 deletions(-)
+ create mode 100644 backend/alembic/versions/0008_public_web_basis.py
+ create mode 100644 backend/tests/test_public_web.py

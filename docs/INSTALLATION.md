@@ -39,6 +39,16 @@ Creates `backend/.venv` (backend + dev dependencies), installs `frontend/node_mo
 (`npm ci`, exact versions from `package-lock.json`), copies `.env.example` → `.env` if no
 `.env` exists, and creates the data directories. Re-running is safe.
 
+### Backend dependencies approved after Phase 1
+Pinned in `backend/constraints.txt`; each needed the owner's approval (CLAUDE.md §8).
+
+| Package | Pinned | Licence | Purpose | Approved |
+|---|---|---|---|---|
+| Pillow | 13.0.0 | MIT-CMU | Draws the Short's title header and per-word caption overlays (`services/split_shorts.py`); FFmpeg composites them | Owner, 2026-11-25 (integration PR) |
+
+An existing environment that predates Pillow needs:
+`backend/.venv/bin/pip install -c backend/constraints.txt Pillow`.
+
 ## 4. Configure (optional)
 
 Edit `.env` (all keys documented in [`.env.example`](../.env.example)). Important ones:

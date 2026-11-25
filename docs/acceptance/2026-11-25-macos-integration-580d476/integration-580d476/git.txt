@@ -1,0 +1,11 @@
+/Users/gregstork/Claude/riftwire-env/riftwire-integration-580d476.bundle is okay
+The bundle contains these 2 refs:
+b13b91f53fb63d023c7262f253670109f7b5d471 refs/heads/phase2/url-download
+580d4765ca71ccf66c21030f34270ff9dba49547 refs/heads/phase2/integration
+The bundle requires these 2 refs:
+81fb773be87b60c77535bcdfec9e4e4d6f6b853a 
+1b73afe2c73dd83b8df82d04737d73dc9373c630 
+The bundle uses this hash algorithm: sha1
+From /Users/gregstork/Claude/riftwire-env/riftwire-integration-580d476.bundle
+ * [new branch]      phase2/integration -> bundle/integration
+Switched to a new branch 'phase2/integration'

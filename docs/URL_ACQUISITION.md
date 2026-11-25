@@ -93,7 +93,7 @@ The source's provenance records an `acquired_by_url` event with:
 - **Fetching is on by default** (`RIFTWIRE_URL_ACQUISITION_ENABLED=true`). Saving a link
   queues its `ACQUIRE` job with no prompt. A refusal never blocks saving the link: it
   becomes a `acquire_not_queued` system event.
-- **Every saved link gets an automatic `public_web` rights record** (migration `0008`).
+- **Every saved link gets an automatic `public_web` rights record** (migration `0008`, now `0009`).
   - It is written by `system`, in the same transaction as the source, and covers that one
     source.
   - It names the source's creator but claims nothing from them: "Publicly accessible
@@ -111,7 +111,8 @@ The source's provenance records an `acquired_by_url` event with:
   stop fetching and analysing one link; a revoked one is never recreated.
 - **Creator relationship `unaffiliated`:** a creator whose public footage was saved, with
   no relationship. Recording their permission creates a `creator_permission` record.
-- **Migration `0008`** rebuilds `rights_records` and `creators`. It drops and recreates,
+- **Migration `0008` (renumbered `0009` at integration)** rebuilds `rights_records` and
+  `creators`. It drops and recreates,
   from frozen copies, the 10 triggers that mention `rights_records`, so all 14 immutability
   triggers survive (tested before and after, with tampering still refused). Its downgrade
   refuses while `public_web` records or unaffiliated creators exist, because they are
@@ -121,3 +122,16 @@ The source's provenance records an `acquired_by_url` event with:
 - **Out of scope, by decision:** publishing public footage without the creator's
   permission is not built.
 
+
+## 8. Status at integration (2026-11-25)
+- Merged into `phase2/integration` (`580d476`) with the highlight queue. The `public_web`
+  migration is now **`0009`** (it was `0008` on this branch); see
+  [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §3.
+- **Verified natively on the Mac, with a stand-in downloader only.** Evidence:
+  `docs/acceptance/2026-11-25-macos-integration-580d476/`. **No real platform download
+  has been run.**
+- **Open policy conflict.** On 2026-11-25 the owner stated that public availability alone
+  does not authorize downloading, editing or publishing. §7 above still downloads by
+  default under the system-written `public_web` record. Editing and publishing are
+  refused as stated. The proposed change and the decision are in
+  [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §5.

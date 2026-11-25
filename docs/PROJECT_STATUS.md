@@ -1,22 +1,55 @@
 # RIFTWIRE — Project Status
 
-_Last updated: 2026-11-24_
+_Last updated: 2026-11-25_
 
-## URL acquisition prototype (branch `phase2/url-download`, local; not merged)
-At the owner's direction (2026-11-24), in two patches on top of the local prototype
-commits `1180a46`–`b05d881`. See [`URL_ACQUISITION.md`](URL_ACQUISITION.md).
-- **Patch 1:** a saved URL becomes a recording linked to its source, with method `url_fetch`
-  and provenance, through the normal import path.
-- **Patch 2:** acquisition is a durable `ACQUIRE` job (migration `0007`) with retries,
-  permanent refusals and crash recovery.
-- **Verified:** with a stand-in downloader only (tests, acceptance step M2-7).
-- **Not verified:** a live platform download.
-- **Owner acquisition policy (2026-11-24), points 1–2:** fetching on by default, and an
-  automatic `public_web` record per saved link (fetch and analyse only; migration `0008`,
-  [`URL_ACQUISITION.md`](URL_ACQUISITION.md) §7). Publishing public footage without the
-  creator's permission is not built.
-- **Pending:** the owner's milestone approval for acquisition (R4 deferred it to M3) and
-  for `yt-dlp`.
+## Integration branch (`phase2/integration` @ `580d476`, draft PR; not merged)
+The owner approved preparing an integration draft PR (2026-11-25). It combines **URL
+acquisition** (`phase2/url-download` @ `b13b91f`) with the **highlight queue and Shorts
+export** (`phase2/highlight-queue` @ `1b73afe`), on `main` @ `d9c878e`. Review package:
+[`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md).
+
+**What the branch does:**
+- A saved URL becomes a recording linked to its source through a durable `ACQUIRE` job
+  (migration `0007`; [`URL_ACQUISITION.md`](URL_ACQUISITION.md)).
+- Every saved link gets an automatic `public_web` record covering fetch and analyse only
+  (migration `0009`, renumbered from `0008`).
+- **Find highlights** runs a queued `HIGHLIGHT_SCAN` (migration `0008`). It is a
+  **rule-based baseline**: frame activity plus keyword cues over Whisper words. It is not
+  contextual AI and uses no prompt or model.
+- `clips.txt` timestamp review.
+- A 35/65 1080×1920 Short with red active-word captions, the original audio and an outro.
+- **Rights:** editing and exporting public footage are refused until a creator's
+  permission is recorded. Publishing is not built.
+
+**Verified natively on the Mac (2026-11-25, real 60 GiB floor, isolated data and ports):**
+- `b13b91f`: all suites pass.
+- `580d476`:
+  - all suites pass;
+  - the migration of a copy of the demo database to `0009` loses no rows and keeps all 14
+    triggers;
+  - the end-to-end run passes 11/11: saved URL → queued acquisition → linked recording →
+    Find highlights → timestamp review → 35/65 export, with real Whisper `base`.
+- Evidence: `docs/acceptance/2026-11-25-macos-integration-580d476/`.
+
+**Not verified:**
+- a real platform download (stand-in downloader only);
+- the approved RumbleFrame outro.
+
+**Open findings, for review:**
+- **Acquisition policy conflict:** public availability currently authorizes downloading on
+  this branch; the owner's 2026-11-25 statement says it must not (review §5).
+- **Outro:** the code trims to 2 s, but the approved RumbleFrame outro is 2.5 s (§7).
+- **Transcription:** four call sites transcribe independently and keep nothing. A shared
+  transcript is proposed in
+  [`TRANSCRIPT_ARCHITECTURE_PROPOSAL.md`](TRANSCRIPT_ARCHITECTURE_PROPOSAL.md) (§8).
+- **Pillow 13.0.0** (MIT-CMU) was approved by the owner on 2026-11-25.
+
+**Pending:**
+- independent review;
+- the owner's decisions in review §11;
+- milestone approval for this scope (acquisition was M3 under R4).
+
+The live demo database is not migrated.
 
 ## Current phase
 **Phase 2 — Sources & Signals: in progress.** Phases 2–3 are delivered as milestones M0–M7
@@ -34,9 +67,9 @@ commits `1180a46`–`b05d881`. See [`URL_ACQUISITION.md`](URL_ACQUISITION.md).
     physical-SSD checks pass
     ([checklist §11](M1_STORAGE_CHECKLIST.md#11-acceptance-checks-that-depend-on-the-external-ssd-deferred)).
   - Design: [`ARCHITECTURE.md`](ARCHITECTURE.md) §19.
-- **M2, Rights & Source Management: approved** (owner decisions R1–R6,
-  [`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12). In progress on branch
-  `phase2/m2-rights-sources`.
+- **M2, Rights & Source Management: merged** into `main` as **`d9c878e`** (PR #12, squash,
+  2026-11-24 19:58 UTC) after the updated independent review. Approved with owner
+  decisions R1–R6 ([`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12).
   - **Implemented (2026-11-24), draft PR #12, ready for independent review.** Review
     package: [`M2_REVIEW.md`](M2_REVIEW.md); design: ARCHITECTURE §20.
     - Schema `0004` with 12 database triggers for immutable rights and provenance.
@@ -87,10 +120,8 @@ commits `1180a46`–`b05d881`. See [`URL_ACQUISITION.md`](URL_ACQUISITION.md).
     - a malformed URL returned HTTP 500.
   - **Mac verification of `57c6b16`** (2026-11-24): all stages exit 0. Backend 391 + 3
     skipped, bench 47 + 1, frontend 36, acceptance 28/28 at the 60 GiB floor, smoke 30/30.
-  - **Pending:**
-    - updated independent review;
-    - merge (owner).
-    M3 is not started.
+  - **Merged** (owner) as `d9c878e`. M3 is not started; the integration branch pulls some
+    M3 work forward for review only (see the top of this file).
 
 ### Merged state of `main` (2026-11-24)
 | PR | Content | Reviewed head | Squash commit on `main` |
@@ -347,7 +378,8 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
     - every physical-SSD check (checklist §11).
 
 ## Blockers
-None for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB SSD
+**Integration PR:** merge waits for the independent review and the owner's acquisition-policy
+decision ([`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §5, §11). Otherwise none for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB SSD
 (owner-formatted APFS). Real footage at scale needs the SSD.
 
 ## Decisions pending
@@ -358,7 +390,10 @@ None for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB 
   un-deferred, Higgsfield use cases, brand assets).
 
 ## Next steps
-1. Mac verification and independent review of M2 (PR #12); merge after approval.
+0. Independent review of the integration draft PR (`phase2/integration` @ `580d476`), then
+   the owner's decisions in [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §11. No merge,
+   no further feature work and no live-demo migration before that.
+1. M2 is merged (PR #12, `d9c878e`).
 2. When the SSD arrives: physical-SSD acceptance (checklist §11), then tag `v0.3.0-m1`
    (owner).
 

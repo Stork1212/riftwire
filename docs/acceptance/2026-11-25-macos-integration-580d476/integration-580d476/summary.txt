@@ -1,0 +1,46 @@
+RIFTWIRE integration check  started 2026-11-25T02:45:22Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/integration-e2e-580d476-20261125T024522Z
+HEAD: 580d4765ca71ccf66c21030f34270ff9dba49547 (local branch phase2/integration; not pushed)
+free space before: 127.48 GiB (floor 60 GiB)
+
+== test: scripts/test.sh
+   exit code 0  (103 s)  free now 127.48 GiB
+
+== acceptance: /Users/gregstork/Claude/riftwire/backend/.venv/bin/python scripts/acceptance.py --port 18911 --min-free-gib 60 --report /Users/gregstork/Claude/riftwire-env/integration-e2e-580d476-20261125T024522Z/acceptance.json
+   exit code 0  (30 s)  free now 127.42 GiB
+
+== smoke: scripts/smoke_test.sh /Users/gregstork/Claude/riftwire-env/integration-e2e-580d476-20261125T024522Z/smoke-report.txt
+   exit code 0  (10 s)  free now 127.41 GiB
+
+== demo database migration (disposable copy)
+   demo copy migration exit 0 (details in demo-migration.log; copy kept as demo-db-before.db)
+
+== end-to-end
+PASS  saved URL → queued acquisition → linked recording — public_web recorded; ACQUIRE completed; recording d9196eae-6893-4112-847d-e984cc0c130a READY, linked, url_fetch
+PASS  acquisition history — recorded_public_web → acquired_by_url (yt-dlp e2e-stand-in, sha256 573b4a29f45d…) → attached_to_source (url_fetch)
+PASS  Find highlights (queued scan) — 2 candidate(s); top 0-25000 ms, score 6.7, cues ['reaction', 'pursuit']
+PASS  transcript evidence — excerpt "Oh my God, the cops are right behind us. We got a problem. Hold on," (matched ['cops', 'problem']); cues ['reaction', 'pursuit']
+PASS  sampled frame — JPEG 480x270 at 19000 ms (e2e-sampled-frame.jpg)
+PASS  review a timestamp (clips.txt) — clips.txt range 18-33 s accepted for the linked recording: {'line': 2, 'label': 'Getaway commentary', 'start_ms': 18000, 'end_ms': 33000, 'from_ms': 18000, 'to_ms': 33000}
+PASS  export 35/65 Short (creator permission gate) — refused before permission (creator_permission_needed); exported 7610887 bytes after
+PASS  Short format and duration — 1080x1920, audio present, 17.00 s = 15 s clip + 2 s outro
+PASS  two-second outro — last 2 s are the outro (magenta 253,0,252); 0.6 s earlier is gameplay (120,120,120)
+PASS  red word highlights — red highlight under the spoken word: 10167 px at 7.50 s; none before speech (0 px) (e2e-caption-frame.png)
+PASS  original audio — export audio matches the source commentary (r=1.00, 6 s from 2.0 s)
+
+free space after: 127.42 GiB (before 127.48 GiB)
+
+== counts
+430 passed, 3 skipped, 1 warning in 75.33s (0:01:15)
+47 passed, 1 skipped in 17.26s
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m38 passed[39m[22m[90m (38)[39m
+[2m      Tests [22m [1m[32m38 passed[39m[22m[90m (38)[39m
+29/29 steps passed
+smoke PASS lines: 30
+smoke FAIL lines: 0
+working tree after: clean
+
+RESULT  test=0  acceptance=0  smoke=0  demo-migration=0  e2e=0
+Exported Short for you to watch: /Users/gregstork/Claude/riftwire-env/integration-e2e-580d476-20261125T024522Z/e2e-short.mp4
+ALL PASSED

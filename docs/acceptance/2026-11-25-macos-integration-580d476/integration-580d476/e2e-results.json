@@ -1,0 +1,70 @@
+{
+  "checks": [
+    {
+      "check": "saved URL \u2192 queued acquisition \u2192 linked recording",
+      "result": "PASS",
+      "note": "public_web recorded; ACQUIRE completed; recording d9196eae-6893-4112-847d-e984cc0c130a READY, linked, url_fetch",
+      "seconds": 1.2
+    },
+    {
+      "check": "acquisition history",
+      "result": "PASS",
+      "note": "recorded_public_web \u2192 acquired_by_url (yt-dlp e2e-stand-in, sha256 573b4a29f45d\u2026) \u2192 attached_to_source (url_fetch)",
+      "seconds": 0.0
+    },
+    {
+      "check": "Find highlights (queued scan)",
+      "result": "PASS",
+      "note": "2 candidate(s); top 0-25000 ms, score 6.7, cues ['reaction', 'pursuit']",
+      "seconds": 4.1
+    },
+    {
+      "check": "transcript evidence",
+      "result": "PASS",
+      "note": "excerpt \"Oh my God, the cops are right behind us. We got a problem. Hold on,\" (matched ['cops', 'problem']); cues ['reaction', 'pursuit']",
+      "seconds": 0.0
+    },
+    {
+      "check": "sampled frame",
+      "result": "PASS",
+      "note": "JPEG 480x270 at 19000 ms (e2e-sampled-frame.jpg)",
+      "seconds": 0.1
+    },
+    {
+      "check": "review a timestamp (clips.txt)",
+      "result": "PASS",
+      "note": "clips.txt range 18-33 s accepted for the linked recording: {'line': 2, 'label': 'Getaway commentary', 'start_ms': 18000, 'end_ms': 33000, 'from_ms': 18000, 'to_ms': 33000}",
+      "seconds": 0.0
+    },
+    {
+      "check": "export 35/65 Short (creator permission gate)",
+      "result": "PASS",
+      "note": "refused before permission (creator_permission_needed); exported 7610887 bytes after",
+      "seconds": 3.6
+    },
+    {
+      "check": "Short format and duration",
+      "result": "PASS",
+      "note": "1080x1920, audio present, 17.00 s = 15 s clip + 2 s outro",
+      "seconds": 0.0
+    },
+    {
+      "check": "two-second outro",
+      "result": "PASS",
+      "note": "last 2 s are the outro (magenta 253,0,252); 0.6 s earlier is gameplay (120,120,120)",
+      "seconds": 0.2
+    },
+    {
+      "check": "red word highlights",
+      "result": "PASS",
+      "note": "red highlight under the spoken word: 10167 px at 7.50 s; none before speech (0 px) (e2e-caption-frame.png)",
+      "seconds": 3.6
+    },
+    {
+      "check": "original audio",
+      "result": "PASS",
+      "note": "export audio matches the source commentary (r=1.00, 6 s from 2.0 s)",
+      "seconds": 0.5
+    }
+  ]
+}
