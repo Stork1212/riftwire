@@ -64,6 +64,19 @@ M4 ([proposal](TRANSCRIPT_ARCHITECTURE_PROPOSAL.md)). It is not in PR #14.
 
 The live demo database is not migrated.
 
+## Next milestones (plans only; nothing implemented)
+The owner's sprint brief (2026-11-25) covers M4–M6. Its precondition is that PR #14 is
+reviewed and merged, so only plans exist so far:
+- [`M4_TRANSCRIPTION_SIGNALS_PLAN.md`](M4_TRANSCRIPTION_SIGNALS_PLAN.md): shared
+  transcript, audio and visual signals, analysis evidence;
+- [`M5_M6_AI_HIGHLIGHTS_PLAN.md`](M5_M6_AI_HIGHLIGHTS_PLAN.md): providers, validator,
+  prompt registry, the model shortlist, and the contextual highlight pipeline.
+
+**Waiting on the owner:**
+- the PR #14 merge;
+- installing Ollama and downloading models (M5);
+- authorized, labelled recordings (M6 quality evaluation).
+
 ## Current phase
 **Phase 2 — Sources & Signals: in progress.** Phases 2–3 are delivered as milestones M0–M7
 (approved [`PHASE2_PROPOSAL.md`](PHASE2_PROPOSAL.md); phase numbering unchanged).
