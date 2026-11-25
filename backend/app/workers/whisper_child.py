@@ -29,7 +29,8 @@ def _version() -> str:
         return str(getattr(mlx_whisper, "__version__", "unknown"))
 
 
-def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int:
+def main(model_dir: str, audio: str, out_json: str, language: str = "en",
+         options: str = "{}") -> int:
     # The model is the installed folder; never fall back to a hub download.
     if not os.path.isfile(os.path.join(model_dir, "weights.npz")):
         print(f"model not found at {model_dir}; nothing is downloaded", file=sys.stderr)
@@ -42,8 +43,13 @@ def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int
 
     ModelHolder.get_model(model_dir, mx.float16)
     t_load = time.perf_counter()
+    decode = json.loads(options)
+    allowed = {"condition_on_previous_text"}
+    if set(decode) - allowed:
+        print(f"unsupported decoding options: {sorted(set(decode) - allowed)}", file=sys.stderr)
+        return 64
     result = mlx_whisper.transcribe(audio, path_or_hf_repo=model_dir, language=language,
-                                    word_timestamps=True, fp16=True, verbose=None)
+                                    word_timestamps=True, fp16=True, verbose=None, **decode)
     t_done = time.perf_counter()
     words, segments = [], []
     for si, seg in enumerate(result.get("segments", [])):
@@ -63,7 +69,8 @@ def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int
            "language": result.get("language"),
            "engine_version": f"mlx-whisper {_version()}",
            "mlx_version": getattr(mx, "__version__", None), "mlx_peak_bytes": peak,
-           "load_s": round(t_load - t0, 3), "transcribe_s": round(t_done - t_load, 3)}
+           "load_s": round(t_load - t0, 3), "transcribe_s": round(t_done - t_load, 3),
+           "decode": decode}
     tmp = out_json + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(out, fh)

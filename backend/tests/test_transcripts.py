@@ -61,6 +61,7 @@ def engine(settings, tmp_path, monkeypatch):
 
     class Engine:
         model_dir = model
+        log_path = log
 
         @staticmethod
         def calls() -> int:
@@ -121,17 +122,19 @@ def test_chunk_plan_covers_the_recording_with_overlap():
     assert transcripts.plan_chunks(0, 10_000, 2_000) == []
 
 
-def test_merge_keeps_each_word_once_by_core_ownership_and_is_order_independent():
+def test_merge_keeps_each_word_once_and_is_order_independent():
     chunks = _plan_raw()
     words, segments = transcripts.merge(chunks, 30_000)
     assert [(w["text"], w["start_ms"], w["chunk_idx"]) for w in words] == [
-        ("a", 9_500, 0), ("b", 11_000, 1), ("c", 19_900, 2), ("d", 23_000, 2)]
+        ("a", 9_500, 0), ("b", 11_000, 1), ("c", 19_900, 1), ("d", 23_000, 2)]
+    # 10 s: comparable quality, the core edge stands. 20 s: chunk 1's "c" (0.9) is clearly
+    # better than chunk 2's (0.4), so chunk 1 owns that overlap zone (merge v2).
     for _ in range(5):
         shuffled = chunks[:]
         random.shuffle(shuffled)
         assert transcripts.merge(shuffled, 30_000) == (words, segments)
     assert [(s["first_word_idx"], s["last_word_idx"]) for s in segments] == [
-        (0, 0), (1, 1), (2, 3)]
+        (0, 0), (1, 2), (3, 3)]
 
 
 def test_merge_deduplicates_the_same_word_seen_by_two_chunks():
@@ -143,6 +146,61 @@ def test_merge_deduplicates_the_same_word_seen_by_two_chunks():
     assert [(w["text"], w["prob"], w["chunk_idx"]) for w in words] == [("wow", 0.9, 1)]
 
 
+def _native_failure():
+    """The M4 native run on 2026-11-25 (macOS speech, real mlx-whisper base, 150 s, 120 s
+    chunks, 4 s overlap). Chunk 0 (0-124 s) repeated the FIRST phrase over the boundary
+    phrase with near-zero probabilities and collapsed timestamps; chunk 1 (from 116 s)
+    heard the boundary phrase correctly. Chunk-relative times; chunk 0's values are the
+    stored ones from that run, chunk 1's reconstruct its correct words."""
+    first = [("The", 4600, 5140, .89), ("police", 5140, 5420, .93),
+             ("helicopter", 5420, 6000, 1.0), ("is", 6000, 6280, 1.0),
+             ("right", 6280, 6420, 1.0), ("above", 6420, 6680, 1.0), ("us.", 6680, 7000, 1.0),
+             ("Take", 7200, 7320, .99), ("the", 7320, 7520, 1.0), ("next", 7520, 7740, 1.0),
+             ("exit", 7740, 7960, 1.0), ("now.", 7960, 8300, .92)]
+    repeat = [("The", 118440, 119840, .0118), ("police", 119840, 119980, 0.0)] + [
+        (t, 119980, 119980, p) for t, p in (("helicopter", 0.0), ("is", .1265),
+                                            ("right", .0035), ("above", .0087), ("us.", .1432),
+                                            ("Take", .0018), ("the", .1661), ("next", .0019),
+                                            ("exit", .0023), ("now.", .0016))]
+    boundary = [("Seven", 1500, 1900, .97), ("orange", 1900, 2300, .95),
+                ("taxis", 2300, 2800, .93), ("crashed", 2800, 3300, .96),
+                ("into", 3300, 3500, .99), ("the", 3500, 3640, .99),
+                ("fountain", 3940, 4260, .998), ("at", 4260, 4560, .997),
+                ("the", 4560, 4720, .994), ("harbor.", 4720, 4980, .889)]
+    mission = [("Mission", 21080, 22400, .74), ("complete", 22400, 22860, .91)]
+
+    def raw(ws):
+        return {"words": [{"w": t, "start_ms": a, "end_ms": b, "prob": p, "seg": 0}
+                          for t, a, b, p in ws]}
+    plans = transcripts.plan_chunks(150_000, 120_000, 4_000)
+    return [(plans[0], raw(first + repeat)), (plans[1], raw(boundary + mission))]
+
+
+def test_merge_v2_gives_the_overlap_to_the_chunk_with_real_words():
+    chunks = _native_failure()
+    [decision] = transcripts.boundaries(chunks, 150_000)
+    assert decision["owner"] == "later" and decision["cut_ms"] == 116_000
+    assert decision["quality"][0] < 0.1 < 0.9 < decision["quality"][1]
+    words, _ = transcripts.merge(chunks, 150_000)
+    text = " ".join(w["text"] for w in words)
+    assert text == ("The police helicopter is right above us. Take the next exit now. "
+                    "Seven orange taxis crashed into the fountain at the harbor. "
+                    "Mission complete")
+    assert words[12]["start_ms"] == 117_500 and words[12]["chunk_idx"] == 1
+    for _ in range(3):                                   # still order-independent
+        assert transcripts.merge(list(reversed(chunks)), 150_000)[0] == words
+
+
+def test_merge_v2_keeps_the_nominal_boundary_when_quality_is_comparable_or_one_side_silent():
+    plans = transcripts.plan_chunks(20_000, 10_000, 2_000)
+    good = {"words": [{"w": "go", "start_ms": 1_200, "end_ms": 1_500, "prob": 0.9}]}
+    also = {"words": [{"w": "go", "start_ms": 9_200, "end_ms": 9_500, "prob": 0.8}]}
+    [d] = transcripts.boundaries([(plans[0], also), (plans[1], good)], 20_000)
+    assert d["owner"] == "nominal" and d["cut_ms"] == 10_000
+    [d] = transcripts.boundaries([(plans[0], {"words": []}), (plans[1], good)], 20_000)
+    assert d["owner"] == "nominal" and d["quality"] == [None, 0.9]
+
+
 def test_fingerprint_changes_with_the_model_and_the_chunking(settings, engine):
     base = transcripts.current_config(settings)
     assert len(base["model_sha256"]) == 64
@@ -150,6 +208,8 @@ def test_fingerprint_changes_with_the_model_and_the_chunking(settings, engine):
     assert transcripts.fingerprint(base) == transcripts.fingerprint(same)
     (engine.model_dir / "weights.npz").write_bytes(b"stub weights v2 (different size)")
     assert transcripts.current_config(settings)["model_sha256"] != base["model_sha256"]
+    assert base["decode"] == {"condition_on_previous_text": False}
+    assert base["merge_version"] == 2
     settings.transcribe_chunk_seconds = 20
     assert transcripts.fingerprint(transcripts.current_config(settings)) != \
         transcripts.fingerprint(base)
@@ -180,6 +240,8 @@ def test_transcript_matches_the_audio_across_chunk_boundaries(db, settings, engi
         assert s.scalar(select(func.count()).select_from(TranscriptSegment).where(
             TranscriptSegment.transcript_id == tr_id)) >= 1
     assert engine.calls() == 3
+    calls = [json.loads(line) for line in engine.log_path.read_text().splitlines()]
+    assert all(c["options"] == {"condition_on_previous_text": False} for c in calls)
 
 
 @requires_ffmpeg

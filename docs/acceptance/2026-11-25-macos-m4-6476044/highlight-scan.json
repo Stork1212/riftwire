@@ -1,0 +1,55 @@
+{
+ "duration_ms": 150000,
+ "coverage_ms": 150000,
+ "speech_available": true,
+ "items": [
+  {
+   "start_ms": 0,
+   "end_ms": 25000,
+   "peak_ms": 7500,
+   "score": 1.96,
+   "motion": 7.5,
+   "speech_cues": [
+    "pursuit"
+   ],
+   "excerpt": "The police helicopter is right above us. Take the next exit now."
+  },
+  {
+   "start_ms": 105000,
+   "end_ms": 130000,
+   "peak_ms": 127500,
+   "score": 1.115,
+   "motion": 7.53,
+   "speech_cues": [],
+   "excerpt": "fountain at the harbor."
+  },
+  {
+   "start_ms": 45000,
+   "end_ms": 70000,
+   "peak_ms": 55500,
+   "score": 1.109,
+   "motion": 7.49,
+   "speech_cues": [],
+   "excerpt": ""
+  },
+  {
+   "start_ms": 70000,
+   "end_ms": 95000,
+   "peak_ms": 79500,
+   "score": 1.106,
+   "motion": 7.47,
+   "speech_cues": [],
+   "excerpt": ""
+  },
+  {
+   "start_ms": 130000,
+   "end_ms": 150000,
+   "peak_ms": 139500,
+   "score": 1.094,
+   "motion": 7.39,
+   "speech_cues": [],
+   "excerpt": "Mission complete was absolutely incredible."
+  }
+ ],
+ "transcript_id": "2032403a-0888-48c2-a2ec-cd1971e4ce09"
+}

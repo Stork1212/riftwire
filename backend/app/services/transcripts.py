@@ -11,11 +11,15 @@ subtitles) reads the stored words through :func:`words`.
   ``overlap`` on both sides, in a fresh child process, and stored (raw engine output, gzip)
   as soon as it finishes. A DONE chunk is never transcribed again: a crash, a timeout or a
   shutdown resumes at the first unfinished chunk.
-* **Deterministic merge (version 1):** a word belongs to the chunk whose core span
-  contains its midpoint. Across each boundary, two words of different chunks that overlap
-  by at least half of the shorter and have the same normalised text are one word: the
-  higher probability is kept, the earlier chunk on a tie. The result never depends on the
-  order chunks finished in.
+* **Deterministic merge (version 2):** at each chunk boundary, the overlap zone (heard by
+  both chunks) goes to the chunk whose words there are clearly better (mean probability,
+  degenerate zero-length or near-zero-probability words counting as 0); otherwise the
+  core edge stands (version 1 behaviour). A word belongs to the chunk owning its midpoint.
+  Two words of different chunks that overlap by at least half of the shorter and have the
+  same normalised text are one word (higher probability kept, earlier chunk on a tie).
+  The result never depends on the order chunks finished in. Version 2 exists because on
+  real speech Whisper repeated an earlier phrase at the end of a chunk, and the fixed core
+  edge kept that copy over the next chunk's correct words.
 * **Immutability:** raw words, segments, DONE chunks and complete transcripts cannot be
   changed or deleted (database triggers, migration 0010). Timing corrections are a
   separate, versioned layer, applied only when validated and asked for.
@@ -50,6 +54,7 @@ from app.models import (
     JobType,
     Recording,
     RecordingStatus,
+    Severity,
     Transcript,
     TranscriptChunk,
     TranscriptCorrection,
@@ -58,8 +63,17 @@ from app.models import (
     TranscriptStatus,
     TranscriptWord,
 )
+from app.services.events import record_event
 
-MERGE_VERSION = 1
+MERGE_VERSION = 2
+# Decoding options passed to the child (part of the configuration fingerprint).
+# condition_on_previous_text=False: without it, Whisper repeated an earlier phrase over new
+# speech at the end of a chunk on the Mac (M4 native run, 2026-11-25).
+DECODE_OPTIONS = {"condition_on_previous_text": False}
+# Merge v2: who owns each overlap zone is decided by measured word quality.
+QUALITY_MARGIN = 0.15        # mean-quality difference needed to move a boundary
+DEGENERATE_MS = 20           # a word shorter than this carries no timing information
+DEGENERATE_PROB = 0.05
 CHILD = Path(__file__).resolve().parents[1] / "workers" / "whisper_child.py"
 _NORM = re.compile(r"[^\w']+", re.UNICODE)
 _checksums: dict[tuple[str, int, int], str] = {}
@@ -110,6 +124,7 @@ def current_config(settings: Settings) -> dict:
         "overlap_ms": settings.transcribe_overlap_seconds * 1000,
         "audio": "pcm_s16le/16000/mono",
         "word_timestamps": True,
+        "decode": dict(DECODE_OPTIONS),
         "merge_version": MERGE_VERSION,
     }
 
@@ -155,27 +170,75 @@ def _norm(text: str) -> str:
     return " ".join(_NORM.sub(" ", text.lower()).split())
 
 
+def _absolute(plan: ChunkPlan, raw: dict, duration_ms: int) -> list[dict]:
+    out = []
+    for w in raw.get("words", []):
+        text = str(w.get("w", "")).strip()
+        if not text:
+            continue
+        start = int(round(plan.start_ms + float(w["start_ms"])))
+        end = int(round(plan.start_ms + float(w["end_ms"])))
+        start, end = max(0, min(start, duration_ms)), max(0, min(end, duration_ms))
+        out.append({"start_ms": start, "end_ms": max(end, start), "text": text,
+                    "prob": w.get("prob"), "chunk_idx": plan.idx, "raw_seg": w.get("seg")})
+    return out
+
+
+def _quality(words: list[dict]) -> float | None:
+    """Mean word quality: the engine's probability, or 0 for a degenerate word (no
+    duration, or near-zero probability). ``None`` when there are no words."""
+    if not words:
+        return None
+    q = [0.0 if (w["end_ms"] - w["start_ms"] < DEGENERATE_MS
+                 or (w["prob"] or 0) < DEGENERATE_PROB) else float(w["prob"] or 0)
+         for w in words]
+    return sum(q) / len(q)
+
+
+def boundaries(chunks: list[tuple[ChunkPlan, dict]], duration_ms: int) -> list[dict]:
+    """Merge v2 ownership decision for each chunk boundary.
+
+    The overlap zone is where both chunks heard the same audio. When both produced words
+    there and one chunk's words are clearly better (mean quality higher by at least
+    ``QUALITY_MARGIN``), that chunk owns the whole zone; otherwise the nominal boundary (the
+    core edge) stands. A side with no words never wins by default: silence on one side
+    and words on the other is ambiguous, so the nominal boundary stands."""
+    ordered = sorted(chunks, key=lambda c: c[0].idx)
+    words = {p.idx: _absolute(p, r, duration_ms) for p, r in ordered}
+    out = []
+    for (a, _), (b, _) in zip(ordered, ordered[1:], strict=False):
+        lo, hi, nominal = b.start_ms, a.end_ms, a.core_end_ms
+        in_zone = {i: [w for w in words[i] if lo <= (w["start_ms"] + w["end_ms"]) / 2 < hi]
+                   for i in (a.idx, b.idx)}
+        qa, qb = _quality(in_zone[a.idx]), _quality(in_zone[b.idx])
+        cut, owner = nominal, "nominal"
+        if qa is not None and qb is not None and abs(qa - qb) >= QUALITY_MARGIN:
+            cut, owner = (hi, "earlier") if qa > qb else (lo, "later")
+        out.append({"after_chunk": a.idx, "nominal_ms": nominal, "cut_ms": cut,
+                    "owner": owner, "zone_ms": [lo, hi],
+                    "quality": [None if qa is None else round(qa, 3),
+                                None if qb is None else round(qb, 3)],
+                    "words": [len(in_zone[a.idx]), len(in_zone[b.idx])]})
+    return out
+
+
 def merge(chunks: list[tuple[ChunkPlan, dict]], duration_ms: int) -> tuple[list[dict],
                                                                              list[dict]]:
-    """Deterministic merge (``MERGE_VERSION`` 1) of per-chunk engine output into one
-    recording-relative word list and segment list. See the module docstring."""
+    """Deterministic merge (``MERGE_VERSION`` 2) of per-chunk engine output into one
+    recording-relative word list and segment list. Each chunk owns the span between its
+    two :func:`boundaries` cuts; a word belongs to the chunk owning its midpoint; the same
+    word seen by two chunks is kept once. Independent of the order chunks finished in."""
+    ordered = sorted(chunks, key=lambda c: c[0].idx)
+    cuts = [b["cut_ms"] for b in boundaries(ordered, duration_ms)]
     candidates: list[dict] = []
-    for plan, raw in sorted(chunks, key=lambda c: c[0].idx):
-        last = plan.core_end_ms >= duration_ms
-        for w in raw.get("words", []):
-            start = int(round(plan.start_ms + float(w["start_ms"])))
-            end = int(round(plan.start_ms + float(w["end_ms"])))
-            start, end = max(0, min(start, duration_ms)), max(0, min(end, duration_ms))
-            end = max(end, start)
-            mid = (start + end) / 2
-            if not (plan.core_start_ms <= mid < plan.core_end_ms or (last and mid == duration_ms)):
-                continue
-            text = str(w.get("w", "")).strip()
-            if not text:
-                continue
-            candidates.append({"start_ms": start, "end_ms": end, "text": text,
-                               "prob": w.get("prob"), "chunk_idx": plan.idx,
-                               "raw_seg": w.get("seg")})
+    for n, (plan, raw) in enumerate(ordered):
+        own_start = cuts[n - 1] if n > 0 else 0
+        own_end = cuts[n] if n < len(cuts) else duration_ms
+        last = n == len(ordered) - 1
+        for w in _absolute(plan, raw, duration_ms):
+            mid = (w["start_ms"] + w["end_ms"]) / 2
+            if own_start <= mid < own_end or (last and mid == duration_ms):
+                candidates.append(w)
     candidates.sort(key=lambda x: (x["start_ms"], x["chunk_idx"], x["end_ms"]))
     kept: list[dict] = []
     for c in candidates:
@@ -442,6 +505,11 @@ def finalize(session: Session, transcript_id: str) -> Transcript:
     raws = [(ChunkPlan(c.idx, c.start_ms, c.end_ms, c.core_start_ms, c.core_end_ms),
              json.loads(gzip.decompress(c.raw_json_gz))) for c in chunks]
     kept, segments = merge(raws, tr.duration_ms)
+    moved = [b for b in boundaries(raws, tr.duration_ms) if b["owner"] != "nominal"]
+    if moved:
+        record_event(session, Severity.INFO, "transcripts", "transcript_boundary_reassigned",
+                     "Merge v2 gave overlap zone(s) to the chunk with better words: "
+                     + json.dumps(moved, sort_keys=True), recording_id=tr.recording_id)
     for w in kept:
         session.add(TranscriptWord(transcript_id=tr.id, idx=w["idx"], start_ms=w["start_ms"],
                                    end_ms=w["end_ms"], text=w["text"], prob=w["prob"],
@@ -499,7 +567,8 @@ def transcribe_chunk(settings: Settings, source: Path, work: Path, chunk: Transc
         for block in iter(lambda: fh.read(1 << 20), b""):
             h.update(block)
     r = run([str(py), str(CHILD), str(model), str(audio), str(out),
-             settings.transcribe_language], settings.transcribe_child_timeout_seconds)
+             settings.transcribe_language, json.dumps(DECODE_OPTIONS, sort_keys=True)],
+            settings.transcribe_child_timeout_seconds)
     if getattr(r, "returncode", 1) or not out.is_file():
         tail = (getattr(r, "stderr", b"") or b"")[-400:]
         if isinstance(tail, bytes):

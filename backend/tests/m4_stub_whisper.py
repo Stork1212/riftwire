@@ -91,7 +91,8 @@ def segment(words: list[dict], gap_ms: float = 600.0) -> list[dict]:
              "text": " ".join(s["words"])} for i, s in enumerate(segments)]
 
 
-def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int:
+def main(model_dir: str, audio: str, out_json: str, language: str = "en",
+         options: str = "{}") -> int:
     log = os.environ.get("RIFTWIRE_STUB_WHISPER_LOG")
     calls = 0
     if log:
@@ -99,7 +100,8 @@ def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int
             with open(log, encoding="utf-8") as f:
                 calls = sum(1 for _ in f)
         with open(log, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"model": model_dir, "audio": audio}) + "\n")
+            f.write(json.dumps({"model": model_dir, "audio": audio,
+                                "options": json.loads(options)}) + "\n")
     fail_after = os.environ.get("RIFTWIRE_STUB_WHISPER_FAIL_AFTER")
     if fail_after is not None and calls >= int(fail_after):
         print("stub whisper: simulated crash", file=sys.stderr)
@@ -117,4 +119,4 @@ def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(*sys.argv[1:5]))
+    raise SystemExit(main(*sys.argv[1:6]))

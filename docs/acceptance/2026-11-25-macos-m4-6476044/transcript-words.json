@@ -1,0 +1,240 @@
+[
+ {
+  "idx": 0,
+  "w": "The",
+  "start_ms": 4600,
+  "end_ms": 5140,
+  "prob": 0.8877
+ },
+ {
+  "idx": 1,
+  "w": "police",
+  "start_ms": 5140,
+  "end_ms": 5420,
+  "prob": 0.9272
+ },
+ {
+  "idx": 2,
+  "w": "helicopter",
+  "start_ms": 5420,
+  "end_ms": 6000,
+  "prob": 0.9961
+ },
+ {
+  "idx": 3,
+  "w": "is",
+  "start_ms": 6000,
+  "end_ms": 6280,
+  "prob": 0.9985
+ },
+ {
+  "idx": 4,
+  "w": "right",
+  "start_ms": 6280,
+  "end_ms": 6420,
+  "prob": 0.999
+ },
+ {
+  "idx": 5,
+  "w": "above",
+  "start_ms": 6420,
+  "end_ms": 6680,
+  "prob": 0.9961
+ },
+ {
+  "idx": 6,
+  "w": "us.",
+  "start_ms": 6680,
+  "end_ms": 7000,
+  "prob": 1.0
+ },
+ {
+  "idx": 7,
+  "w": "Take",
+  "start_ms": 7200,
+  "end_ms": 7320,
+  "prob": 0.9907
+ },
+ {
+  "idx": 8,
+  "w": "the",
+  "start_ms": 7320,
+  "end_ms": 7520,
+  "prob": 0.9971
+ },
+ {
+  "idx": 9,
+  "w": "next",
+  "start_ms": 7520,
+  "end_ms": 7740,
+  "prob": 0.9971
+ },
+ {
+  "idx": 10,
+  "w": "exit",
+  "start_ms": 7740,
+  "end_ms": 7960,
+  "prob": 0.9966
+ },
+ {
+  "idx": 11,
+  "w": "now.",
+  "start_ms": 7960,
+  "end_ms": 8300,
+  "prob": 0.9199
+ },
+ {
+  "idx": 12,
+  "w": "The",
+  "start_ms": 118440,
+  "end_ms": 119840,
+  "prob": 0.0118
+ },
+ {
+  "idx": 13,
+  "w": "police",
+  "start_ms": 119840,
+  "end_ms": 119980,
+  "prob": 0.0
+ },
+ {
+  "idx": 14,
+  "w": "fountain",
+  "start_ms": 119940,
+  "end_ms": 120260,
+  "prob": 0.998
+ },
+ {
+  "idx": 15,
+  "w": "helicopter",
+  "start_ms": 119980,
+  "end_ms": 119980,
+  "prob": 0.0
+ },
+ {
+  "idx": 16,
+  "w": "is",
+  "start_ms": 119980,
+  "end_ms": 119980,
+  "prob": 0.1265
+ },
+ {
+  "idx": 17,
+  "w": "right",
+  "start_ms": 119980,
+  "end_ms": 119980,
+  "prob": 0.0035
+ },
+ {
+  "idx": 18,
+  "w": "above",
+  "start_ms": 119980,
+  "end_ms": 119980,
+  "prob": 0.0087
+ },
+ {
+  "idx": 19,
+  "w": "us.",
+  "start_ms": 119980,
+  "end_ms": 119980,
+  "prob": 0.1432
+ },
+ {
+  "idx": 20,
+  "w": "Take",
+  "start_ms": 119980,
+  "end_ms": 119980,
+  "prob": 0.0018
+ },
+ {
+  "idx": 21,
+  "w": "the",
+  "start_ms": 119980,
+  "end_ms": 119980,
+  "prob": 0.1661
+ },
+ {
+  "idx": 22,
+  "w": "next",
+  "start_ms": 119980,
+  "end_ms": 119980,
+  "prob": 0.0019
+ },
+ {
+  "idx": 23,
+  "w": "exit",
+  "start_ms": 119980,
+  "end_ms": 119980,
+  "prob": 0.0023
+ },
+ {
+  "idx": 24,
+  "w": "now.",
+  "start_ms": 119980,
+  "end_ms": 119980,
+  "prob": 0.0016
+ },
+ {
+  "idx": 25,
+  "w": "at",
+  "start_ms": 120260,
+  "end_ms": 120560,
+  "prob": 0.9966
+ },
+ {
+  "idx": 26,
+  "w": "the",
+  "start_ms": 120560,
+  "end_ms": 120720,
+  "prob": 0.9941
+ },
+ {
+  "idx": 27,
+  "w": "harbor.",
+  "start_ms": 120720,
+  "end_ms": 120980,
+  "prob": 0.8892
+ },
+ {
+  "idx": 28,
+  "w": "Mission",
+  "start_ms": 137080,
+  "end_ms": 138400,
+  "prob": 0.7363
+ },
+ {
+  "idx": 29,
+  "w": "complete",
+  "start_ms": 138400,
+  "end_ms": 138860,
+  "prob": 0.9121
+ },
+ {
+  "idx": 30,
+  "w": "that",
+  "start_ms": 138860,
+  "end_ms": 139300,
+  "prob": 0.1008
+ },
+ {
+  "idx": 31,
+  "w": "was",
+  "start_ms": 139300,
+  "end_ms": 139480,
+  "prob": 0.9985
+ },
+ {
+  "idx": 32,
+  "w": "absolutely",
+  "start_ms": 139480,
+  "end_ms": 140200,
+  "prob": 0.9854
+ },
+ {
+  "idx": 33,
+  "w": "incredible.",
+  "start_ms": 140200,
+  "end_ms": 140860,
+  "prob": 0.9956
+ }
+]
