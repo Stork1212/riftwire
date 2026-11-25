@@ -15,6 +15,10 @@ non-zero on any failed check. Checks:
 3. Raw words cannot be modified in the database.
 4. The highlight scan and caption words reuse that transcript: no second Whisper run.
 5. Requesting it again is a no-op.
+6. Audio and visual signals: an audio onset near each phrase start, a visual run whose
+   frame count matches ffprobe, keyframes inside the footage.
+7. The analysis-evidence window around the boundary phrase: its words, events and
+   keyframes resolve to stored rows, and the bundle fingerprint is stable.
 """
 
 from __future__ import annotations
@@ -48,8 +52,21 @@ from sqlalchemy import func, select  # noqa: E402
 
 from app.core import config as config_mod  # noqa: E402
 from app.db.session import Database  # noqa: E402
-from app.models import Job, JobType, Transcript, TranscriptChunk  # noqa: E402
-from app.services import acquisition, clips, queue, transcripts  # noqa: E402
+from app.models import (  # noqa: E402
+    Job,
+    JobType,
+    SignalKind,
+    Transcript,
+    TranscriptChunk,
+)
+from app.services import (  # noqa: E402
+    acquisition,
+    analysis_evidence,
+    clips,
+    queue,
+    signals,
+    transcripts,
+)
 from app.services.locations import load_layout  # noqa: E402
 from app.workers.worker import WorkerProcess  # noqa: E402
 from tests.conftest import run_migrations  # noqa: E402
@@ -204,6 +221,49 @@ def main() -> int:
           " ".join(w["w"] for w in caption_words))
     check("no second run", again is None, "request() is a no-op once complete")
     info["caption_words_137s"] = caption_words
+
+    with db.session() as s:
+        audio = signals.current(s, rec.id, SignalKind.AUDIO)
+        if audio is None:
+            signals.request(s, settings, rec.id, SignalKind.AUDIO)
+    drain(db, settings)
+    with db.session() as s:
+        audio = signals.current(s, rec.id, SignalKind.AUDIO)
+        visual = signals.current(s, rec.id, SignalKind.VISUAL)
+        a_ser = signals.series(audio) if audio else {}
+        v_ser = signals.series(visual) if visual else {}
+        kfs = signals.run_keyframes(s, visual.id) if visual else []
+        bundle = analysis_evidence.window(s, settings, rec.id, 115_000, 127_000)
+        again = analysis_evidence.window(s, settings, rec.id, 115_000, 127_000)
+        ids = [w["id"] for w in bundle["transcript"].get("words", [])] + \
+            [e["id"] for e in bundle["events"]] + \
+            [k["id"] for k in bundle.get("visual", {}).get("keyframes", [])]
+        unresolved = []
+        for item in ids:
+            try:
+                analysis_evidence.resolve(s, item)
+            except Exception:  # noqa: BLE001 - reported below
+                unresolved.append(item)
+    onsets = a_ser.get("onsets_ms", [])
+    for start, _ in PHRASES:
+        t = int(start * 1000)
+        near = [o for o in onsets if t - 300 <= o <= t + 700]
+        check(f"audio onset@{start:g}s", bool(near),
+              f"onsets near {start:g} s: {near or 'none'}")
+    frames = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                             "-count_frames", "-show_entries", "stream=nb_read_frames",
+                             "-of", "default=nw=1:nk=1", str(settings.managed_path(
+                                 rec.file_path))], capture_output=True, text=True,
+                            timeout=600).stdout.strip()
+    check("visual signals", visual is not None and str(v_ser.get("frames")) == frames
+          and kfs and all(0 <= k.pts_ms < DURATION_S * 1000 for k in kfs),
+          f"{v_ser.get('frames')} frames (ffprobe {frames}), {len(v_ser.get('scenes', []))} "
+          f"scenes, {len(kfs)} keyframes")
+    check("evidence window", bundle["transcript"].get("available") and not unresolved
+          and bundle["fingerprint"] == again["fingerprint"],
+          f"{len(bundle['transcript'].get('words', []))} words, {len(bundle['events'])} "
+          f"events, unresolved {unresolved or 'none'}; fingerprint {bundle['fingerprint'][:16]}")
+    (OUT / "evidence-115-127s.json").write_text(json.dumps(bundle, indent=1))
     (OUT / "m4-native-info.json").write_text(json.dumps(info, indent=1, default=str))
     db.dispose()
     return finish()
