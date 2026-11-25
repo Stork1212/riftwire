@@ -1,0 +1,266 @@
+{
+ "request": {
+  "id": "9465fcc7-fc30-4c94-89c2-1b4871189f81",
+  "status": "COMPLETE",
+  "game": "gta",
+  "channel": "rumbleframe",
+  "prompt_id": "gaming.gta.v2",
+  "target_count": 5,
+  "error": null,
+  "summary": {
+   "batch_status": [
+    "accepted",
+    "accepted"
+   ],
+   "batches": 2,
+   "candidates_validated": 2,
+   "editorial_score_meaning": "estimated editorial quality 0-100; not a probability of going viral",
+   "fewer_than_requested": true,
+   "reason": "only these candidates passed validation, the editorial cut and duplicate suppression",
+   "requested": 5,
+   "returned": 2
+  },
+  "created_at": "2026-11-25T20:54:01.225325+00:00"
+ },
+ "job": {
+  "id": "6bef3340-fb18-4aa9-afde-f99eea36c2af",
+  "status": "COMPLETED",
+  "progress_percent": 100,
+  "last_error": null
+ },
+ "highlights": [
+  {
+   "id": "86e9abc0-310f-404a-a163-c2376ce8850e",
+   "rank": 1,
+   "status": "selected",
+   "reason": null,
+   "start_ms": 121320,
+   "end_ms": 133520,
+   "category": "mechanic",
+   "title": "Car is flying! GTA glitch escape",
+   "hook": "Wait, the car is flying? This game is broken.",
+   "what_happens": "The player realizes the car is flying and escaped the police, followed by a loud burst of sound.",
+   "why_entertaining": "The transcript reveals a glitch where the car is flying, leading to an unexpected escape from the police. The loud bursts suggest chaotic engine noise or explosions during this impossible event.",
+   "editorial_score": 81,
+   "confidence": 0.85,
+   "scores": {
+    "entertainment": 80,
+    "hook": 85,
+    "intensity": 75,
+    "pacing": 70,
+    "payoff": 85,
+    "standalone": 80,
+    "surprise": 90
+   },
+   "evidence": [
+    {
+     "basis": "transcript",
+     "claim": "The player notices the car is flying and escaped the police.",
+     "ids": [
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:41",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:47",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:60"
+     ],
+     "quote": null
+    },
+    {
+     "basis": "audio",
+     "claim": "Loud bursts occur during the escape sequence.",
+     "ids": [
+      "a:f11eeb36-c402-4778-836e-c31d62a2992e:24",
+      "a:f11eeb36-c402-4778-836e-c31d62a2992e:27"
+     ],
+     "quote": null
+    }
+   ],
+   "model_clip": [
+    121620,
+    132920
+   ],
+   "boundary_notes": [
+    "pre-roll 300 ms and post-roll 600 ms in silence"
+   ],
+   "penalties": [],
+   "model_editorial_score": 81,
+   "text_checks": [],
+   "window": {
+    "end_ms": 150500,
+    "id": "c:4",
+    "reason": "seeds: audio_loud_burst, audio_onset, baseline_scan; support 17.08; ids a:f11eeb36-c402-4778-836e-c31d62a2992e:24, w:ee14b981-c357-4360-9024-048427d4fcf3:41, w:ee14b981-c357-4360-9024-048427d4fcf3:42, w:ee14b981-c357-4360-9024-048427d4fcf3:43, cue:reaction, cue:pursuit",
+    "sources": [
+     "audio_loud_burst",
+     "audio_onset",
+     "baseline_scan"
+    ],
+    "start_ms": 110000,
+    "trigger_ids": [
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:24",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:41",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:42",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:43",
+     "cue:reaction",
+     "cue:pursuit",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:25",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:26",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:27",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:28",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:29",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:30",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:44",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:31",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:53",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:54",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:55",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:32",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:33",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:34",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:35"
+    ],
+    "weight": 17.08
+   },
+   "uncertainty": "The loud bursts might not be directly related to the flying car, but they add to the chaos.",
+   "review_status": "pending",
+   "transcript_id": "ee14b981-c357-4360-9024-048427d4fcf3",
+   "ai_run_id": "76688739-aae2-450b-9cb9-903589bbc70c"
+  },
+  {
+   "id": "2f0d4495-23a5-49cd-bd4a-0a9096dd3a29",
+   "rank": 2,
+   "status": "selected",
+   "reason": null,
+   "start_ms": 41380,
+   "end_ms": 53980,
+   "category": "police_pursuit",
+   "title": "Cops Right Behind Us!",
+   "hook": "The streamer panics when cops appear behind them.",
+   "what_happens": "The streamer realizes they are being chased by police, panics, and admits they made a risky jump earlier.",
+   "why_entertaining": "The sudden shift from driving to realizing the cops are right behind them creates immediate tension, followed by the streamer's self-deprecating admission about the jump adds humor.",
+   "editorial_score": 72,
+   "confidence": 0.95,
+   "scores": {
+    "entertainment": 80,
+    "hook": 85,
+    "intensity": 80,
+    "pacing": 85,
+    "payoff": 80,
+    "standalone": 90,
+    "surprise": 75
+   },
+   "evidence": [
+    {
+     "basis": "transcript",
+     "claim": "The streamer reacts with panic and humor to police pursuit.",
+     "ids": [
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:11",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:12",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:13",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:14",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:15",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:16",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:17",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:18",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:19",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:20",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:21",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:22",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:23",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:24",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:25",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:26",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:27",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:28",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:29",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:30",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:31",
+      "w:ee14b981-c357-4360-9024-048427d4fcf3:32"
+     ],
+     "quote": null
+    }
+   ],
+   "model_clip": [
+    41680,
+    53380
+   ],
+   "boundary_notes": [
+    "pre-roll 300 ms and post-roll 600 ms in silence"
+   ],
+   "penalties": [
+    {
+     "name": "dead_air",
+     "points": 10,
+     "reason": "43% of the clip is measured silence without speech"
+    }
+   ],
+   "model_editorial_score": 82,
+   "text_checks": [],
+   "window": {
+    "end_ms": 70600,
+    "id": "c:2",
+    "reason": "seeds: audio_loud_burst, audio_onset, baseline_scan, speech_burst; support 23.55; ids a:f11eeb36-c402-4778-836e-c31d62a2992e:6, w:ee14b981-c357-4360-9024-048427d4fcf3:11, w:ee14b981-c357-4360-9024-048427d4fcf3:12, w:ee14b981-c357-4360-9024-048427d4fcf3:13, a:f11eeb36-c402-4778-836e-c31d62a2992e:7, a:f11eeb36-c402-4778-836e-c31d62a2992e:8",
+    "sources": [
+     "audio_loud_burst",
+     "audio_onset",
+     "baseline_scan",
+     "speech_burst"
+    ],
+    "start_ms": 30000,
+    "trigger_ids": [
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:6",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:11",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:12",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:13",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:7",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:8",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:9",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:10",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:22",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:11",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:12",
+     "cue:reaction",
+     "cue:pursuit",
+     "cue:crash",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:13",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:23",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:24",
+     "w:ee14b981-c357-4360-9024-048427d4fcf3:25",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:14",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:15",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:16",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:17",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:18",
+     "a:f11eeb36-c402-4778-836e-c31d62a2992e:19"
+    ],
+    "weight": 23.548000000000002
+   },
+   "uncertainty": "The loud bursts suggest engine noise or sirens, confirming the police chase context.",
+   "review_status": "pending",
+   "transcript_id": "ee14b981-c357-4360-9024-048427d4fcf3",
+   "ai_run_id": "e7e597ed-d885-428c-98c9-a8b444834efb"
+  }
+ ],
+ "rejected": [],
+ "runs": [
+  {
+   "id": "e7e597ed-d885-428c-98c9-a8b444834efb",
+   "batch": 0,
+   "status": "accepted",
+   "model": "qwen3.5:4b",
+   "prompt": "gaming.gta.v2 v2",
+   "attempts": 1,
+   "wall_s": 47.055,
+   "error": null,
+   "cost_usd": 0.0
+  },
+  {
+   "id": "76688739-aae2-450b-9cb9-903589bbc70c",
+   "batch": 1,
+   "status": "accepted",
+   "model": "qwen3.5:4b",
+   "prompt": "gaming.gta.v2 v2",
+   "attempts": 1,
+   "wall_s": 25.584,
+   "error": null,
+   "cost_usd": 0.0
+  }
+ ]
+}

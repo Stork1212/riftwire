@@ -1,0 +1,54 @@
+{
+ "ok": true,
+ "data_dir": "/var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/riftwire-m6-native-jurxjz7e",
+ "results": [
+  {
+   "check": "floor",
+   "ok": true,
+   "gate": true,
+   "detail": "min free 60 GiB per volume"
+  },
+  {
+   "check": "request completes",
+   "ok": true,
+   "gate": true,
+   "detail": "request COMPLETE; job {'status': 'COMPLETED', 'attempts': 1, 'last_error': None}; 79 s end to end"
+  },
+  {
+   "check": "genuine local inference",
+   "ok": true,
+   "gate": true,
+   "detail": "2 runs (accepted, accepted); model qwen3.5:4b 7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13"
+  },
+  {
+   "check": "cost zero",
+   "ok": true,
+   "gate": true,
+   "detail": "every run records $0"
+  },
+  {
+   "check": "latency (recorded)",
+   "ok": true,
+   "gate": false,
+   "detail": "per batch wall s [25.584, 47.055]; attempts [1, 1]"
+  },
+  {
+   "check": "highlights grounded",
+   "ok": true,
+   "gate": true,
+   "detail": "2 of 5 returned; all bounds and ids valid"
+  },
+  {
+   "check": "scripted reaction moments",
+   "ok": true,
+   "gate": false,
+   "detail": "2 of 2 selected highlights overlap the scripted reactions (informative only; not a quality measurement)"
+  },
+  {
+   "check": "rendered Short",
+   "ok": true,
+   "gate": true,
+   "detail": "1080x1920, 14.70 s (clip + 2.5 s outro = 14.70 s), 22 caption words from transcript ee14b981-c357-4360-9024-048427d4fcf3"
+  }
+ ]
+}
