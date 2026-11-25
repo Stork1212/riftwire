@@ -243,10 +243,7 @@ def words(session: Session, transcript_id: str, start_ms: int | None = None,
     rows = session.scalars(q.order_by(TranscriptWord.idx)).all()
     offset = 0
     if corrected:
-        corr = session.scalar(select(TranscriptCorrection).where(
-            TranscriptCorrection.transcript_id == transcript_id,
-            TranscriptCorrection.validated.is_(True)).order_by(
-            TranscriptCorrection.version.desc()))
+        corr = _validated(session, transcript_id)
         if corr is None:
             raise ConflictError("No validated timing correction exists for this transcript.",
                                 code="no_validated_correction")
@@ -259,6 +256,22 @@ def words(session: Session, transcript_id: str, start_ms: int | None = None,
         out.append({"idx": r.idx, "w": r.text, "start_ms": r.start_ms + offset,
                     "end_ms": r.end_ms + offset, "prob": r.prob})
     return out
+
+
+def _validated(session: Session, transcript_id: str) -> TranscriptCorrection | None:
+    return session.scalar(select(TranscriptCorrection).where(
+        TranscriptCorrection.transcript_id == transcript_id,
+        TranscriptCorrection.validated.is_(True)).order_by(
+        TranscriptCorrection.version.desc()))
+
+
+def latest_validated_correction(session: Session, transcript_id: str) -> int | None:
+    corr = _validated(session, transcript_id)
+    return corr.version if corr else None
+
+
+def config_fingerprint(session: Session, transcript: Transcript) -> str:
+    return session.get(TranscriptionConfig, transcript.config_id).fingerprint
 
 
 def words_for_clip(session: Session, transcript_id: str, start_ms: int,

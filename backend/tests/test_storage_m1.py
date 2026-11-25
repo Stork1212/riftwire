@@ -497,7 +497,8 @@ def test_offline_recordings_jobs_wait_without_consuming_attempts(db, settings, m
     blocked = w.blocked_job_types()
     # Every job type that needs the recordings location waits (HIGHLIGHT_SCAN reads it).
     assert {t.value for t in blocked} == {"INGEST", "METADATA", "THUMBNAIL", "HIGHLIGHT_SCAN",
-                                          "TRANSCRIBE"}
+                                          "TRANSCRIBE", "AUDIO_SIGNALS",
+                                          "VISUAL_SIGNALS"}
     assert queue.claim_next(db, w.id, 30, exclude_types=blocked) is None
     with db.session() as s:
         job = s.scalar(select(Job).where(Job.recording_id == rid))

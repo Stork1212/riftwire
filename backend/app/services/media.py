@@ -434,6 +434,14 @@ def is_valid_jpeg(path: Path) -> bool:
         return False
 
 
+def jpeg_size(path: Path) -> tuple[int, int]:
+    """Width and height of a JPEG (header only; Pillow)."""
+    from PIL import Image
+
+    with Image.open(path) as im:
+        return int(im.width), int(im.height)
+
+
 def thumbnail_seek_seconds(duration_ms: int | None) -> float:
     if not duration_ms or duration_ms < 2000:
         return 0.0

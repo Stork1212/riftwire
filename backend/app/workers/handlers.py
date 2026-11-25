@@ -7,6 +7,7 @@ import json
 import os
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -37,6 +38,7 @@ from app.models import (
     Recording,
     RecordingStatus,
     Severity,
+    SignalKind,
     TranscriptChunk,
 )
 from app.services import (
@@ -44,6 +46,7 @@ from app.services import (
     media,
     queue,
     reservations,
+    signals,
     transcripts,
     url_download,
 )
@@ -51,7 +54,7 @@ from app.services.acquisition import AcquisitionUnavailable
 from app.services.events import record_event
 from app.services.ingest import FinalizeError, finalize_recording
 from app.services.locations import get_layout
-from app.services.storage import safe_join
+from app.services.storage import fsync_dir, safe_join, sha256_file
 
 log = get_logger("handlers")
 
@@ -67,6 +70,9 @@ REQUIRED_KINDS: dict[JobType, tuple[str, ...]] = {
     JobType.ACQUIRE: ("temp",),
     JobType.HIGHLIGHT_SCAN: ("recordings", "temp"),
     JobType.TRANSCRIBE: ("recordings", "temp"),
+    # Signals read the recording; keyframes go to the internal thumbnails folder.
+    JobType.AUDIO_SIGNALS: ("recordings",),
+    JobType.VISUAL_SIGNALS: ("recordings",),
 }
 
 THUMB_TMP_PREFIX = ".job-"           # thumbnails/.job-<job>-<token>.tmp.jpg
@@ -316,11 +322,13 @@ def handle_acquire(ctx: JobContext) -> None:
     queue.complete(ctx.db, ctx.claimed, link_job)
 
 
-def _shared_transcript(ctx: JobContext, recording: Recording) -> tuple[str | None, list]:
-    """The recording's current-configuration transcript (M4). Not ready yet: queue the
-    TRANSCRIBE job and defer this one without spending an attempt. Transcription failed
-    for good: fail with its reason rather than waiting forever. No local Whisper installed:
-    the scan runs on audio and visual signals only (as before M4), recorded as such."""
+_PENDING = object()
+
+
+def _shared_transcript(ctx: JobContext, recording: Recording):
+    """``(transcript_id, words)`` from the current-configuration transcript (M4), or
+    ``_PENDING`` after queueing it. No local Whisper installed: ``(None, [])`` and the scan
+    runs without speech, as before M4. Transcription failed for good: a permanent error."""
     if recording.has_audio is False:
         return None, []
     try:
@@ -336,13 +344,29 @@ def _shared_transcript(ctx: JobContext, recording: Recording) -> tuple[str | Non
             ws = transcripts.words(s, tr.id)
             return tr.id, [{"w": w["w"], "start_ms": w["start_ms"], "end_ms": w["end_ms"],
                             "prob": w["prob"] or 0.0} for w in ws]
-        job = s.scalar(select(Job).where(Job.recording_id == recording.id,
-                                         Job.job_type == JobType.TRANSCRIBE.value))
-        if job is not None and job.status == JobStatus.FAILED.value:
-            raise PermanentJobError(f"The shared transcript could not be produced: "
-                                    f"{job.last_error or 'transcription failed'}")
+        _fail_if_failed(s, recording.id, JobType.TRANSCRIBE, "shared transcript")
         transcripts.request(s, ctx.settings, recording.id)
-    raise DependencyPendingJobError("the shared transcript is being produced")
+    return _PENDING
+
+
+def _shared_visual(ctx: JobContext, recording: Recording):
+    """``(signal_run_id, motion series)`` from the current visual signal run, or
+    ``_PENDING`` after queueing it."""
+    with ctx.db.session() as s:
+        run = signals.current(s, recording.id, SignalKind.VISUAL)
+        if run is not None:
+            return run.id, signals.series(run)
+        _fail_if_failed(s, recording.id, JobType.VISUAL_SIGNALS, "visual signals")
+        signals.request(s, ctx.settings, recording.id, SignalKind.VISUAL)
+    return _PENDING
+
+
+def _fail_if_failed(s: Session, recording_id: str, job_type: JobType, what: str) -> None:
+    job = s.scalar(select(Job).where(Job.recording_id == recording_id,
+                                     Job.job_type == job_type.value))
+    if job is not None and job.status == JobStatus.FAILED.value:
+        raise PermanentJobError(f"The {what} could not be produced: "
+                                f"{job.last_error or 'the job failed'}")
 
 
 # ------------------------------------------------------------------------- TRANSCRIBE
@@ -414,53 +438,130 @@ def handle_transcribe(ctx: JobContext) -> None:
         reservations.release(ctx.db, reservation)
 
 
-def handle_highlight_scan(ctx: JobContext) -> None:
+# ------------------------------------------------------------------ AUDIO/VISUAL_SIGNALS
+KEYFRAME_PREFIX = "kf-"
+
+
+def _analysis_timeout(settings: Settings, duration_ms: int) -> float:
+    """A whole-recording FFmpeg pass: the base timeout plus real time (decoding a proxy is
+    far faster than real time; this is a hang guard, not a budget)."""
+    return settings.ffmpeg_timeout_seconds + duration_ms / 1000
+
+
+def handle_signals(ctx: JobContext, kind: SignalKind) -> None:
+    """Measure audio or visual signals in one FFmpeg pass and store them (M4). Idempotent:
+    a complete run for the current configuration is never measured again."""
     require_storage(ctx)
     recording = _load_recording(ctx)
     if recording.status != RecordingStatus.READY.value or not recording.duration_ms:
         raise PermanentJobError("Wait for the recording to finish processing.")
-    settings = ctx.settings
-    source = settings.managed_path(recording.file_path)
+    s = ctx.settings
+    with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as sess:
+        run = signals.prepare(sess, recording, kind, ctx.job_id)
+        run_id, done = run.id, run.status == "COMPLETE"
+    if done:
+        queue.complete(ctx.db, ctx.claimed)
+        return
+    if kind == SignalKind.AUDIO and recording.has_audio is False:
+        raise PermanentJobError("This recording has no audio track.")
+    source = s.managed_path(recording.file_path)
     if not source.is_file():
         raise PermanentJobError("Recording file is missing.")
-    layout = get_layout(settings)
-    temp = layout.path("temp")
-    volume = layout.location("temp").volume_uuid
-    budget = 16 * 1024 * 1024
-    lease = max(600, settings.reservation_lease_seconds)
-    reservation = reservations.reserve_on_volume(
-        ctx.db, volume, temp, layout.floor_for_volume(volume), "highlight-scan",
-        f"job:{ctx.job_id}:{ctx.claimed.token}", budget, lease_seconds=lease)
-
-    def checkpoint(percent: int) -> None:
-        ctx.check()
-        require_storage(ctx)
-        reservations.renew(ctx.db, layout, reservation, budget, lease_seconds=lease)
-        ctx.progress(percent)
-
+    ctx.progress(5)
+    series, events, scenes = signals.measure(
+        kind, s.ffmpeg_path, source, recording.duration_ms, ctx.run,
+        _analysis_timeout(s, recording.duration_ms))
+    ctx.progress(60)
+    ctx.check()
+    plan = signals.keyframe_plan(scenes, recording.duration_ms) if kind == SignalKind.VISUAL \
+        else []
+    staged: list[tuple[Path, Path]] = []
+    keyframes: list[dict] = []
+    res = None
     try:
-        transcript_id, words = _shared_transcript(ctx, recording)
-        with TemporaryDirectory(prefix="highlight-work-", dir=temp) as folder:
-            result = highlight_scan.scan_video(
-                source, recording.duration_ms, ffmpeg=settings.ffmpeg_path,
-                whisper_python=None, whisper_model=None, work=Path(folder),
-                run=ctx.run, checkpoint=checkpoint, existing_words=words)
-        result["transcript_id"] = transcript_id
+        if plan:
+            layout = get_layout(s)
+            res = reservations.reserve_on_volume(
+                ctx.db, reservations.volume_for_path(layout, s.thumbnails_dir),
+                s.thumbnails_dir, s.min_free_disk_bytes, "keyframes",
+                f"job:{ctx.job_id}:{ctx.claimed.token}",
+                signals.KEYFRAME_RESERVE_BYTES * len(plan),
+                lease_seconds=s.reservation_lease_seconds)
+        cfg = signals.VISUAL_CONFIG
+        for n, k in enumerate(plan):
+            ctx.check()
+            name = f"{KEYFRAME_PREFIX}{uuid.uuid4()}.jpg"
+            tmp = safe_join(s.thumbnails_dir,
+                            f"{THUMB_TMP_PREFIX}{ctx.job_id}-{ctx.claimed.token}-{n}.tmp.jpg")
+            staged.append((tmp, safe_join(s.thumbnails_dir, name)))
+            media.render_thumbnail(s.ffmpeg_path, source, tmp, seek=k["pts_ms"] / 1000,
+                                   width=cfg["keyframe_width"], height=cfg["keyframe_height"],
+                                   timeout=s.ffmpeg_timeout_seconds,
+                                   on_spawn=ctx._on_spawn, should_cancel=ctx.should_stop)
+            w, h = media.jpeg_size(tmp)
+            keyframes.append({**k, "stored_filename": name, "width": w, "height": h,
+                              "sha256": sha256_file(tmp)})
+            ctx.progress(60 + 35 * (n + 1) // len(plan))
         ctx.check()
         require_storage(ctx)
 
-        def apply(session: Session) -> None:
-            session.get(Job, ctx.job_id).result_json = json.dumps(result, ensure_ascii=False)
-            record_event(session, Severity.INFO, "worker", "highlights_scanned",
-                         f"Found {len(result['items'])} candidates for review.",
+        def publish(sess: Session) -> None:
+            for tmp, final in staged:
+                os.link(tmp, final)            # never overwrites; inside the fenced txn
+            signals.finish(sess, run_id, series, events, keyframes)
+            queue.wake_dependents(sess, recording.id)
+            record_event(sess, Severity.INFO, "worker", f"{kind.value}_signals_completed",
+                         f"{kind.value.capitalize()} signals measured: "
+                         f"{sum(e['kind'] == 'measured' for e in events)} measured and "
+                         f"{sum(e['kind'] == 'inferred' for e in events)} inferred events, "
+                         f"{len(keyframes)} keyframes.",
                          job_id=ctx.job_id, recording_id=recording.id)
 
-        queue.complete(ctx.db, ctx.claimed, apply)
-    except (media.MediaError, OSError):
-        require_storage(ctx)  # A drive that disappeared during the scan defers the job.
-        raise
+        try:
+            queue.complete(ctx.db, ctx.claimed, publish)
+        except BaseException:
+            for _, final in staged:            # the transaction rolled back: unpublish
+                final.unlink(missing_ok=True)
+            raise
+        if staged:
+            fsync_dir(s.thumbnails_dir)
     finally:
-        reservations.release(ctx.db, reservation)
+        for tmp, _ in staged:
+            tmp.unlink(missing_ok=True)
+        if res is not None:
+            reservations.release(ctx.db, res)
+
+
+def handle_highlight_scan(ctx: JobContext) -> None:
+    """Rank review candidates from the stored analysis (M4): the shared transcript's words
+    and the visual signal run's motion series. The scan itself decodes nothing and runs no
+    Whisper; missing inputs are queued and this job waits without spending an attempt."""
+    require_storage(ctx)
+    recording = _load_recording(ctx)
+    if recording.status != RecordingStatus.READY.value or not recording.duration_ms:
+        raise PermanentJobError("Wait for the recording to finish processing.")
+    transcript = _shared_transcript(ctx, recording)
+    visual = _shared_visual(ctx, recording)
+    if transcript is _PENDING or visual is _PENDING:
+        waiting = [n for n, v in (("transcript", transcript), ("visual signals", visual))
+                   if v is _PENDING]
+        raise DependencyPendingJobError(f"waiting for the shared {' and '.join(waiting)}")
+    transcript_id, words = transcript
+    run_id, series = visual
+    ctx.progress(50)
+    result = highlight_scan.scan_signals(series, words, recording.duration_ms)
+    result["transcript_id"] = transcript_id
+    result["signal_run_ids"] = {"visual": run_id}
+    ctx.check()
+    require_storage(ctx)
+
+    def apply(session: Session) -> None:
+        session.get(Job, ctx.job_id).result_json = json.dumps(result, ensure_ascii=False)
+        record_event(session, Severity.INFO, "worker", "highlights_scanned",
+                     f"Found {len(result['items'])} candidates for review.",
+                     job_id=ctx.job_id, recording_id=recording.id)
+
+    queue.complete(ctx.db, ctx.claimed, apply)
 
 
 HANDLERS: dict[JobType, Callable[[JobContext], None]] = {
@@ -470,4 +571,6 @@ HANDLERS: dict[JobType, Callable[[JobContext], None]] = {
     JobType.ACQUIRE: handle_acquire,
     JobType.HIGHLIGHT_SCAN: handle_highlight_scan,
     JobType.TRANSCRIBE: handle_transcribe,
+    JobType.AUDIO_SIGNALS: lambda ctx: handle_signals(ctx, SignalKind.AUDIO),
+    JobType.VISUAL_SIGNALS: lambda ctx: handle_signals(ctx, SignalKind.VISUAL),
 }

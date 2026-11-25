@@ -37,6 +37,7 @@ from app.models.rights import (
     SourceKind,
     SourceStatus,
 )
+from app.models.signals import Keyframe, SignalKind, SignalRun, SignalStatus
 from app.models.transcripts import (
     ChunkStatus,
     Transcript,
@@ -49,6 +50,10 @@ from app.models.transcripts import (
 )
 
 __all__ = [
+    "Keyframe",
+    "SignalKind",
+    "SignalRun",
+    "SignalStatus",
     "ChunkStatus",
     "Transcript",
     "TranscriptChunk",

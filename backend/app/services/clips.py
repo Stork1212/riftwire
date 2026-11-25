@@ -24,8 +24,9 @@ from app.core.errors import (
 )
 from app.core.logging import get_logger
 from app.db.session import Database
-from app.models import Job, JobType, Recording, RecordingStatus
+from app.models import Job, JobType, Recording, RecordingStatus, Severity
 from app.services import media, outro, reservations, rights, split_shorts, transcripts
+from app.services.events import record_event
 from app.services.locations import get_layout, require_no_maintenance
 
 log = get_logger(__name__)
@@ -330,4 +331,11 @@ def cut(db: Database, settings: Settings, recording_id: str, start_ms: int, end_
                 rights.fence(session, tail_decision)
             if analyze is not None:
                 rights.fence(session, analyze)
+            if transcript_id is not None:
+                # Export provenance (M4): which shared transcript fed the captions, with raw
+                # timestamps (no correction layer is applied to exports).
+                record_event(session, Severity.INFO, "clips", "clip_exported",
+                             f"Clip {start_ms}-{end_ms} ms exported with captions from "
+                             f"transcript {transcript_id} (raw timestamps).",
+                             recording_id=recording_id)
         return data

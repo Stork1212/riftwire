@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -30,15 +29,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("video", type=Path)
     parser.add_argument("--words", type=Path, help="Timestamped Whisper JSON for this video.")
-    parser.add_argument("--whisper-python", type=Path)
-    parser.add_argument("--whisper-model", type=Path)
     parser.add_argument("--url")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
-    if args.words and (args.whisper_python or args.whisper_model):
-        parser.error("Choose either a transcript file or a local Whisper run.")
-    if bool(args.whisper_python) != bool(args.whisper_model):
-        parser.error("Supply both --whisper-python and --whisper-model.")
     source_url = parse_source_url(args.url).canonical_url if args.url else None
     args.out.mkdir(parents=True, exist_ok=True)
     if shutil.disk_usage(args.out).free < FLOOR + 64 * 1024**2:
@@ -53,11 +46,8 @@ def main() -> None:
     def progress(percent: int) -> None:
         print(f"Scanned {percent / 0.98:.0f}% of {clock(duration_ms)}", flush=True)
 
-    with TemporaryDirectory(prefix=".scan-", dir=args.out) as temp:
-        result = scan_video(
-            video, duration_ms, ffmpeg="ffmpeg", whisper_python=args.whisper_python,
-            whisper_model=args.whisper_model, work=Path(temp), run=run_command,
-            checkpoint=progress, existing_words=words)
+    result = scan_video(video, duration_ms, ffmpeg="ffmpeg", run=run_command,
+                        checkpoint=progress, existing_words=words)
     report = {
         "source_url": source_url, "duration_ms": result["duration_ms"],
         "coverage_ms": result["coverage_ms"],

@@ -7,7 +7,6 @@ identify the event, speaker, or game mechanic in a window.
 from __future__ import annotations
 
 import bisect
-import json
 import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -95,25 +94,45 @@ def rank(activity: list[float], words: list[Word], duration_ms: int,
     return selected
 
 
+def activity_from_signals(series: dict, duration_ms: int) -> list[float]:
+    """The visual signal run's motion (mean absolute frame difference per ``bin_ms``)
+    resampled to the scan's 2 Hz grid, with fades and cuts capped as before."""
+    bin_ms = int(series.get("bin_ms") or 250)
+    motion = series.get("motion_mafd") or []
+    step = 1000 // _SAMPLE_HZ
+    out = []
+    for t in range(0, duration_ms, step):
+        vals = [v for v in motion[t // bin_ms:(t + step) // bin_ms] if v is not None]
+        out.append(min(45.0, sum(vals) / len(vals)) if vals else 0.0)
+    return out
+
+
+def scan_signals(series: dict, words: list[Word], duration_ms: int) -> dict:
+    """Rank candidates from stored analysis: visual motion plus transcript words."""
+    activity = activity_from_signals(series, duration_ms)
+    coverage = min(duration_ms, len(activity) * 1000 // _SAMPLE_HZ) if series else 0
+    return {
+        "duration_ms": duration_ms,
+        "coverage_ms": coverage,
+        "speech_available": bool(words),
+        "motion_source": "visual_signals",
+        "items": [asdict(c) for c in rank(activity, words, coverage)],
+    }
+
+
 def scan_video(path: Path, duration_ms: int, *, ffmpeg: str,
-               whisper_python: Path | None, whisper_model: Path | None, work: Path,
                run: Callable[[list[str], float], CommandResult],
                checkpoint: Callable[[int], None],
                existing_words: list[Word] | None = None) -> dict:
-    """Run in bounded chunks, returning only the ranked evidence and actual coverage."""
-    from app.core.config import REPO_ROOT
-    from app.core.errors import PermanentJobError
+    """Stand-alone scan of a local file for ``scripts/scan_highlights.py`` (no database):
+    decodes a 2 Hz proxy in 5-minute chunks. Words come from a transcript file; this module
+    never runs Whisper (M4: only the TRANSCRIBE job does)."""
     from app.services.media import MediaError
-
-    if whisper_python and (
-            not whisper_python.is_file() or not whisper_model
-            or not (whisper_model / "weights.npz").is_file()):
-        raise PermanentJobError("Configure RIFTWIRE's installed local Whisper model.")
 
     def command(args: list[str], timeout: float) -> bytes:
         result = run(args, timeout)
         if result.returncode:
-            raise MediaError("Highlight scan could not decode or transcribe this recording.")
+            raise MediaError("Highlight scan could not decode this recording.")
         return result.stdout
 
     activity = [0.0]
@@ -121,22 +140,12 @@ def scan_video(path: Path, duration_ms: int, *, ffmpeg: str,
     words = list(existing_words or [])
     for begin in range(0, duration_ms, 300_000):
         length = min(300_000, duration_ms - begin)
-        demux = [ffmpeg, "-nostdin", "-v", "error", "-ss", f"{begin / 1000:.3f}",
-                 "-i", str(path), "-t", f"{length / 1000:.3f}"]
-        raw = command(demux + ["-an", "-vf", "fps=2,scale=96:54,format=gray",
-                               "-f", "rawvideo", "-"], 240)
+        raw = command([ffmpeg, "-nostdin", "-v", "error", "-ss", f"{begin / 1000:.3f}",
+                       "-i", str(path), "-t", f"{length / 1000:.3f}", "-an",
+                       "-vf", "fps=2,scale=96:54,format=gray", "-f", "rawvideo", "-"], 240)
         if raw:
             activity.extend(frame_activity(prior + raw, 96 * 54))
             prior = raw[-96 * 54:]
-        if whisper_python:
-            audio, transcript = work / "audio.wav", work / "words.json"
-            command(demux + ["-y", "-vn", "-ac", "1", "-ar", "16000", str(audio)], 120)
-            command([str(whisper_python), str(REPO_ROOT / "bench/riftbench/transcribe_child.py"),
-                     str(whisper_model), str(audio), str(transcript)], 180)
-            for word in json.loads(transcript.read_text())["words"]:
-                word["start_ms"] += begin
-                word["end_ms"] += begin
-                words.append(word)
         checkpoint(min(98, (begin + length) * 98 // duration_ms))
 
     coverage = min(duration_ms, len(activity) * 500) if prior else 0

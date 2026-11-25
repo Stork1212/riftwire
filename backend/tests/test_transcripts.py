@@ -304,14 +304,13 @@ def test_scan_and_clip_captions_share_one_transcript(db, settings, engine, spoke
                                                       monkeypatch):
     rec, truth = spoken
     seen: dict = {}
-    real = highlight_scan.scan_video
+    real = highlight_scan.scan_signals
 
-    def scan(*a, **kw):
-        seen["words"] = kw["existing_words"]
-        assert kw["whisper_python"] is None                      # the scan runs no Whisper
-        return real(*a, **kw)
+    def scan(series, words, duration_ms):
+        seen["words"] = words
+        return real(series, words, duration_ms)
 
-    monkeypatch.setattr(highlight_scan, "scan_video", scan)
+    monkeypatch.setattr(highlight_scan, "scan_signals", scan)
     with db.session() as s:
         queue.enqueue(s, rec.id, JobType.HIGHLIGHT_SCAN, 3)
     worker = WorkerProcess(settings, db)
@@ -329,7 +328,10 @@ def test_scan_and_clip_captions_share_one_transcript(db, settings, engine, spoke
         scan_job = s.get(Job, claimed.id)
         assert scan_job.status == "COMPLETED", scan_job.last_error
         tr = transcripts.current(s, settings, rec.id)
-        assert json.loads(scan_job.result_json)["transcript_id"] == tr.id
+        result = json.loads(scan_job.result_json)
+        assert result["transcript_id"] == tr.id
+        assert result["motion_source"] == "visual_signals"
+        assert set(result["signal_run_ids"]) == {"visual"}
     assert [w["w"] for w in seen["words"]] == [t.text for t in truth]
     caption_words, tr_id = clips._words(db, settings, rec, 10_000, 4_000)
     assert tr_id == tr.id
@@ -337,6 +339,15 @@ def test_scan_and_clip_captions_share_one_transcript(db, settings, engine, spoke
     assert [w["w"] for w in caption_words] == [t.text for t in inside]
     for w, t in zip(caption_words, inside, strict=True):          # re-based to clip time
         assert abs(w["start_ms"] - (t.start_ms - 10_000)) <= TOLERANCE_MS
+    data = clips.cut(db, settings, rec.id, 10_000, 14_000, subtitles=True)
+    assert data[4:8] == b"ftyp" and b"tx3g" in data
+    assert inside[0].text.encode() in data                       # caption text = stored words
+    with db.session() as s:
+        from app.models import SystemEvent
+
+        exported = s.scalars(select(SystemEvent).where(
+            SystemEvent.event_type == "clip_exported")).all()
+        assert len(exported) == 1 and tr.id in exported[0].message
     assert engine.calls() == 3                                    # one transcription, total
 
 
@@ -359,7 +370,7 @@ def test_downgrade_refuses_while_transcripts_exist(db, settings, engine, tmp_pat
     with pytest.raises(Exception, match="transcript"):
         command.downgrade(alembic_cfg, "0009")
     conn = sqlite3.connect(settings.db_path)
-    assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [("0010",)]
+    assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [("0011",)]
     assert conn.execute("SELECT count(*) FROM transcripts").fetchone() == (1,)
     conn.close()
 
@@ -430,3 +441,19 @@ def test_transcription_needs_analyze_rights(db, settings, engine, media_dir):
         assert s.scalar(select(func.count()).select_from(Job).where(
             Job.job_type == JobType.TRANSCRIBE.value)) == 0
     assert engine.calls() == 0
+
+
+def test_only_the_transcribe_job_launches_whisper():
+    """Plan §8: no application module may run Whisper except TRANSCRIBE."""
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    offenders = []
+    for path in app_dir.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(app_dir).as_posix()
+        if rel in ("services/transcripts.py", "workers/whisper_child.py"):
+            continue
+        for needle in ("transcribe_child.py", "whisper_child", "mlx_whisper",
+                       "transcripts.CHILD"):
+            if needle in text:
+                offenders.append(f"{rel}: {needle}")
+    assert offenders == []

@@ -49,7 +49,12 @@ CLAIMABLE = (JobStatus.PENDING.value, JobStatus.RETRY_WAIT.value)
 NEXT_STAGE = {JobType.INGEST: JobType.METADATA, JobType.METADATA: JobType.THUMBNAIL}
 # Analysis jobs read a finished recording; their failure never changes the recording's
 # own status, and they can be re-run.
-ANALYSIS_JOB_TYPES = frozenset({JobType.HIGHLIGHT_SCAN.value, JobType.TRANSCRIBE.value})
+ANALYSIS_JOB_TYPES = frozenset({JobType.HIGHLIGHT_SCAN.value, JobType.TRANSCRIBE.value,
+                                JobType.AUDIO_SIGNALS.value, JobType.VISUAL_SIGNALS.value})
+# Analysis jobs whose output is versioned by configuration: re-armed (not duplicated) when
+# the configuration changes, the old output staying beside the new.
+REARMABLE_JOB_TYPES = frozenset({JobType.TRANSCRIBE.value, JobType.AUDIO_SIGNALS.value,
+                                 JobType.VISUAL_SIGNALS.value})
 
 
 class InvalidTransition(Exception):
@@ -528,11 +533,13 @@ def wake_dependents(s: Session, recording_id: str) -> int:
 
 
 def rearm(s: Session, job: Job) -> Job:
-    """Explicit regeneration of a finished TRANSCRIBE job (M4): COMPLETED or FAILED ->
+    """Explicit regeneration of a finished versioned analysis job (M4: transcription and
+    signals): COMPLETED or FAILED ->
     PENDING with a fresh attempt budget, used when the transcription configuration changed
-    (a new transcript is written beside the old, immutable one). Only TRANSCRIBE jobs."""
-    if job.job_type != JobType.TRANSCRIBE.value:
-        raise ConflictError("only transcription jobs can be re-armed", code="not_rearmable")
+    (the new output is written beside the old, immutable one)."""
+    if job.job_type not in REARMABLE_JOB_TYPES:
+        raise ConflictError("only versioned analysis jobs can be re-armed",
+                            code="not_rearmable")
     if job.status not in (JobStatus.COMPLETED.value, JobStatus.FAILED.value):
         return job
     now = utcnow()
@@ -544,7 +551,7 @@ def rearm(s: Session, job: Job) -> Job:
     job.started_at = None
     job.last_error = None
     job.updated_at = now
-    record_event(s, Severity.INFO, "queue", "transcription_requested",
-                 "Transcription queued for the current configuration", job_id=job.id,
+    record_event(s, Severity.INFO, "queue", "analysis_requested",
+                 f"{job.job_type} queued for the current configuration", job_id=job.id,
                  recording_id=job.recording_id)
     return job
