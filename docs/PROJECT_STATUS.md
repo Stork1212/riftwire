@@ -159,6 +159,8 @@ in Phase 1). The product floor is unchanged.
       Command Line Tools install prompt) and placed on the Mac at
       `~/Claude/riftwire-env/discover_env.sh`.
 
+- [x] Approved RumbleFrame Media 2.5-second YouTube outro created and checked (1080×1920, 30 fps, H.264/AAC). Asset and renderer handoff are in `branding/outro/` and `docs/branding/RUMBLEFRAME_OUTRO.md`; renderer integration remains a future phase, with no pipeline code changed.
+
 ## Environment (development Mac) — inspected 2026-11-23 22:51 UTC
 
 Source: `scripts/discover_env.sh`, run by the owner on the Mac (read-only).
