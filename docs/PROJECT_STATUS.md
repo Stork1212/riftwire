@@ -11,12 +11,20 @@ _Last updated: 2026-11-24_
   It is **not** production acceptance of transcription or highlight detection. Results:
   [`BENCHMARKS.md`](BENCHMARKS.md). Tag `v0.2.0-m0`.
 - **M1, Storage Architecture: merged (PR #9, 2026-11-24); physical-SSD acceptance
-  pending.**
+  passed (2026-11-24); completion and the `v0.3.0-m1` tag await the owner.**
   - Merged after an independent review (five findings fixed, [`M1_REVIEW.md`](M1_REVIEW.md)
     §6) and Mac verification of the final code `53bece7`.
-  - M1 is **not** declared complete and `v0.3.0-m1` is **not** tagged until the eight
-    physical-SSD checks pass
-    ([checklist §11](M1_STORAGE_CHECKLIST.md#11-acceptance-checks-that-depend-on-the-external-ssd-deferred)).
+  - All eight physical-SSD checks passed on the SanDisk 1 TB (APFS) with `main` at
+    `d9c878e`
+    ([evidence and stated limits](acceptance/2026-11-24-macos-m1-ssd-d9c878e/README.md)):
+    - unplug while idle and mid-copy;
+    - swapped-drive refusal;
+    - 4.78 GiB finalize at 376 MiB/s including SHA-256;
+    - migration with crash and resume;
+    - the 60 GiB floor on the SSD;
+    - a real sleep/wake.
+  - M1 is declared complete and `v0.3.0-m1` tagged only on the owner's approval (the owner
+    pushes the tag).
   - Design: [`ARCHITECTURE.md`](ARCHITECTURE.md) §19.
 - **M2, Rights & Source Management: approved** (owner decisions R1–R6,
   [`M2_RIGHTS_SOURCES_PLAN.md`](M2_RIGHTS_SOURCES_PLAN.md) §12). In progress on branch

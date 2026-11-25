@@ -1,0 +1,7 @@
+2026-11-24 20:53:53 -0500 Sleep               	Entering Sleep state due to 'Software Sleep pid=409':TCPKeepAlive=active Using Batt (Charge:18%) 40 secs
+2026-11-24 20:53:55 -0500 Wake Requests       	[*process=dasd request=SleepService deltaSecs=1032 wakeAt=2026-11-24 21:11:07 info="com.apple.dasd:501:com.apple.
+2026-11-24 20:54:49 -0500 Sleep               	Entering Sleep state due to 'Maintenance Sleep':TCPKeepAlive=active Using Batt (Charge:18%) 11 secs
+2026-11-24 20:54:50 -0500 Wake Requests       	[*process=dasd request=SleepService deltaSecs=1046 wakeAt=2026-11-24 21:12:17 info="com.apple.dasd:501:com.apple.
+2026-11-24 20:55:08 -0500 Sleep               	Entering Sleep state due to 'Maintenance Sleep':TCPKeepAlive=active Using Batt (Charge:18%) 114 secs
+2026-11-24 20:55:10 -0500 Wake Requests       	[*process=dasd request=SleepService deltaSecs=1055 wakeAt=2026-11-24 21:12:45 info="com.apple.dasd:501:com.apple.
+2026-11-24 20:57:02 -0500 Wake                	Wake from Deep Idle [CDNVA] : due to MTP.DOCK.CHANNELS.AP0.IRQ RTP.multi-touch/HID Activity Using BATT (Charge:18

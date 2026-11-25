@@ -1,0 +1,10 @@
+[01:52:59] isolated library: /var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/riftwire-m1-ssd-_adeg_ye/data; SSD test folder: /Volumes/SANDISK SSD/RIFTWIRE-M1-acceptance-20261125T015258Z
+[01:52:59] --- check 0: Preflight: APFS SSD, free space, synthetic media
+[01:52:59] generating synthetic media (about 19 GiB; a minute or two)…
+[01:53:05] PASS  0  Preflight: APFS SSD, free space, synthetic media — SSD SANDISK SSD apfs 727641EE-8044-4FDD-BECC-AE2220870904; internal 111 GiB free, SSD 913 GiB free
+[01:53:05] --- check 6: Migration to the SSD: dry run, crash, resume, re-hash, switch
+[01:53:19] migration killed after 1 file(s) promoted
+[01:53:38] PASS  6  Migration to the SSD: dry run, crash, resume, re-hash, switch — dry run clean; --execute killed after 1 promoted file(s); resumed (1 verified earlier), final re-hash all match; 5.48 GiB in 19 s overall incl. crash and resume; originals kept (3); switched; a new import landed on the SSD
+[01:53:38] --- check 8: Sleep/wake (verified in macOS's power log)
+[01:53:38] PROMPT: PUT THE MAC TO SLEEP NOW (Apple menu > Sleep), leave it asleep at least 2 minutes, wake it, log in, then press Enter here.
+[01:57:11] PASS  8  Sleep/wake (verified in macOS's power log) — slept 209 s (pmset: 7 Sleep/Wake entries); after wake: location online, readiness 200, after sleep/wake: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online; an import landed on the SSD. Storage events during sleep: none (stayed mounted)

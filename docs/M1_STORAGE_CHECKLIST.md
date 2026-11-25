@@ -176,6 +176,13 @@ capacity-independent: never assume a size; decide on measured free space.
 
 ## 11. Acceptance checks that depend on the external SSD (deferred)
 
+> **Run on 2026-11-24 with the SanDisk 1 TB SSD (APFS), on `main` at `d9c878e`: all eight
+> checks passed.** Evidence, including the stated limits (a disk image as the swapped drive;
+> an unplug mid-upload into a temp location on the SSD not run physically; the SSD stayed
+> mounted through sleep):
+> [`acceptance/2026-11-24-macos-m1-ssd-d9c878e/`](acceptance/2026-11-24-macos-m1-ssd-d9c878e/README.md).
+> Declaring M1 complete and tagging `v0.3.0-m1` is the owner's decision.
+
 Verified now, without the SSD, using isolated data folders, a second real filesystem
 (`/dev/shm`) for cross-volume paths, and a simulated macOS volume probe:
 - marker identity;

@@ -1,0 +1,30 @@
+[01:47:50] isolated library: /var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/riftwire-m1-ssd-k9w2jmx6/data; SSD test folder: /Volumes/SANDISK SSD/RIFTWIRE-M1-acceptance-20261125T014750Z
+[01:47:50] --- check 0: Preflight: APFS SSD, free space, synthetic media
+[01:47:51] generating synthetic media (about 19 GiB; a minute or two)…
+[01:47:56] PASS  0  Preflight: APFS SSD, free space, synthetic media — SSD SANDISK SSD apfs 727641EE-8044-4FDD-BECC-AE2220870904; internal 111 GiB free, SSD 924 GiB free
+[01:47:56] --- check 6: Migration to the SSD: dry run, crash, resume, re-hash, switch
+[01:48:14] migration killed after 1 file(s) promoted
+[01:48:32] PASS  6  Migration to the SSD: dry run, crash, resume, re-hash, switch — dry run clean; --execute killed after 1 promoted file(s); resumed (1 verified earlier), final re-hash all match; 5.48 GiB in 19 s overall incl. crash and resume; originals kept (3); switched; a new import landed on the SSD
+[01:48:32] --- check 5: Throughput: multi-GB cross-volume finalize incl. SHA-256
+[01:48:51] PASS  5  Throughput: multi-GB cross-volume finalize incl. SHA-256 — 4.78 GiB: upload to internal temp 5 s; cross-volume finalize to the SSD incl. SHA-256 verification 13 s (376 MiB/s)
+[01:48:51] --- check 7: Per-volume floor and reservations on the SSD
+[01:48:51] PASS  7  Per-volume floor and reservations on the SSD — SSD volume floor 60 GiB, free 913 GiB; recordings location apfs; imports above were admitted against it
+[01:48:51] --- check 1: Real identity (APFS, OS VolumeUUID == marker)
+[01:48:51] PASS  1  Real identity (APFS, OS VolumeUUID == marker) — before unplugging: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online
+[01:48:51] --- check 2: Physical unplug while idle, then re-plug
+[01:48:52] PROMPT: PULL THE SSD CABLE NOW (do not eject first). macOS will warn about an improper eject; that is expected. Then press Enter.
+[01:49:08] PROMPT: PLUG THE SSD BACK IN. Wait until it appears in Finder, then press Enter.
+[01:49:24] PASS  2  Physical unplug while idle, then re-plug — offline as volume_not_mounted; no folder at the mount path; readiness 503 (the dashboard banner's source); upload refused with nothing written; job waited with 0 attempts; storage_offline then storage_online; job completed on attempt 1; after physical re-plug: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online
+[01:49:24] --- check 3: Physical unplug mid-copy, then re-plug
+[01:49:24] PROMPT: Next: a large import. As soon as the script prints UNPLUG NOW, pull the SSD cable. Press Enter to start.
+[01:49:43] PROMPT: UNPLUG NOW — pull the SSD cable (the copy is running)
+[01:49:45] unplugged at INGEST progress 35%
+[01:49:46] PROMPT: PLUG THE SSD BACK IN. Wait until it appears in Finder, then press Enter.
+[01:50:38] PASS  3  Physical unplug mid-copy, then re-plug — unplugged at 35% of the cross-volume copy → job RETRY_WAIT, attempts 0, error: waiting for storage: recordings: the drive is not mounted; after re-plug the copy was redone and SHA-256-verified, recording READY; no partial or staging file left on the SSD
+[01:50:38] --- check 4: Swapped drive at the same path
+[01:50:38] PROMPT: UNPLUG THE SSD (you may eject it first this time). The script will then mount a throwaway APFS disk image with the same volume name in its place.
+[01:50:55] PROMPT: PLUG THE REAL SSD BACK IN. Wait until it appears in Finder, then press Enter.
+[01:51:06] PASS  4  Swapped drive at the same path — a different APFS volume (CD6108E4-DC29-4163-A437-76F002FB5FB3) at the same path with the RIFTWIRE folder and marker copied onto it: refused as wrong_volume, readiness 503, upload refused, nothing written to it; the real SSD came back online (disk image used as the second drive)
+[01:51:06] --- check 8: Sleep/wake
+[01:51:06] PROMPT: PUT THE MAC TO SLEEP NOW (Apple menu > Sleep), leave it asleep at least 2 minutes, wake it, log in, then press Enter here.
+[01:51:08] PASS  8  Sleep/wake — after wake: location online, readiness 200, after sleep/wake: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online; an import landed on the SSD. Storage events during sleep: ['storage_online']

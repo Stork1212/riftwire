@@ -1,0 +1,50 @@
+{
+  "results": [
+    {
+      "check": "0",
+      "title": "Preflight: APFS SSD, free space, synthetic media",
+      "result": "PASS",
+      "note": "SSD SANDISK SSD apfs 727641EE-8044-4FDD-BECC-AE2220870904; internal 111 GiB free, SSD 913 GiB free",
+      "seconds": 5.9
+    },
+    {
+      "check": "6",
+      "title": "Migration to the SSD: dry run, crash, resume, re-hash, switch",
+      "result": "PASS",
+      "note": "dry run clean; --execute killed after 1 promoted file(s); resumed (1 verified earlier), final re-hash all match; 5.48 GiB in 19 s overall incl. crash and resume; originals kept (3); switched; a new import landed on the SSD",
+      "seconds": 33.2
+    },
+    {
+      "check": "8",
+      "title": "Sleep/wake (verified in macOS's power log)",
+      "result": "PASS",
+      "note": "slept 209 s (pmset: 7 Sleep/Wake entries); after wake: location online, readiness 200, after sleep/wake: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online; an import landed on the SSD. Storage events during sleep: none (stayed mounted)",
+      "seconds": 213.3
+    }
+  ],
+  "facts": {
+    "ssd": {
+      "VolumeName": "SANDISK SSD",
+      "FilesystemType": "apfs",
+      "VolumeUUID": "727641EE-8044-4FDD-BECC-AE2220870904",
+      "MountPoint": "/Volumes/SANDISK SSD",
+      "DeviceNode": "/dev/disk5s1",
+      "BusProtocol": "USB"
+    },
+    "media": {
+      "base-a.mkv": 1868039532,
+      "base-b.mkv": 1961441473,
+      "base-c.mkv": 2054843414,
+      "throughput.mkv": 5137107752,
+      "midcopy.mkv": 7472157907
+    },
+    "base_ids": [
+      "43be2d93-d256-42ee-841d-19877655dd0c",
+      "01782811-9a6d-4f61-959c-a4e741526ea8",
+      "ee01f058-40a6-4ad3-b2be-df751bb887f0"
+    ],
+    "migration_mib_s": 293.4,
+    "sleep_window_s": 209,
+    "sleep_events": []
+  }
+}

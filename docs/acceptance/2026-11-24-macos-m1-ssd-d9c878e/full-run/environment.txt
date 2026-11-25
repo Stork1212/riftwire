@@ -1,0 +1,59 @@
+== machine
+ProductName:		macOS
+ProductVersion:		26.5.2
+BuildVersion:		25F84
+arm64
+Apple M3 Pro
+19327352832
+== tools
+Python 3.13.2
+ffmpeg version 9.1 Copyright (c) 2000-2026 the FFmpeg developers
+git version 2.39.3 (Apple Git-146)
+== SSD
+   Device Identifier:         disk5s1
+   Device Node:               /dev/disk5s1
+   Whole:                     No
+   Part of Whole:             disk5
+
+   Volume Name:               SANDISK SSD
+   Mounted:                   Yes
+   Mount Point:               /Volumes/SANDISK SSD
+
+   Partition Type:            41504653-0000-11AA-AA11-00306543ECAC
+   File System Personality:   APFS
+   Type (Bundle):             apfs
+   Name (User Visible):       APFS
+   Owners:                    Disabled
+
+   OS Can Be Installed:       Yes
+   Media Type:                Generic
+   Protocol:                  USB
+   SMART Status:              Not Supported
+   Volume UUID:               727641EE-8044-4FDD-BECC-AE2220870904
+   Disk / Partition UUID:     727641EE-8044-4FDD-BECC-AE2220870904
+
+   Disk Size:                 1000.0 GB (999995129856 Bytes) (exactly 1953115488 512-Byte-Units)
+   Device Block Size:         4096 Bytes
+
+   Volume Used Space:         8.1 GB (8068571136 Bytes) (exactly 15758928 512-Byte-Units)
+   Container Total Space:     1000.0 GB (999995129856 Bytes) (exactly 1953115488 512-Byte-Units)
+   Container Free Space:      991.7 GB (991719411712 Bytes) (exactly 1936951976 512-Byte-Units)
+   Allocation Block Size:     4096 Bytes
+
+   Media OS Use Only:         No
+   Media Read-Only:           No
+   Volume Read-Only:          No
+
+   Device Location:           External
+   Removable Media:           Fixed
+
+   Solid State:               Yes
+
+   This disk is an APFS Volume.  APFS Information:
+   APFS Container:            disk5
+   APFS Physical Store:       disk4s2
+   Encrypted:                 No
+   FileVault:                 No
+   Sealed:                    No
+   Locked:                    No
+
