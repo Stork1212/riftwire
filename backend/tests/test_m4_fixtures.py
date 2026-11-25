@@ -6,13 +6,14 @@ marker clips must put flashes and beeps where intended, including with variable 
 from __future__ import annotations
 
 import json
+import struct
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from tests.m4_fixtures import marker_clip, plan_words, tone_word_audio
+from tests.m4_fixtures import AMPLITUDE, marker_clip, plan_words, tone_word_audio
 
 STUB = Path(__file__).with_name("m4_stub_whisper.py")
 
@@ -154,3 +155,17 @@ def test_off_grid_markers_still_flash_once_in_step_with_the_beep(tmp_path):
     assert len(flashes) == 3                          # none dropped
     beeps = _beeps(clip)
     assert all(abs(f - b) <= 0.03 for f, b in zip(flashes, beeps, strict=True))
+
+
+def test_codex_review_a_word_cut_by_the_file_end_is_not_faded_out(tmp_path):
+    # Codex review of 3ffad28: clamping the word end moved its fade-out to the file end.
+    import wave
+
+    words = plan_words(1, start_s=0)
+    cut = tone_word_audio(tmp_path / "cut.wav", words, 0.15)
+    assert words[0].end_ms > 150
+    with wave.open(str(cut)) as f:
+        raw = f.readframes(f.getnframes())
+    samples = struct.unpack(f"<{len(raw) // 2}h", raw)
+    tail = max(abs(x) for x in samples[-80:])               # the last 5 ms
+    assert tail > 0.5 * 32767 * AMPLITUDE                      # still at full level: cut
