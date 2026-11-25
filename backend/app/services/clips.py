@@ -25,7 +25,15 @@ from app.core.errors import (
 from app.core.logging import get_logger
 from app.db.session import Database
 from app.models import Job, JobType, Recording, RecordingStatus, Severity
-from app.services import media, outro, reservations, rights, split_shorts, transcripts
+from app.services import (
+    evidence_reliability,
+    media,
+    outro,
+    reservations,
+    rights,
+    split_shorts,
+    transcripts,
+)
 from app.services.events import record_event
 from app.services.locations import get_layout, require_no_maintenance
 
@@ -122,17 +130,36 @@ def _rank(words: list[dict], duration_ms: int) -> list[dict]:
 
 
 def _words(db: Database, settings: Settings, recording: Recording, start_ms: int,
-           length_ms: int) -> tuple[list[dict], str | None]:
+           length_ms: int, purpose: Literal["captions", "trigger"] = "captions"
+           ) -> tuple[list[dict], str | None]:
     """Words of ``[start_ms, start_ms + length_ms)`` from the recording's shared transcript
     (M4), re-based to clip time, and the transcript's id. Nothing here runs Whisper: if the
     current transcript does not exist yet, the TRANSCRIBE job is queued and the caller gets
-    ``409 transcript_pending`` to retry shortly."""
+    ``409 transcript_pending`` to retry shortly.
+
+    Evidence reliability (raw words untouched): for ``"captions"``, words suspected to be
+    hallucinated (inside measured silence, no sound above the local floor) are left out and
+    each omission is recorded with its reasons; for ``"trigger"`` (suggestions), only words
+    that may trigger a highlight on their own are returned."""
     if recording.has_audio is False:
         return [], None
     with db.session() as session:
         tr = transcripts.current(session, settings, recording.id)
         if tr is not None:
-            return transcripts.words_for_clip(session, tr.id, start_ms, length_ms), tr.id
+            raw = transcripts.words(session, tr.id, start_ms, start_ms + length_ms)
+            assessed = evidence_reliability.for_recording(session, recording, raw)
+            if purpose == "trigger":
+                chosen = [w for w, a in zip(raw, assessed, strict=True) if a["can_trigger"]]
+            else:
+                chosen, dropped = evidence_reliability.caption_words(assessed, raw)
+                if dropped:
+                    record_event(session, Severity.INFO, "clips", "caption_words_suppressed",
+                                 f"{len(dropped)} caption word(s) left out of transcript "
+                                 f"{tr.id} (raw transcript unchanged): "
+                                 + json.dumps(dropped, ensure_ascii=False)[:3500],
+                                 recording_id=recording.id)
+            return [{**w, "start_ms": max(0, w["start_ms"] - start_ms),
+                     "end_ms": min(length_ms, w["end_ms"] - start_ms)} for w in chosen], tr.id
     try:
         with db.session() as session:            # committed before we answer 409
             transcripts.request(session, settings, recording.id)
@@ -175,7 +202,7 @@ def suggest(db: Database, settings: Settings, recording_id: str) -> list[dict]:
     recording, source, decision = _recording(db, settings, recording_id, "analyze")
     if recording.has_audio is False:
         return []
-    words, _ = _words(db, settings, recording, 0, ANALYSIS_SECONDS * 1000)
+    words, _ = _words(db, settings, recording, 0, ANALYSIS_SECONDS * 1000, "trigger")
     picks = _rank(words, min(recording.duration_ms, ANALYSIS_SECONDS * 1000))
     with db.session() as session:
         rights.fence(session, decision)

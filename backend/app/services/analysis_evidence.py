@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationFailed
 from app.models import Recording, SignalKind, TranscriptSegment
-from app.services import rights, signals, transcripts
+from app.services import evidence_reliability, rights, signals, transcripts
 
 SCHEMA = "analysis_evidence.v1"
 PACE_WINDOW_MS = 5000
@@ -114,6 +114,7 @@ def window(session: Session, settings: Settings, recording_id: str, start_ms: in
         correction = None
         if corrected:
             correction = transcripts.latest_validated_correction(session, tr.id)
+        assessed = evidence_reliability.for_recording(session, recording, ws)
         segs = session.scalars(select(TranscriptSegment).where(
             TranscriptSegment.transcript_id == tr.id, TranscriptSegment.end_ms >= start_ms,
             TranscriptSegment.start_ms <= end_ms).order_by(TranscriptSegment.idx)).all()
@@ -123,8 +124,12 @@ def window(session: Session, settings: Settings, recording_id: str, start_ms: in
             "correction_version": correction, "timestamps": "corrected" if corrected else "raw",
             "truncated": len(ws) > max_words,
             "words": [{"id": f"w:{tr.id}:{w['idx']}", "start_ms": w["start_ms"],
-                       "end_ms": w["end_ms"], "text": w["w"], "prob": w["prob"]}
-                      for w in ws[:max_words]],
+                       "end_ms": w["end_ms"], "text": w["w"], "prob": w["prob"],
+                       "reliability": {k: a[k] for k in ("class", "can_trigger",
+                                                         "can_support", "caption",
+                                                         "reasons")}}
+                      for w, a in zip(ws[:max_words], assessed[:max_words], strict=True)],
+            "reliability": evidence_reliability.summary(assessed),
             "segments": [{"id": f"seg:{tr.id}:{s.idx}", "start_ms": s.start_ms,
                           "end_ms": s.end_ms, "text": s.text} for s in segs],
             "speech": _speech(ws, start_ms, end_ms),
