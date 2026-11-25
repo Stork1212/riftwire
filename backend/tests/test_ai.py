@@ -577,3 +577,118 @@ def test_pipeline_recall_counts_failed_evaluations_as_misses():
     empty = {"task": "nothing_here", "status": "accepted",
              "score": {"recall": 1.0, "ranked_recall": 1.0}}
     assert llm_bench._pipeline_recall([ok, failed, empty]) == 0.5
+
+
+# ------------------------------------------- independent review of PR #16 (2026-11-25)
+def _review_bundle() -> EvidenceBundle:
+    from app.ai.schemas import Event, Window, Word
+
+    words = [Word(id=f"w:t:{i}", t0=i * 1000 + 100_000, t1=i * 1000 + 100_600,
+                  text=t) for i, t in enumerate(["the", "cops", "are", "here", "go", "go",
+                                                  "now", "wow", "we", "made", "it", "yes"])]
+    early = Word(id="w:t:99", t0=1_000, t1=1_500, text="earlier")
+    return EvidenceBundle(
+        recording_id="r", transcript_id="t", duration_ms=200_000,
+        windows=(Window(id="c:1", t0=0, t1=30_000), Window(id="c:2", t0=100_000, t1=130_000)),
+        words=(early, *words), keyframes=(),
+        events=(Event(id="a:x:0", t0=50_000, t1=101_000, kind="silence", nature="measured"),))
+
+
+def _cand(**over):
+    cand = {"window_id": "c:2", "start_id": "w:t:0", "end_id": "w:t:11",
+            "category": "police_pursuit", "what_happens": "They escape the police.",
+            "why_entertaining": "Fast payoff.", "standalone": True,
+            "clear_start_and_end": True, "title": "Made it", "hook": "Go go go",
+            "scores": {k: 70 for k in ("hook", "entertainment", "surprise", "intensity",
+                                       "standalone", "pacing", "payoff")},
+            "confidence": 0.6, "evidence": [{"ids": ["w:t:1", "w:t:2"],
+                                             "claim": "the cops are here",
+                                             "basis": "transcript", "quote": "cops are"}],
+            "uncertainty": ""}
+    cand.update(over)
+    return json.dumps({"schema": "highlight_eval.v1", "candidates": [cand],
+                       "rejected_window_ids": ["c:1"]})
+
+
+def test_review_long_event_cannot_pull_the_clip_outside_its_window():
+    res = validate(_cand(start_id="a:x:0", end_id="w:t:5"), _review_bundle())
+    # The silence event starts at 50 s; the clip is cut at the window start (100 s).
+    if res.ok:
+        assert res.clips[0].start_ms == 100_000
+        assert any("clamped" in w for w in res.warnings)
+    else:
+        assert any("outside" in e or "clip length" in e for e in res.errors)
+
+
+def test_review_evidence_must_come_from_the_candidates_window():
+    res = validate(_cand(evidence=[{"ids": ["w:t:99"], "claim": "said earlier",
+                                    "basis": "transcript"}]), _review_bundle())
+    assert not res.ok and any("outside window c:2" in e for e in res.errors)
+
+
+def test_review_quotes_match_whole_words_only():
+    res = validate(_cand(evidence=[{"ids": ["w:t:0"], "claim": "x", "basis": "transcript",
+                                    "quote": "he"}]), _review_bundle())
+    assert not res.ok and any("quote is not in the cited words" in e for e in res.errors)
+    assert validate(_cand(), _review_bundle()).ok
+
+
+def test_review_redirects_from_the_local_endpoint_are_refused():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Redirect(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", "http://127.0.0.2:9/api/tags")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = HTTPServer(("127.0.0.1", 0), Redirect)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        p = OllamaProvider("m", base_url=f"http://127.0.0.1:{srv.server_port}")
+        with pytest.raises(ProviderError) as e:
+            p.health()
+        assert e.value.code == "non_loopback_endpoint" and "redirect" in str(e.value)
+    finally:
+        srv.shutdown()
+
+
+def test_review_localhost_is_pinned_to_the_loopback_address():
+    assert OllamaProvider("m", base_url="http://localhost:11434").base_url == \
+        "http://127.0.0.1:11434"
+
+
+def test_review_duplicate_prompt_versions_are_refused(tmp_path):
+    from app.ai import prompts as reg
+
+    body = ('+++\nid = "dup.test"\nversion = 1\ncategory = "gaming"\n'
+            'schema = "highlight_eval.v1"\n+++\n## system\nS\n## user\nU {evidence}\n')
+    (tmp_path / "a.md").write_text(body)
+    (tmp_path / "b.md").write_text(body.replace("S\n", "Different\n"))
+    with pytest.raises(reg.PromptError, match="more than one file"):
+        reg.load("dup.test", root=tmp_path)
+
+
+def test_review_record_keeps_the_full_raw_answer_and_prompt_hashes():
+    b = bundle()
+    long_answer = json.dumps(answer(b)) + " " * 5000
+    out = analyze.evaluate(b, _Scripted([long_answer]), prompts.load("gaming.gta.v2"),
+                           max_repairs=0)
+    rec = out.record()
+    assert rec["raw_last"] == long_answer and len(rec["raw_last"]) > 4000
+    assert len(rec["prompt"]["rendered_sha256"]) == 64
+    assert len(rec["prompt"]["channel_voice_sha256"]) == 64
+    with pytest.raises(ValueError):
+        analyze.evaluate(b, _Scripted([long_answer]), prompts.load("gaming.gta.v2"),
+                         max_repairs=-1)
+
+
+def test_review_partial_benchmark_runs_never_pass_the_gate():
+    from llm_bench import benchmark_gate
+
+    dev_only = {"summary": {"splits": {"dev": {"accepted": 5, "runs": 5}}}}
+    assert any("not a full gate" in r for r in benchmark_gate(dev_only))
