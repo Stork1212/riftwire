@@ -42,7 +42,10 @@ def parse_time(value) -> int:
         if value < 0 or math.isnan(value):
             raise ValueError(f"negative or invalid time {value!r}")
         return int(round(value * 1000))
-    m = _TIME.match(str(value).strip())
+    text = str(value).strip()
+    if re.fullmatch(r"\d+(?:\.\d+)?", text):          # "75" or "75.5": seconds as text
+        return int(round(float(text) * 1000))
+    m = _TIME.match(text)
     if not m:
         raise ValueError(f"unreadable time {value!r} (use seconds or HH:MM:SS.mmm)")
     h, mi, s, frac = m.groups()

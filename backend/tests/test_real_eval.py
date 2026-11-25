@@ -114,3 +114,9 @@ def test_report_states_counts_and_limits():
     text = real_eval.render_report([result])
     assert "found 1/1 marked moments" in text and "describe these recordings only" in text
     assert "not probabilities of going viral" in text and "Why fewer: only these passed" in text
+
+
+def test_seconds_given_as_text_are_accepted():
+    assert real_eval.parse_time("75") == 75_000 and real_eval.parse_time("1.5") == 1_500
+    with pytest.raises(ValueError):
+        real_eval.parse_time("-3")
