@@ -47,6 +47,9 @@ class Request:
     # 1.5) penalize tokens already used, which corrupts JSON that repeats keys.
     presence_penalty: float = 0.0
     repeat_penalty: float = 1.0
+    # Per-request override of the provider's keep_alive (e.g. keep the model loaded across
+    # the repair attempts of one evaluation, then unload).
+    keep_alive: str | int | None = None
 
 
 @dataclass(frozen=True)

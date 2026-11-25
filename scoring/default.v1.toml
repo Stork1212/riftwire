@@ -1,0 +1,19 @@
+# Editorial scoring profile. The overall score (0-100) is the weighted sum of the model's
+# component scores. It is an ESTIMATED EDITORIAL-QUALITY SCORE, never a probability of
+# going viral. Kept separate from model confidence. A changed profile is a new version.
+id = "editorial.default"
+version = 1
+notes = "Owner sprint brief weights; provisional cut 60 (owner, 2026-11-25). Recalibrate on authorized footage."
+min_score = 60
+
+[match]
+# Empty: applies to every game, channel and prompt unless a more specific profile matches.
+
+[weights]
+hook = 0.20
+entertainment = 0.20
+surprise = 0.15
+intensity = 0.15
+standalone = 0.10
+pacing = 0.10
+payoff = 0.10

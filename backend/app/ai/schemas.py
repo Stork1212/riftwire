@@ -142,6 +142,17 @@ def response_json_schema() -> dict:
     return HighlightEval.model_json_schema(by_alias=True)
 
 
+# Version of the generated contract text; recorded with every result (with its SHA-256),
+# because a contract change alters what the model is told even when the prompt file does not.
+# v2 (2026-11-25): states the two rules behind the third native run's repair retries
+# (one candidate per window; clip length from the evidence times).
+OUTPUT_CONTRACT_VERSION = 2
+
+
+def output_contract_sha256() -> str:
+    return hashlib.sha256(output_contract().encode()).hexdigest()
+
+
 def output_contract() -> str:
     """The answer format spelled out for the prompt, generated from the schema itself so the
     two cannot drift. Needed whenever the engine cannot constrain output (the model never
@@ -186,6 +197,10 @@ def output_contract() -> str:
         "\"rejected_window_ids\" (a list of window ids you did not choose).",
         "Each candidate object has exactly these keys, and no others:",
         *[f"- {name}: {desc}" for name, desc in fields],
+        "Rules: at most one candidate per window_id (never two candidates from the same "
+        "window). The clip runs from the start time of start_id to the end time of end_id and "
+        "must last 8 to 60 seconds: check the times shown next to the words (\"words @12.0s\") "
+        "before choosing, and widen the clip rather than shortening it.",
         "Shape (placeholders, not real values):",
         json.dumps(skeleton, separators=(", ", ": ")),
         "Output only that JSON object: no prose, no code fences, no extra keys.",

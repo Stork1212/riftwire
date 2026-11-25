@@ -457,3 +457,110 @@ def test_rescore_recorded_answers_without_a_model():
     out = rescore.rescore(report, Ranking())["m"]
     assert out["padded_before_cut"] == 1 and out["padded_after_cut"] == 0
     assert out["precision_after"] == 1.0 and out["recall_after"] == 1.0
+
+
+# ------------------------------------- versioned scoring profiles and latency (2026-11-25)
+def _profile(root: Path, name: str, text: str) -> None:
+    (root / name).write_text(text)
+
+
+_W = "\n[weights]\nhook=0.2\nentertainment=0.2\nsurprise=0.15\nintensity=0.15\n" \
+     "standalone=0.1\npacing=0.1\npayoff=0.1\n"
+
+
+def test_default_profile_is_versioned_and_hashed():
+    from app.ai import scoring
+    r = scoring.resolve(game="gta", channel="rumbleframe", prompt="gaming.gta.v2")
+    assert (r.id, r.version, r.min_score) == ("editorial.default", 1, 60)
+    assert len(r.sha256) == 64 and "not a probability" in r.identity()["meaning"]
+
+
+def test_profiles_resolve_by_game_channel_and_prompt(tmp_path):
+    from app.ai import scoring
+    _profile(tmp_path, "a.toml", 'id="d"\nversion=1\nmin_score=60\n[match]\n' + _W)
+    _profile(tmp_path, "b.toml", 'id="g"\nversion=1\nmin_score=55\n[match]\ngame="gta"\n' + _W)
+    _profile(tmp_path, "c.toml", 'id="gc"\nversion=1\nmin_score=70\n[match]\ngame="gta"\n'
+             'channel="rumbleframe"\n' + _W)
+    _profile(tmp_path, "d.toml", 'id="g"\nversion=2\nmin_score=50\n[match]\ngame="gta"\n' + _W)
+    assert scoring.resolve(game="other", root=tmp_path).id == "d"
+    g = scoring.resolve(game="gta", channel="x", root=tmp_path)
+    assert (g.id, g.version, g.min_score) == ("g", 2, 50)            # newest version
+    assert scoring.resolve(game="gta", channel="rumbleframe", root=tmp_path).min_score == 70
+    _profile(tmp_path, "e.toml", 'id="p"\nversion=1\nmin_score=65\n[match]\ngame="gta"\n'
+             'prompt="gaming.gta.v2"\n' + _W)
+    with pytest.raises(scoring.ScoringError, match="ambiguous"):
+        scoring.resolve(game="gta", channel="rumbleframe", prompt="gaming.gta.v2",
+                        root=tmp_path)
+    _profile(tmp_path, "f.toml", 'id="d"\nversion=1\nmin_score=10\n[match]\n' + _W)
+    with pytest.raises(scoring.ScoringError, match="duplicate"):
+        scoring.resolve(game="other", root=tmp_path)
+
+
+def test_outcome_keeps_raw_scores_rejected_candidates_and_versions():
+    b = bundle()
+    a = answer(b)
+    filler = dict(a["candidates"][0])
+    ws = words_in(b, "c:1")
+    filler.update(window_id="c:1", start_id=ws[0].id, end_id=ws[-1].id,
+                  scores={k: 35 for k in a["candidates"][0]["scores"]},
+                  evidence=[{"ids": [ws[0].id], "claim": "driving", "basis": "transcript"}])
+    a["candidates"].append(filler)
+    a["rejected_window_ids"] = ["c:3"]
+    out = analyze.evaluate(b, _Scripted([json.dumps(a)]), prompts.load("gaming.gta.v2"),
+                           channel="rumbleframe")
+    rec = out.record()
+    assert [c.window_id for c in out.clips] == ["c:2", "c:1"]
+    assert [c.window_id for c in out.selected] == ["c:2"]
+    assert rec["ranking"]["profile"]["id"] == "editorial.default"
+    rej = rec["ranking"]["rejected"][0]
+    assert rej["window_id"] == "c:1" and rej["editorial_score"] == 35
+    assert rej["raw_scores"]["hook"] == 35 and "below 60" in rej["reason"]
+    assert rec["result"]["rejected_window_ids"] == ["c:3"]          # model's own rejections
+    assert rec["output_contract"]["version"] >= 2 and len(rec["output_contract"]["sha256"]) == 64
+
+
+def test_contract_states_the_rules_behind_the_repair_retries():
+    from app.ai.schemas import output_contract
+    text = output_contract()
+    assert "at most one candidate per window_id" in text and "8 to 60 seconds" in text
+
+
+def test_model_stays_loaded_during_repairs_then_unloads(stub):
+    b = bundle()
+    bad = answer(b)
+    bad["candidates"][0]["start_id"] = "w:t1:99999"
+    replies = [json.dumps(bad), json.dumps(answer(b))]
+    p = OllamaProvider("qwen3.5:4b", base_url=stub)
+    sent = []
+
+    def gen(req):
+        sent.append(req.keep_alive)
+        return Response(text=replies.pop(0), metrics={"output_tokens": 5})
+    p.generate = gen
+    out = analyze.evaluate(b, p, prompts.load("gaming.gta.v2"), keep_alive_during="2m")
+    assert out.status == "accepted" and sent == ["2m", "2m"]
+    assert _Stub.calls[-1]["body"] == {"model": "qwen3.5:4b", "keep_alive": 0}   # unloaded
+
+
+def test_latency_percentiles_and_split_gate():
+    import llm_bench
+    assert llm_bench._pct([1, 2, 3, 4, 100], 0.5) == 3
+    assert llm_bench._pct([1, 2, 3, 4, 100], 0.95) == 100
+    assert llm_bench._pct([], 0.5) is None
+    good = {"tasks_run": 10, "accepted": 10, "accepted_with_candidates": 8,
+            "highlight_tasks": 8, "ranked_padded": 0, "ranked_mean_recall": 1.0,
+            "mean_recall": 1.0,
+            "trap_selected": 0, "unsupported_claims": 0}
+    bad_holdout = {**good, "accepted": 6}
+    report = {"summary": {"splits": {"dev": good, "holdout": bad_holdout}}}
+    reasons = llm_bench.benchmark_gate(report)
+    assert reasons and all(r.startswith("holdout:") for r in reasons)
+
+
+def test_holdout_scenarios_are_separate_and_well_formed():
+    from tasks import ALL_TASKS, HOLDOUT, TASKS
+    assert len(TASKS) == 5 and len(HOLDOUT) == 6 and all(t.split == "holdout" for t in HOLDOUT)
+    assert len({t.name for t in ALL_TASKS}) == len(ALL_TASKS)
+    for t in HOLDOUT:
+        b, _ = build(t)
+        assert len(b.windows) == len(t.segs) and t.highlights <= set(range(len(t.segs)))

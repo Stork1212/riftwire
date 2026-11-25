@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import math
 import platform
 import re
 import statistics
@@ -30,14 +31,14 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "backend"))
 sys.path.insert(0, str(HERE))
 
-from app.ai import prompts  # noqa: E402
+from app.ai import prompts, scoring  # noqa: E402
 from app.ai.analyze import evaluate  # noqa: E402
 from app.ai.providers.base import ProviderError  # noqa: E402
 from app.ai.providers.ollama import OllamaProvider  # noqa: E402
 from app.ai.scoring import Ranking  # noqa: E402
-from tasks import TASKS, Task, build  # noqa: E402
+from tasks import ALL_TASKS, Task, build  # noqa: E402
 
-TASKS_BY_NAME = {t.name: t for t in TASKS}
+TASKS_BY_NAME = {t.name: t for t in ALL_TASKS}
 MIN_ACCEPTANCE = 0.8
 
 _CUES = re.compile(r"\b(?:oh my god|no way|what the|holy|wait|we got a problem|police|cops|"
@@ -194,38 +195,114 @@ def _mean(values: list) -> float | None:
 
 
 # ------------------------------------------------------------------------------ main
+def _pct(values: list[float], q: float) -> float | None:
+    """Nearest-rank percentile (no interpolation): honest for small samples."""
+    if not values:
+        return None
+    v = sorted(values)
+    rank = math.ceil(len(v) * q)                  # 1-based nearest rank
+    return round(v[min(len(v), max(1, rank)) - 1], 2)
+
+
+def latency(runs: list[dict]) -> dict:
+    walls = [r["wall_s"] for r in runs]
+    gens = [m["total_ms"] / 1000 for r in runs for m in r["metrics"] if m.get("total_ms")]
+    first = [r["metrics"][0]["total_ms"] / 1000 for r in runs
+             if r["metrics"] and r["metrics"][0].get("total_ms")]
+    repair_s = sum(m["total_ms"] / 1000 for r in runs for m in r["metrics"][1:]
+                   if m.get("total_ms"))
+    return {
+        "evaluation_s": {"median": _pct(walls, 0.5), "p95": _pct(walls, 0.95),
+                         "max": max(walls) if walls else None, "n": len(walls)},
+        "generation_s": {"median": _pct(gens, 0.5), "p95": _pct(gens, 0.95),
+                         "max": round(max(gens), 2) if gens else None, "n": len(gens)},
+        "first_attempt_s": {"median": _pct(first, 0.5), "p95": _pct(first, 0.95),
+                            "max": round(max(first), 2) if first else None},
+        "attempts_histogram": dict(sorted(collections.Counter(
+            r["attempts"] for r in runs).items())),
+        "repair_share_of_generation_time": round(repair_s / sum(gens), 3) if gens else None,
+        "output_tokens": {"median": _pct([m.get("output_tokens", 0) for r in runs
+                                          for m in r["metrics"]], 0.5),
+                          "max": max((m.get("output_tokens", 0) for r in runs
+                                      for m in r["metrics"]), default=None)},
+    }
+
+
+def summarize(runs: list[dict]) -> dict:
+    ok = [r for r in runs if r["status"] == "accepted"]
+    precisions = [r["score"]["precision"] for r in ok if r["score"]["precision"] is not None]
+    gen = [m for r in runs for m in r["metrics"] if m.get("output_ms")]
+    tps = [m["output_tokens"] / (m["output_ms"] / 1000) for m in gen if m["output_ms"] > 0]
+    pps = [m["prompt_tokens"] / (m["prompt_ms"] / 1000) for m in gen if m.get("prompt_ms")]
+    errors = collections.Counter(r["record"]["error"] for r in runs if r["status"] != "accepted")
+    generated = [m for r in runs for m in r["metrics"] if m.get("output_tokens", 0) > 0]
+    return {
+        "tasks_run": len(runs),
+        "inference_verified": bool(generated),
+        "generations_with_output": len(generated),
+        "output_constraint": sorted({str(m.get("output_constraint")) for m in generated}),
+        "constraint_notes": sorted({m["constraint_note"] for m in generated
+                                    if m.get("constraint_note")}),
+        "thinking_chars_max": max((m.get("thinking_chars", 0) for m in generated), default=0),
+        "errors_by_message": dict(errors.most_common()),
+        "accepted": len(ok),
+        "accepted_with_candidates": sum(bool(r["score"]["chosen"]) for r in ok),
+        "highlight_tasks": sum(bool(TASKS_BY_NAME[r["task"]].highlights) for r in runs),
+        "valid_first_try": sum(r["valid_first_try"] for r in runs),
+        "failed_validation": sum(r["status"] == "failed_validation" for r in runs),
+        "provider_errors": sum(r["status"] == "provider_error" for r in runs),
+        "mean_precision": round(statistics.mean(precisions), 3) if precisions else None,
+        "mean_recall": round(statistics.mean(r["score"]["recall"] for r in ok), 3)
+        if ok else None,
+        "trap_selected": sum(r["score"]["trap_selected"] for r in runs),
+        "padded": sum(r["score"]["padded"] for r in ok),
+        "ranked_padded": sum(r["score"]["ranked_padded"] for r in ok),
+        "ranked_mean_precision": _mean([r["score"]["ranked_precision"] for r in ok]),
+        "ranked_mean_recall": _mean([r["score"]["ranked_recall"] for r in ok]),
+        "unsupported_claims": sum(len(r["score"]["unsupported_claims"]) for r in runs),
+        "payoff_kept": [v for r in ok for v in (r["score"]["payoff_kept"] or {}).values()],
+        "output_tok_per_s_median": round(statistics.median(tps), 1) if tps else None,
+        "prompt_tok_per_s_median": round(statistics.median(pps), 1) if pps else None,
+        "latency": latency(runs),
+    }
+
+
 def run_model(model: str, args, prompt) -> dict:
     p = OllamaProvider(model, base_url=args.base_url, keep_alive="10m")
     ident = p.identity()
+    ranking = scoring.resolve(game="gta", channel="rumbleframe", prompt=prompt.id)
     swap0, free0, rss0, press0 = swap_used_mb(), free_mb(), ollama_rss_mb(), pressure_free_pct()
     sampler = Sampler(p)
     sampler.start()
     runs = []
+    split = getattr(args, "split", "all")
     try:
         for rep in range(args.repeat):
-            for task in TASKS:
+            for task in ALL_TASKS:
                 if args.tasks and task.name not in args.tasks:
+                    continue
+                if split != "all" and task.split != split:
                     continue
                 bundle, _ = build(task)
                 t0 = time.perf_counter()
                 out = evaluate(bundle, p, prompt, target_count=task.target_count,
                                channel="rumbleframe", max_repairs=args.max_repairs,
-                               timeout_s=args.timeout, identity=ident)
+                               timeout_s=args.timeout, identity=ident, ranking=ranking,
+                               game="gta", keep_alive_during="10m", unload_after=False)
                 wall = round(time.perf_counter() - t0, 2)
-                row = {"task": task.name, "repeat": rep, "status": out.status,
-                       "wall_s": wall, "attempts": len(out.attempts),
+                row = {"task": task.name, "split": task.split, "repeat": rep,
+                       "status": out.status, "wall_s": wall, "attempts": len(out.attempts),
                        "valid_first_try": bool(out.attempts and out.attempts[0].ok),
-                       "errors_first_try": out.attempts[0].errors[:6] if out.attempts else [],
+                       "errors_by_attempt": [a.errors[:4] for a in out.attempts],
                        "provider_error": out.error if out.status == "provider_error" else None,
                        "metrics": [a.metrics for a in out.attempts],
-                       "score": score_task(task, bundle, out),
+                       "score": score_task(task, bundle, out, ranking),
                        "record": out.record()}
                 runs.append(row)
                 why = f" error={out.error}" if out.status != "accepted" else ""
-                cons = {a.metrics.get("output_constraint") for a in out.attempts}
-                print(f"  {model} {task.name} r{rep}: {out.status} attempts={len(out.attempts)}"
-                      f" chosen={row['score']['chosen']} constraint={sorted(map(str, cons))}"
-                      f" wall={wall}s{why}", flush=True)
+                print(f"  {model} [{task.split}] {task.name} r{rep}: {out.status} "
+                      f"attempts={len(out.attempts)} chosen={row['score']['chosen']} "
+                      f"kept={row['score']['ranked']} wall={wall}s{why}", flush=True)
     finally:
         sampler.stop_flag.set()
         sampler.join(2)
@@ -233,58 +310,24 @@ def run_model(model: str, args, prompt) -> dict:
             p.unload()
         except ProviderError:
             pass
-    ok = [r for r in runs if r["status"] == "accepted"]
-    precisions = [r["score"]["precision"] for r in ok if r["score"]["precision"] is not None]
-    gen = [m for r in runs for m in r["metrics"] if m.get("output_ms")]
-    tps = [m["output_tokens"] / (m["output_ms"] / 1000) for m in gen if m["output_ms"] > 0]
-    pps = [m["prompt_tokens"] / (m["prompt_ms"] / 1000) for m in gen if m.get("prompt_ms")]
     loads = [m["load_ms"] for r in runs for m in r["metrics"][:1]]
-    errors = collections.Counter(r["record"]["error"] for r in runs if r["status"] != "accepted")
-    generated = [m for r in runs for m in r["metrics"] if m.get("output_tokens", 0) > 0]
-    return {
-        "model": model, "identity": ident.__dict__, "runs": runs,
-        "summary": {
-            "tasks_run": len(runs),
-            "inference_verified": bool(generated),
-            "generations_with_output": len(generated),
-            "output_constraint": sorted({str(m.get("output_constraint")) for m in generated}),
-            "constraint_notes": sorted({m["constraint_note"] for m in generated
-                                        if m.get("constraint_note")}),
-            "thinking_chars_max": max((m.get("thinking_chars", 0) for m in generated),
-                                      default=0),
-            "errors_by_message": dict(errors.most_common()),
-            "accepted": len(ok),
-            "accepted_with_candidates": sum(bool(r["score"]["chosen"]) for r in ok),
-            "highlight_tasks": sum(bool(TASKS_BY_NAME[r["task"]].highlights) for r in runs),
-            "valid_first_try": sum(r["valid_first_try"] for r in runs),
-            "failed_validation": sum(r["status"] == "failed_validation" for r in runs),
-            "provider_errors": sum(r["status"] == "provider_error" for r in runs),
-            "mean_precision": round(statistics.mean(precisions), 3) if precisions else None,
-            "mean_recall": round(statistics.mean(r["score"]["recall"] for r in ok), 3)
-            if ok else None,
-            "trap_selected": sum(r["score"]["trap_selected"] for r in runs),
-            "padded": sum(r["score"]["padded"] for r in ok),
-            "ranking": {"min_score": Ranking().min_score, "weights": Ranking().weights},
-            "ranked_padded": sum(r["score"]["ranked_padded"] for r in ok),
-            "ranked_mean_precision": _mean([r["score"]["ranked_precision"] for r in ok]),
-            "ranked_mean_recall": _mean([r["score"]["ranked_recall"] for r in ok]),
-            "unsupported_claims": sum(len(r["score"]["unsupported_claims"]) for r in runs),
-            "payoff_kept": [v for r in ok for v in (r["score"]["payoff_kept"] or {}).values()],
-            "first_load_ms": loads[0] if loads else None,
-            "output_tok_per_s_median": round(statistics.median(tps), 1) if tps else None,
-            "prompt_tok_per_s_median": round(statistics.median(pps), 1) if pps else None,
-            "wall_s_median": round(statistics.median(r["wall_s"] for r in runs), 1)
-            if runs else None,
-            "memory": {"ollama_loaded_peak_mb": round(sampler.peak_loaded / 2**20, 1),
-                       "ollama_rss_peak_mb": sampler.peak_rss, "ollama_rss_before_mb": rss0,
-                       "swap_used_before_mb": swap0, "swap_used_peak_mb": sampler.peak_swap,
-                       "swap_used_after_mb": swap_used_mb(), "free_before_mb": free0,
-                       "free_min_mb": sampler.min_free,
-                       "pressure_free_pct_before": press0,
-                       "pressure_free_pct_after": pressure_free_pct(),
-                       "timeline_s_swapmb_availmb": sampler.timeline},
-        },
-    }
+    summary = summarize(runs)
+    summary.update({
+        "ranking": ranking.identity(),
+        "first_load_ms": loads[0] if loads else None,
+        "wall_s_median": summary["latency"]["evaluation_s"]["median"],
+        "splits": {sp: summarize([r for r in runs if r["split"] == sp])
+                   for sp in sorted({r["split"] for r in runs})},
+        "memory": {"ollama_loaded_peak_mb": round(sampler.peak_loaded / 2**20, 1),
+                   "ollama_rss_peak_mb": sampler.peak_rss, "ollama_rss_before_mb": rss0,
+                   "swap_used_before_mb": swap0, "swap_used_peak_mb": sampler.peak_swap,
+                   "swap_used_after_mb": swap_used_mb(), "free_before_mb": free0,
+                   "free_min_mb": sampler.min_free,
+                   "pressure_free_pct_before": press0,
+                   "pressure_free_pct_after": pressure_free_pct(),
+                   "timeline_s_swapmb_availmb": sampler.timeline},
+    })
+    return {"model": model, "identity": ident.__dict__, "runs": runs, "summary": summary}
 
 
 def gate(model_report: dict) -> list[str]:
@@ -307,32 +350,43 @@ def gate(model_report: dict) -> list[str]:
     return reasons
 
 
-def benchmark_gate(model_report: dict) -> list[str]:
-    """Reasons the grounded-task benchmark fails, given that inference works.
-
-    The second Mac run (9f7b499) passed the inference gate with only the two empty-answer
-    tasks accepted: every task that had a highlight failed validation. Accepting "nothing"
-    proves little, so the benchmark also requires a minimum acceptance rate and accepted
-    answers that actually select highlights, with no trap selected and no unsupported claim.
-    """
-    if "error" in model_report:
-        return [f"model error: {model_report['error']}"]
-    s = model_report["summary"]
+def _split_failures(s: dict, label: str) -> list[str]:
     reasons = []
     rate = s["accepted"] / s["tasks_run"] if s.get("tasks_run") else 0.0
     if rate < MIN_ACCEPTANCE:
-        reasons.append(f"acceptance {s['accepted']}/{s['tasks_run']} below "
+        reasons.append(f"{label}: acceptance {s['accepted']}/{s['tasks_run']} below "
                        f"{MIN_ACCEPTANCE:.0%}")
     if s.get("highlight_tasks") and not s.get("accepted_with_candidates"):
-        reasons.append("no accepted answer selected a highlight")
+        reasons.append(f"{label}: no accepted answer selected a highlight")
     if s.get("ranked_padded"):
-        reasons.append(f"{s['ranked_padded']} answer(s) still padded after the ranking cut")
-    if s.get("ranked_mean_recall") is not None and s["ranked_mean_recall"] < 1.0:
-        reasons.append(f"ranking cut dropped real highlights (recall {s['ranked_mean_recall']})")
+        reasons.append(f"{label}: {s['ranked_padded']} answer(s) still padded after the cut")
+    rec, rrec = s.get("mean_recall"), s.get("ranked_mean_recall")
+    if rec is not None and rec < 1.0:
+        reasons.append(f"{label}: the model missed real highlights (recall {rec})")
+    if rec is not None and rrec is not None and rrec < rec:
+        reasons.append(f"{label}: the cut dropped real highlights (recall {rec} -> {rrec})")
     if s.get("trap_selected"):
-        reasons.append(f"injection trap selected {s['trap_selected']} time(s)")
+        reasons.append(f"{label}: injection trap selected {s['trap_selected']} time(s)")
     if s.get("unsupported_claims"):
-        reasons.append(f"{s['unsupported_claims']} unsupported claim(s)")
+        reasons.append(f"{label}: {s['unsupported_claims']} unsupported claim(s)")
+    return reasons
+
+
+def benchmark_gate(model_report: dict) -> list[str]:
+    """Reasons the grounded-task benchmark fails, given that inference works.
+
+    Evaluated on every split separately (the dev scenarios that prompt v2 and the cut were
+    developed against, and the held-out ones), so passing cannot come from tuning to the
+    dev set alone. Accepting "nothing" proves little (second Mac run), so the gate also
+    requires accepted answers that select highlights, nothing padded after the ranking cut,
+    no real highlight dropped by it, no trap and no unsupported claim."""
+    if "error" in model_report:
+        return [f"model error: {model_report['error']}"]
+    s = model_report["summary"]
+    splits = s.get("splits") or {"all": s}
+    reasons = []
+    for label, sub in splits.items():
+        reasons += _split_failures(sub, label)
     return reasons
 
 
@@ -345,6 +399,7 @@ def main() -> int:
     ap.add_argument("--max-repairs", type=int, default=2)
     ap.add_argument("--timeout", type=float, default=300)
     ap.add_argument("--tasks", nargs="*")
+    ap.add_argument("--split", choices=["all", "dev", "holdout"], default="all")
     ap.add_argument("--prompt", default="gaming.gta.v2")
     args = ap.parse_args()
     models = args.model or ["qwen3.5:4b"]
@@ -356,7 +411,7 @@ def main() -> int:
               "prompt": {"id": prompt.id, "version": prompt.version, "sha256": prompt.sha256},
               "note": "Synthetic author-written tasks: engineering measurements only, not "
                       "highlight quality.",
-              "heuristic": {t.name: heuristic(t, build(t)[0]) for t in TASKS},
+              "heuristic": {t.name: heuristic(t, build(t)[0]) for t in ALL_TASKS},
               "models": []}
     for m in models:
         print(f"== {m}", flush=True)

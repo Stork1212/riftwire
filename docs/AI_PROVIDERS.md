@@ -133,6 +133,62 @@ recommendation backed by benchmark evidence.
     cut the repair retries (two tasks needed 3 attempts, at about 137 s each). That is a
     possible optimization, not a need, and would be a separate download needing approval.
 
+## Scoring profiles (owner decisions, 2026-11-25)
+- **What the score is:** an **estimated editorial-quality score (0–100)**: the weighted sum
+  of the model's component scores. It is **never a probability of going viral**, and it is
+  kept separate from the model's confidence.
+- **Profiles:** versioned TOML files under `scoring/` (`app/ai/scoring.py`). A profile is
+  chosen by `game`, `channel` and `prompt`; the most specific match wins, and its newest
+  version is used. Two equally specific profiles are an error. The provisional default is
+  `editorial.default` v1, with a cut of 60 (approved).
+- **What every result records:**
+  - the profile id, version and SHA-256;
+  - every candidate's raw component scores, editorial score and confidence;
+  - the candidates the cut rejected, with the reason;
+  - the windows the model itself rejected;
+  - the output-contract version and SHA-256;
+  - the first 4 000 characters of every raw answer, including rejected ones.
+
+## The 137-second evaluations (third run): investigation
+**Data:** only `two_highlights` needed repairs. Both repeats were identical, which is
+deterministic at temperature 0.
+
+**The three generations:** 58 s, 30 s and 49 s. In each, prompt processing took about
+5.5 s (about 2.9 k tokens) and output decoding took 24–53 s (848–1 888 tokens at about
+36 tokens/s). **Decoding is about 90 % of the time.**
+
+**Causes:**
+- Attempt 1 listed the same window twice: a schema error, and the longest output.
+- Attempt 2 chose a 2.5-second clip: below the 8-second minimum.
+- Repairs made up 36 % of all generation time in the run.
+- Model loading did not contribute (the model was kept warm).
+
+**Changes, with validation untouched:**
+1. **Output contract v2** states exactly those two rules: at most one candidate per window,
+   and the clip length checked against the evidence times. It is versioned and hashed in
+   every result.
+2. **The model stays loaded across one evaluation's repairs** (`keep_alive_during`, default
+   2 minutes) and is unloaded afterwards, so production pays one load, not three.
+
+**Options not taken:**
+- Partial acceptance or looser checks: rejected, because validation stays strict.
+- Shorter text limits: these would be a schema change needing evaluation.
+- A GGUF build with constrained decoding: it would remove format errors but not semantic
+  ones such as clip length. It also needs a download, which is not approved.
+
+**Latency is now reported as median, p95 and maximum,** both per evaluation and per
+generation, together with the attempt histogram and the share of time spent on repairs.
+Recomputed from the third run: per evaluation, median 14.8 s, p95 = max 137.4 s; per
+generation, median 29.4 s, max 58.5 s.
+
+## Held-out scenarios
+Six new synthetic scenarios (`tasks.HOLDOUT`) were written before any model saw them. They
+are never used to tune prompts, contracts or cut-offs: hype words over a loading screen, a
+train close call with a payoff, a wall-clipping glitch, a reversed injection, "five
+requested, two qualify", and a quiet scene with nothing in it. The benchmark gate applies
+to the dev and hold-out splits **separately**. These are still author-written synthetic
+tasks; real quality needs labelled authorized footage.
+
 ## Benchmark (`bench/llm/llm_bench.py`)
 **What it measures:**
 - the model's identity and digest;

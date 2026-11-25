@@ -114,7 +114,7 @@ class OllamaProvider:
             "messages": [{"role": "system", "content": request.system}, user],
             "stream": False,
             "think": request.think,
-            "keep_alive": self.keep_alive,
+            "keep_alive": self.keep_alive if request.keep_alive is None else request.keep_alive,
             "options": {"num_ctx": request.num_ctx, "num_predict": request.max_tokens,
                         "temperature": request.temperature, "seed": request.seed,
                         "presence_penalty": request.presence_penalty,
