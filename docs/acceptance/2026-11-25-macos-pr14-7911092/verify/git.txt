@@ -1,0 +1,73 @@
+/Users/gregstork/Claude/riftwire-env/riftwire-pr14-7911092.bundle is okay
+The bundle contains this ref:
+7911092c897d07aadedc6dd4ce3616142d154341 refs/heads/phase2/integration
+The bundle requires this ref:
+ef969f1334a0c9c044a732774959d67526253d08 
+The bundle uses this hash algorithm: sha1
+From /Users/gregstork/Claude/riftwire-env/riftwire-pr14-7911092.bundle
+   ef969f1..7911092  phase2/integration -> bundle/integration
+Switched to branch 'phase2/integration'
+Updating ef969f1..7911092
+Fast-forward
+ backend/app/services/clips.py                      |  45 +-
+ backend/app/services/outro.py                      |   3 +
+ backend/tests/test_outro.py                        |  96 +++
+ docs/INTEGRATION_REVIEW.md                         |  50 +-
+ docs/PROJECT_STATUS.md                             |   8 +-
+ .../2026-11-25-macos-pr14-ef969f1/CHECKSUMS.sha256 |  31 +
+ .../2026-11-25-macos-pr14-ef969f1/README.md        |  66 ++
+ .../2026-11-25-macos-pr14-ef969f1/acceptance.json  | 214 ++++++
+ .../2026-11-25-macos-pr14-ef969f1/acceptance.txt   |  33 +
+ .../2026-11-25-macos-pr14-ef969f1/alembic.txt      |  32 +
+ .../demo-migration.txt                             |  10 +
+ .../2026-11-25-macos-pr14-ef969f1/df-after.txt     |   2 +
+ .../2026-11-25-macos-pr14-ef969f1/df-before.txt    |   2 +
+ .../e2e-caption-frame.png                          | Bin 0 -> 283583 bytes
+ .../2026-11-25-macos-pr14-ef969f1/e2e-clips.txt    |   2 +
+ .../2026-11-25-macos-pr14-ef969f1/e2e-driver.txt   |  14 +
+ .../e2e-highlight-scan.json                        |  30 +
+ .../2026-11-25-macos-pr14-ef969f1/e2e-logs/api.txt |  33 +
+ .../e2e-logs/worker.txt                            |  26 +
+ .../e2e-media-specs.json                           |  44 ++
+ .../e2e-outro-frame.png                            | Bin 0 -> 355548 bytes
+ .../e2e-provenance.json                            | 127 ++++
+ .../2026-11-25-macos-pr14-ef969f1/e2e-results.json |  88 +++
+ .../e2e-sampled-frame.jpg                          | Bin 0 -> 7050 bytes
+ .../2026-11-25-macos-pr14-ef969f1/e2e.py           | 534 +++++++++++++++
+ .../2026-11-25-macos-pr14-ef969f1/environment.txt  |  22 +
+ .../evidence-size.txt                              |   1 +
+ .../2026-11-25-macos-pr14-ef969f1/git.txt          | 124 ++++
+ .../2026-11-25-macos-pr14-ef969f1/smoke-report.txt |  76 +++
+ .../2026-11-25-macos-pr14-ef969f1/summary.txt      |  55 ++
+ .../2026-11-25-macos-pr14-ef969f1/test.txt         | 116 ++++
+ .../2026-11-25-macos-pr14-ef969f1/tree-after.txt   |   0
+ .../2026-11-25-macos-pr14-ef969f1/verify-script.sh | 746 +++++++++++++++++++++
+ 33 files changed, 2617 insertions(+), 13 deletions(-)
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/CHECKSUMS.sha256
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/README.md
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/acceptance.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/acceptance.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/alembic.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/demo-migration.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/df-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/df-before.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-caption-frame.png
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-clips.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-driver.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-highlight-scan.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-logs/api.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-logs/worker.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-media-specs.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-outro-frame.png
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-provenance.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-results.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e-sampled-frame.jpg
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/e2e.py
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/environment.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/evidence-size.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/git.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/smoke-report.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/summary.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/test.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/tree-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-pr14-ef969f1/verify-script.sh
