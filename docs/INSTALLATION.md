@@ -61,6 +61,11 @@ Edit `.env` (all keys documented in [`.env.example`](../.env.example)). Importan
 | `RIFTWIRE_WORKER_CONCURRENCY` | `1` | One heavy job at a time. |
 | `RIFTWIRE_API_HOST` / `PORT` | `127.0.0.1` / `8000` | Keep on localhost. |
 | `RIFTWIRE_FFMPEG_PATH` / `FFPROBE_PATH` | `ffmpeg` / `ffprobe` | Absolute paths if not on `PATH` (Homebrew: `/opt/homebrew/bin/…`). |
+| `RIFTWIRE_URL_ACQUISITION_ENABLED` | `false` | URL fetching. Even when on, a link is fetched only under a user-confirmed record allowing URL fetching with written platform permission attached. Real platform downloads and `yt-dlp` are not yet authorized. |
+| `RIFTWIRE_CLIP_OUTRO_PATH` | — | Vertical outro MP4 for Shorts (sting, silent track or no audio). Its duration is read from the file and never trimmed. |
+| `RIFTWIRE_CLIP_OUTRO_DURATION_SECONDS` | — | Optional brand value (e.g. `2.5`), checked against the file; a mismatch refuses the render. |
+| `RIFTWIRE_CLIP_OUTRO_AUDIO` / `_FADE_MS` / `_STING_GAIN_DB` | `continue` / `500` / `-6` | `continue`: gameplay audio runs under the outro with its sting beneath. `outro`: gameplay audio ends at the cut. |
+| `RIFTWIRE_CLIP_WHISPER_PYTHON` / `_MODEL` | — | Local Whisper for captions and highlight scans (the M0 `bench/.venv` and the `base` model). |
 
 Environment variables override `.env`.
 

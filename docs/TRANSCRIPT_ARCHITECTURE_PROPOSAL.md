@@ -1,7 +1,8 @@
 # Proposal: one shared, timestamped transcript per recording
 
-_Status: **proposal for owner approval** (2026-11-25). This is M4 scope: nothing here is
-implemented. It answers the inconsistency found in the integration run
+_Status: **approved in principle by the owner for M4** (2026-11-25). MLX Whisper `base`
+is the provisional default. Nothing here is implemented, and it will not be in PR #14: the
+detailed M4 implementation plan follows after the integration PR is reviewed and merged. It answers the inconsistency found in the integration run
 ([`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §8)._
 
 ## Problem

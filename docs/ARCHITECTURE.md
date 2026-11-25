@@ -872,3 +872,48 @@ that returns a `Decision` with a stable reason code.
     evidence.
   - **Games & Channels.**
   - **Import:** gains an optional rights link.
+
+## 21. Integration prototype (PR #14, in review; not a milestone acceptance)
+These are approved for inclusion, subject to independent review (owner, 2026-11-25). The
+detailed review package is [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md).
+
+### 21.1 URL acquisition (prototype M3 infrastructure)
+- **The job:** an `ACQUIRE` job per source (`jobs.source_id`, migration `0007`), run by
+  `services/url_download.py` through the normal import path. It is checked at enqueue,
+  before the download, after it (fence) and in the linking transaction.
+  [`URL_ACQUISITION.md`](URL_ACQUISITION.md) has the details.
+- **The policy (§7 there):**
+  - fetching is off by default;
+  - a fetch needs a user-confirmed record that allows `acquire` by `url_fetch`, with
+    written platform permission attached;
+  - `public_web` is a classification that authorizes nothing.
+- **The downloader:** only a stand-in has been run.
+
+### 21.2 Highlight scan (rule-based baseline, prototype M6)
+- **The job:** `HIGHLIGHT_SCAN` (use `analyze`, migration `0008`, result in
+  `jobs.result_json`).
+- **The ranking:** `services/highlight_scan.py` ranks 25-second windows by frame activity
+  plus keyword cues over Whisper words.
+- **What it is not:** contextual AI. It uses no prompt or model, and stores no
+  transcript.
+
+### 21.3 Shorts rendering (prototype Phase 4)
+- **The layout:** `services/split_shorts.py`, a 35/65 layout with Pillow-drawn caption
+  overlays.
+- **The render:** `clips._render_split` makes one FFmpeg pass.
+- **The outro** (`services/outro.py`) is probed from the asset (counted frames ÷ fps) and
+  never trimmed. An optional configured duration is validated against it.
+  - **Audio:** outros with a sting, with a silent track or with no track are supported.
+    The gameplay segment's audio is never altered.
+  - **`continue` mode** keeps the gameplay audio under the outro with the sting mixed
+    beneath.
+  - **`outro` mode** ends the gameplay audio at the cut.
+  - The outro portion is limited to −1 dBFS.
+- **Exports are fenced** (`edit`, plus `analyze` for captions) before the bytes are
+  returned.
+
+### 21.4 Transcription (interim)
+- **Today:** Whisper runs ad hoc at four call sites, and nothing is stored.
+- **Replacement:** a shared, versioned transcript per recording is approved in principle
+  for M4 ([`TRANSCRIPT_ARCHITECTURE_PROPOSAL.md`](TRANSCRIPT_ARCHITECTURE_PROPOSAL.md)). It
+  is not implemented here.

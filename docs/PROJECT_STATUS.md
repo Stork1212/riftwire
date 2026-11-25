@@ -2,52 +2,61 @@
 
 _Last updated: 2026-11-25_
 
-## Integration branch (`phase2/integration` @ `580d476`, draft PR; not merged)
-The owner approved preparing an integration draft PR (2026-11-25). It combines **URL
-acquisition** (`phase2/url-download` @ `b13b91f`) with the **highlight queue and Shorts
-export** (`phase2/highlight-queue` @ `1b73afe`), on `main` @ `d9c878e`. Review package:
-[`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md).
+## Integration PR #14 (`phase2/integration`, draft; not merged)
+It combines URL acquisition with the highlight queue and the Shorts export, on `main` @
+`d9c878e`. **The scope is approved for inclusion by the owner (2026-11-25), subject to
+independent review:**
+- M3 acquisition infrastructure;
+- durable acquire and highlight-scan jobs;
+- rule-based highlight baseline;
+- timestamp and candidate review;
+- the vertical Shorts prototype with animated captions;
+- Pillow 13.0.0;
+- the corrected outro.
 
-**What the branch does:**
-- A saved URL becomes a recording linked to its source through a durable `ACQUIRE` job
-  (migration `0007`; [`URL_ACQUISITION.md`](URL_ACQUISITION.md)).
-- Every saved link gets an automatic `public_web` record covering fetch and analyse only
-  (migration `0009`, renumbered from `0008`).
-- **Find highlights** runs a queued `HIGHLIGHT_SCAN` (migration `0008`). It is a
-  **rule-based baseline**: frame activity plus keyword cues over Whisper words. It is not
-  contextual AI and uses no prompt or model.
-- `clips.txt` timestamp review.
-- A 35/65 1080×1920 Short with red active-word captions, the original audio and an outro.
-- **Rights:** editing and exporting public footage are refused until a creator's
-  permission is recorded. Publishing is not built.
+Review package: [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md).
 
-**Verified natively on the Mac (2026-11-25, real 60 GiB floor, isolated data and ports):**
-- `b13b91f`: all suites pass.
-- `580d476`:
-  - all suites pass;
-  - the migration of a copy of the demo database to `0009` loses no rows and keeps all 14
-    triggers;
-  - the end-to-end run passes 11/11: saved URL → queued acquisition → linked recording →
-    Find highlights → timestamp review → 35/65 export, with real Whisper `base`.
-- Evidence: `docs/acceptance/2026-11-25-macos-integration-580d476/`.
+**Final corrections, `51c8fa4` (2026-11-25):**
+- **Acquisition policy.** Public availability is not permission; this supersedes the
+  2026-11-24 download-by-default decision.
+  - URL fetching is off by default.
+  - `public_web` is a classification that authorizes nothing, including existing rows,
+    which stay as history.
+  - URL fetching needs a user-confirmed record allowing `acquire` by `url_fetch` with
+    written platform permission.
+  - Standing permission queues new links without a prompt.
+  - Missing permission is saved and explained.
+- **Outro.** The whole approved RumbleFrame outro (75 frames, 2.5 s) is used, with its
+  duration read from the asset; no 2 s trim.
+  - Outros with a sting, a silent track or no track are supported.
+  - Gameplay audio is preserved, with `continue` / `outro` audio modes, a fade and a
+    limited sting.
+  - 15 s + outro = 17.5 s.
+- **Tests:** 33 new or rewritten regression tests.
+- **Container results:**
+  - backend 450 + 1 skip, bench 48, frontend 38 and build;
+  - acceptance 29/29, smoke 28/0;
+  - end-to-end 14/14 with both real outro assets.
 
-**Not verified:**
-- a real platform download (stand-in downloader only);
-- the approved RumbleFrame outro.
+**Verified natively on the Mac:**
+- `b13b91f` and `580d476` (2026-11-25, real 60 GiB floor), evidence in
+  `docs/acceptance/2026-11-25-macos-integration-580d476/`.
+- **The corrected head: pending**, using the pinned script.
 
-**Open findings, for review:**
-- **Acquisition policy conflict:** public availability currently authorizes downloading on
-  this branch; the owner's 2026-11-25 statement says it must not (review §5).
-- **Outro:** the code trims to 2 s, but the approved RumbleFrame outro is 2.5 s (§7).
-- **Transcription:** four call sites transcribe independently and keep nothing. A shared
-  transcript is proposed in
-  [`TRANSCRIPT_ARCHITECTURE_PROPOSAL.md`](TRANSCRIPT_ARCHITECTURE_PROPOSAL.md) (§8).
-- **Pillow 13.0.0** (MIT-CMU) was approved by the owner on 2026-11-25.
+**Not verified or not authorized:**
+- real platform downloads and `yt-dlp` (stand-in downloader only);
+- publishing;
+- contextual AI;
+- M4.
+
+**Transcripts:** a shared, versioned transcript architecture is approved in principle for
+M4 ([proposal](TRANSCRIPT_ARCHITECTURE_PROPOSAL.md)). It is not in PR #14.
 
 **Pending:**
-- independent review;
-- the owner's decisions in review §11;
-- milestone approval for this scope (acquisition was M3 under R4).
+- the Mac verification of the head;
+- ChatGPT's independent source review;
+- the owner's merge decision;
+- a documentation-only conflict resolution with PR #13 (`docs/ROADMAP.md`).
 
 The live demo database is not migrated.
 
@@ -378,8 +387,9 @@ support). Tests will be run on 3.13; 3.14 is a fallback. No new Python install i
     - every physical-SSD check (checklist §11).
 
 ## Blockers
-**Integration PR:** merge waits for the independent review and the owner's acquisition-policy
-decision ([`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §5, §11). Otherwise none for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB SSD
+**Integration PR #14:** merge waits for the native Mac verification of the corrected head
+and ChatGPT's independent review ([`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §13). No
+code blocker is known. Otherwise none for development. **M1 physical-SSD acceptance** waits for the SanDisk 1 TB SSD
 (owner-formatted APFS). Real footage at scale needs the SSD.
 
 ## Decisions pending
@@ -390,9 +400,10 @@ decision ([`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §5, §11). Otherwise
   un-deferred, Higgsfield use cases, brand assets).
 
 ## Next steps
-0. Independent review of the integration draft PR (`phase2/integration` @ `580d476`), then
-   the owner's decisions in [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §11. No merge,
-   no further feature work and no live-demo migration before that.
+0. Mac verification of the corrected PR #14 head, then ChatGPT's independent review and
+   the owner's merge decision ([`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §13). After
+   the merge: the detailed M4 implementation plan (shared transcripts), then contextual AI
+   highlights. No merge, M4 work or live-demo migration before that.
 1. M2 is merged (PR #12, `d9c878e`).
 2. When the SSD arrives: physical-SSD acceptance (checklist §11), then tag `v0.3.0-m1`
    (owner).

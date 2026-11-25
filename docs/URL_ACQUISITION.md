@@ -1,15 +1,17 @@
-# URL acquisition: a saved link becomes a linked recording (branch `phase2/url-download`)
+# URL acquisition: a saved link becomes a linked recording
 
-Status: **prototype on a local branch, not merged, not a milestone acceptance.** §7
-describes the owner acquisition policy of 2026-11-24 (default-allow fetching, automatic
-`public_web` record), which supersedes the platform-permission requirement in §2 for
-saved links. Built at
-the owner's direction (2026-11-24) in two separate patches. Highlight detection (the GTA VI
-prompt) is deliberately **not** part of this work.
+Status: **prototype in the integration draft PR #14, not merged.** The owner approved it
+for inclusion, subject to independent review (2026-11-25). **Public availability is not
+permission** (§7, owner decision 2026-11-25, which supersedes the download-by-default
+policy of 2026-11-24). The §2 requirements apply to every saved link. **Only a stand-in
+downloader has been run; real platform downloads and `yt-dlp` are not authorized.**
 
 ## 1. What it does
-Paste a YouTube or Twitch link, save it as a source, click **Acquire footage**. RIFTWIRE
-queues one `ACQUIRE` job for the source. The worker fetches the video and imports it as a
+Paste a YouTube or Twitch link → identify the source → match the creator → check standing
+permissions → acquire by an authorized method → process the footage. With standing
+permission (§2) and fetching switched on, saving the link queues one `ACQUIRE` job with no
+further prompt; otherwise the link is saved, nothing is fetched, and the source's page
+says why and what to do. **Acquire footage** queues it on demand under the same checks. The worker fetches the video and imports it as a
 recording that is linked to the source and recorded as obtained by `url_fetch`, with its
 provenance. Processing (INGEST, METADATA, THUMBNAIL) then runs as for any import.
 
@@ -78,8 +80,10 @@ The source's provenance records an `acquired_by_url` event with:
   permission.
 
 ## 6. Open points for the owner
-- This pulls forward acquisition work that R4 deferred to M3, and adds `yt-dlp` (an
-  external tool, not a Python dependency). Both need the owner's approval as a milestone.
+- The M3 acquisition infrastructure (job, checks, provenance) is approved for inclusion in
+  PR #14, subject to review (2026-11-25). **Installing `yt-dlp` and running real platform
+  downloads are not authorized yet.** `yt-dlp` is an external tool, not a Python
+  dependency.
 - `yt-dlp` uses a JavaScript runtime (Node) to run YouTube's player code. Rule 14 forbids
   bypassing access restrictions, and platform terms limit downloading without permission.
   The routes that are clearly authorized are:
@@ -89,49 +93,52 @@ The source's provenance records an `acquired_by_url` event with:
 
   All three can already be imported without `url_fetch`.
 
-## 7. Owner acquisition policy (2026-11-24): public footage is fetched and analysed
-- **Fetching is on by default** (`RIFTWIRE_URL_ACQUISITION_ENABLED=true`). Saving a link
-  queues its `ACQUIRE` job with no prompt. A refusal never blocks saving the link: it
-  becomes a `acquire_not_queued` system event.
-- **Every saved link gets an automatic `public_web` rights record** (migration `0008`, now `0009`).
-  - It is written by `system`, in the same transaction as the source, and covers that one
-    source.
-  - It names the source's creator but claims nothing from them: "Publicly accessible
-    footage … Not creator-confirmed."
-  - Scope: `acquire` and `analyze`, method `url_fetch` only. No written platform
-    permission is needed under this basis; other bases keep that requirement.
-- **`public_web` never authorizes editing or publishing,** whatever its scope says. They
-  are refused with `creator_permission_needed`, whose next step is "ask the creator;
-  record their permission on Creators & Rights". When a creator's permission or licence
-  exists and refuses for its own reason (revoked, not in scope), that reason is reported
-  instead.
-- **It covers fetched media only.** A copy imported by hand is judged by its own method.
-- **Nobody can create or widen it by hand.** The API refuses `public_web` with
-  `public_web_automatic`, and it cannot be superseded. The owner can still revoke it to
-  stop fetching and analysing one link; a revoked one is never recreated.
-- **Creator relationship `unaffiliated`:** a creator whose public footage was saved, with
-  no relationship. Recording their permission creates a `creator_permission` record.
-- **Migration `0008` (renumbered `0009` at integration)** rebuilds `rights_records` and
-  `creators`. It drops and recreates,
-  from frozen copies, the 10 triggers that mention `rights_records`, so all 14 immutability
-  triggers survive (tested before and after, with tampering still refused). Its downgrade
-  refuses while `public_web` records or unaffiliated creators exist, because they are
-  immutable history.
-- Tests and acceptance never contact a platform: fetching is switched off in their
-  settings, and only acceptance step M2-7 switches it on, with a stand-in downloader.
-- **Out of scope, by decision:** publishing public footage without the creator's
-  permission is not built.
+## 7. Acquisition policy (owner decision 2026-11-25)
+**Public availability alone authorizes nothing: no downloading, analysis, editing or
+publishing.** This supersedes the 2026-11-24 policy (fetching on by default, plus an
+automatic `public_web` record allowing fetch and analysis), which `b13b91f` implemented.
 
+- **Fetching is off by default** (`RIFTWIRE_URL_ACQUISITION_ENABLED=false`).
+- **Switching it on bypasses nothing.** A link is fetched only when a **user-confirmed**
+  record covers it: ownership, creator permission or a licence, attested by the owner. That
+  record must:
+  - allow `acquire` (the content authorization);
+  - list `url_fetch` (the authorization for the method);
+  - have written platform permission attached (evidence of kind `platform_permission`).
+
+  This applies to every basis; the `public_web` exception is removed.
+- **Standing permission is used without asking again.** A creator-wide or channel-wide
+  permission covers each newly saved link of that creator, and saving it queues the fetch.
+- **Missing permission:** the link is still saved. Nothing is queued (an
+  `acquire_not_queued` event is recorded when fetching is on), and the source's page shows
+  the reason and the next step. For example, `no_rights_record`: "Record the creator's
+  permission or a licence … it must allow URL fetching and have written platform
+  permission attached."
+- **`public_web` is a classification, not a permission.**
+  - A saved platform link with no permission on record is shown as "Public footage · no
+    permission on record" (`status_summary` = `public_web`).
+  - No `public_web` rights records are written any more.
+  - Rows written by `b13b91f` stay as immutable history. They authorize nothing, whatever
+    their stored scope says (`PUBLIC_WEB_USES` is empty), and refuse with
+    `creator_permission_needed`.
+  - They are never upgraded: a creator's permission is a separate, owner-attested record.
+    The API still refuses to create or supersede a `public_web` record by hand.
+- **Analysis** needs footage obtained by a permitted method (the recording's actual
+  method), under a record that allows `analyze`.
+- **Existing data:** the rules are applied when access is evaluated, not when records are
+  written, so they hold for existing records too. An `ACQUIRE` job queued under the old
+  policy fails permanently, with `rights_refused` provenance, before any download.
+- **Migration `0009`** (formerly `0008` on `phase2/url-download`) still adds the
+  `public_web` basis and the `unaffiliated` relationship to the schema, so that history
+  stays valid.
+  - It rebuilds `rights_records` and `creators`, and recreates from frozen copies the 10
+    triggers that mention `rights_records`, so all 14 immutability triggers survive.
+  - Its downgrade refuses while `public_web` rows or unaffiliated creators exist.
+- **Out of scope:** publishing of any footage (Phase 5).
 
 ## 8. Status at integration (2026-11-25)
-- Merged into `phase2/integration` (`580d476`) with the highlight queue. The `public_web`
-  migration is now **`0009`** (it was `0008` on this branch); see
-  [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §3.
-- **Verified natively on the Mac, with a stand-in downloader only.** Evidence:
-  `docs/acceptance/2026-11-25-macos-integration-580d476/`. **No real platform download
-  has been run.**
-- **Open policy conflict.** On 2026-11-25 the owner stated that public availability alone
-  does not authorize downloading, editing or publishing. §7 above still downloads by
-  default under the system-written `public_web` record. Editing and publishing are
-  refused as stated. The proposed change and the decision are in
-  [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md) §5.
+- Integrated in `phase2/integration` (draft PR #14) with the highlight queue; see
+  [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md).
+- **Verified with a stand-in downloader only:** backend tests, acceptance M2-7, and the
+  Mac end-to-end run. **No real platform download has been run**, and none is authorized
+  yet.

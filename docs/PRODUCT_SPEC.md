@@ -214,7 +214,8 @@ repaired by guessing.
   Fallback layouts when there is no camera.
 - **Subtitles:** word-level, **bold white, black outline, red active word**.
 - **Hook:** **white background, bold black text**.
-- **Outro:** optional, configurable, **2 seconds**.
+- **Outro:** optional, configurable; its length is the asset's own (the approved
+  RumbleFrame outro is **2.5 seconds**, 75 frames at 30 fps; 2026-11-25). Never trimmed.
 
 ### 4.2 Controls
 - Adjustable camera and gameplay crop regions (normalized coordinates); optional automatic
