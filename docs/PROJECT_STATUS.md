@@ -41,7 +41,12 @@ Review package: [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md).
 **Verified natively on the Mac:**
 - `b13b91f` and `580d476` (2026-11-25, real 60 GiB floor), evidence in
   `docs/acceptance/2026-11-25-macos-integration-580d476/`.
-- **The corrected head: pending**, using the pinned script.
+- **The corrected head `ef969f1`: all passed** (owner, 2026-11-25 04:43Z):
+  - suites, acceptance 29/29, smoke 30/0;
+  - Alembic checks and the demo-DB copy migration;
+  - end-to-end 14/14 with real Whisper and both approved outros (17.5 s, 525 frames).
+
+  Evidence: `docs/acceptance/2026-11-25-macos-pr14-ef969f1/`.
 
 **Not verified or not authorized:**
 - real platform downloads and `yt-dlp` (stand-in downloader only);
@@ -53,7 +58,6 @@ Review package: [`INTEGRATION_REVIEW.md`](INTEGRATION_REVIEW.md).
 M4 ([proposal](TRANSCRIPT_ARCHITECTURE_PROPOSAL.md)). It is not in PR #14.
 
 **Pending:**
-- the Mac verification of the head;
 - ChatGPT's independent source review;
 - the owner's merge decision;
 - a documentation-only conflict resolution with PR #13 (`docs/ROADMAP.md`).

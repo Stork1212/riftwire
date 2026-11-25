@@ -1,0 +1,88 @@
+{
+  "checks": [
+    {
+      "check": "public link without permission: saved, explained, not fetched",
+      "result": "PASS",
+      "note": "saved; classified public_web; no record written; not queued; acquire refused (403 no_rights_record): \"Record the creator's permission or a licence on Creators & Rights. To \u2026\"",
+      "seconds": 0.1
+    },
+    {
+      "check": "standing creator permission + platform permission (synthetic)",
+      "result": "PASS",
+      "note": "creator_permission d7dba38a (acquire + analyze by url_fetch) + platform_permission evidence",
+      "seconds": 0.0
+    },
+    {
+      "check": "saved URL \u2192 queued acquisition \u2192 linked recording",
+      "result": "PASS",
+      "note": "queued on save (no prompt); ACQUIRE completed; recording 99707bba-5dfd-431b-940f-f77bdb3578f7 READY, linked, url_fetch",
+      "seconds": 1.1
+    },
+    {
+      "check": "acquisition history",
+      "result": "PASS",
+      "note": "acquired_by_url (yt-dlp e2e-stand-in, sha256 573b4a29f45d\u2026) \u2192 attached_to_source (url_fetch, under the creator permission); no public_web record",
+      "seconds": 0.0
+    },
+    {
+      "check": "Find highlights (queued scan)",
+      "result": "PASS",
+      "note": "2 candidate(s); top 0-25000 ms, score 6.7, cues ['reaction', 'pursuit']",
+      "seconds": 4.1
+    },
+    {
+      "check": "transcript evidence",
+      "result": "PASS",
+      "note": "excerpt \"Oh my God, the cops are right behind us. We got a problem. Hold on,\" (matched ['cops', 'problem']); cues ['reaction', 'pursuit']",
+      "seconds": 0.0
+    },
+    {
+      "check": "sampled frame",
+      "result": "PASS",
+      "note": "JPEG 480x270 at 19000 ms (e2e-sampled-frame.jpg)",
+      "seconds": 0.1
+    },
+    {
+      "check": "review a timestamp (clips.txt)",
+      "result": "PASS",
+      "note": "clips.txt range 18-33 s accepted for the linked recording: {'line': 2, 'label': 'Getaway commentary', 'start_ms': 18000, 'end_ms': 33000, 'from_ms': 18000, 'to_ms': 33000}",
+      "seconds": 0.0
+    },
+    {
+      "check": "export 35/65 Short (edit permission gate)",
+      "result": "PASS",
+      "note": "refused before edit permission (use_not_in_scope); exported 7919396 bytes after the synthetic permission was superseded to include edit",
+      "seconds": 3.6
+    },
+    {
+      "check": "Short format, duration and A/V sync",
+      "result": "PASS",
+      "note": "1080x1920 30 fps, AAC 48 kHz, 17.50 s = 15 s clip + 2.5 s outro; 525 frames; A/V within 0 ms",
+      "seconds": 1.1
+    },
+    {
+      "check": "approved 2.5 s outro, not truncated",
+      "result": "PASS",
+      "note": "approved RumbleFrame outro (PR #6) intact: frames 1, 21, 38, 56, 75 match the asset (mean |\u0394| \u2264 0.3/255); gameplay before it (\u0394 128); outro audio peak -26.53 dBFS (gameplay continues, sting mixed beneath)",
+      "seconds": 1.7
+    },
+    {
+      "check": "red word highlights",
+      "result": "PASS",
+      "note": "red highlight under the spoken word: 10171 px at 7.75 s; none before speech (0 px) or over the outro (0 px) (e2e-caption-frame.png)",
+      "seconds": 3.8
+    },
+    {
+      "check": "original audio",
+      "result": "PASS",
+      "note": "export audio matches the source commentary (r=1.00, 6 s from 2.0 s)",
+      "seconds": 0.5
+    },
+    {
+      "check": "second Short: silent v1 outro without an audio track",
+      "result": "PASS",
+      "note": "v1 launch-kit outro (no audio track), outro mode: 17.50 s, 525 frames, outro matches the asset (\u2264 0.1), outro audio -120 dB (silence), gameplay audio identical (r=1.000)",
+      "seconds": 9.1
+    }
+  ]
+}

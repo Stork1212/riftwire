@@ -1,0 +1,33 @@
+INFO:     Started server process [16230]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-11-25T04:46:24.870592+00:00", "level": "INFO", "logger": "alembic.runtime.migration", "component": "migration", "message": "Context impl SQLiteImpl."}
+{"timestamp": "2026-11-25T04:46:24.870705+00:00", "level": "INFO", "logger": "alembic.runtime.migration", "component": "migration", "message": "Will assume non-transactional DDL."}
+{"timestamp": "2026-11-25T04:46:25.015973+00:00", "level": "INFO", "logger": "riftwire.events", "component": "api", "message": "Registered internal default location for recordings", "event_type": "storage_location_registered"}
+{"timestamp": "2026-11-25T04:46:25.016752+00:00", "level": "INFO", "logger": "riftwire.events", "component": "api", "message": "Registered internal default location for temp", "event_type": "storage_location_registered"}
+{"timestamp": "2026-11-25T04:46:25.017365+00:00", "level": "INFO", "logger": "riftwire.events", "component": "api", "message": "Registered internal default location for models", "event_type": "storage_location_registered"}
+{"timestamp": "2026-11-25T04:46:25.017972+00:00", "level": "INFO", "logger": "riftwire.events", "component": "api", "message": "Registered internal default location for exports", "event_type": "storage_location_registered"}
+{"timestamp": "2026-11-25T04:46:25.018560+00:00", "level": "INFO", "logger": "riftwire.events", "component": "api", "message": "Registered internal default location for assets", "event_type": "storage_location_registered"}
+{"timestamp": "2026-11-25T04:46:25.069413+00:00", "level": "INFO", "logger": "riftwire.events", "component": "api", "message": "API 0.1.0 started: 0 expired lease(s) recovered, 0 stale temp file(s) removed, ffmpeg available", "event_type": "api_started"}
+{"timestamp": "2026-11-25T04:46:25.070515+00:00", "level": "INFO", "logger": "riftwire.api", "component": "api", "message": "api ready", "data": {"env": "development", "api_host": "127.0.0.1", "api_port": 18941, "data_dir": "/var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/riftwire-e2e-5tiiee0a/data", "max_upload_bytes": 53687091200, "min_free_disk_bytes": 64424509440, "worker_concurrency": 1, "job_max_attempts": 3, "job_lease_seconds": 60, "log_level": "INFO"}}
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:18941 (Press CTRL+C to quit)
+{"timestamp": "2026-11-25T04:46:26.747565+00:00", "level": "WARNING", "logger": "riftwire.events", "component": "url_download", "message": "Source c6dae445-5185-4d60-b104-b8932810d312 saved but not queued for acquisition: Not authorized: no rights record covers this source. Record the creator's permission or a licence on Creators & Rights. To fetch from the link, it must allow URL fetching and have written platform permission attached.", "event_type": "acquire_not_queued"}
+{"timestamp": "2026-11-25T04:46:26.808981+00:00", "level": "INFO", "logger": "riftwire.events", "component": "queue", "message": "Acquisition of source 3e2cb85f-0118-4a2a-a8be-e8e1593c18bc queued", "job_id": "ce734e7d-db37-4320-a809-e395c8e40670", "event_type": "acquire_queued"}
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-11-25T04:46:42.962338+00:00", "level": "INFO", "logger": "riftwire.api", "component": "api", "message": "api stopped"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [16230]
+INFO:     Started server process [16418]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-11-25T04:46:43.709563+00:00", "level": "INFO", "logger": "alembic.runtime.migration", "component": "migration", "message": "Context impl SQLiteImpl."}
+{"timestamp": "2026-11-25T04:46:43.709715+00:00", "level": "INFO", "logger": "alembic.runtime.migration", "component": "migration", "message": "Will assume non-transactional DDL."}
+{"timestamp": "2026-11-25T04:46:43.895791+00:00", "level": "INFO", "logger": "riftwire.events", "component": "api", "message": "API 0.1.0 started: 0 expired lease(s) recovered, 0 stale temp file(s) removed, ffmpeg available", "event_type": "api_started"}
+{"timestamp": "2026-11-25T04:46:43.897625+00:00", "level": "INFO", "logger": "riftwire.api", "component": "api", "message": "api ready", "data": {"env": "development", "api_host": "127.0.0.1", "api_port": 18941, "data_dir": "/var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/riftwire-e2e-5tiiee0a/data", "max_upload_bytes": 53687091200, "min_free_disk_bytes": 64424509440, "worker_concurrency": 1, "job_max_attempts": 3, "job_lease_seconds": 60, "log_level": "INFO"}}
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:18941 (Press CTRL+C to quit)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-11-25T04:46:52.189367+00:00", "level": "INFO", "logger": "riftwire.api", "component": "api", "message": "api stopped"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [16418]

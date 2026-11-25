@@ -186,7 +186,18 @@ both real assets in the container: PR #6 in `continue` mode peaked at −1.0 dBF
 - End-to-end driver **14/14**, with stand-ins for `say` and Whisper and both real outro
   assets.
 
-The native Mac run of the final head is pending (§11).
+**Native Mac run of the head `ef969f1` (owner, 2026-11-25 04:43Z): all passed.**
+- Real 60 GiB floor: 127.6 → 127.5 GiB free.
+- Real Whisper `base` and macOS speech.
+- Results:
+  - backend 448 + 3 skips; bench 47 + 1; frontend 38; build;
+  - acceptance 29/29; smoke 30/0/0;
+  - Alembic single head, with upgrade and downgrade checks;
+  - the demo-DB copy migrates `0008` → `0009` with no lost rows;
+  - **end-to-end 14/14**: 17.50 s / 525 frames for both outros, every PR #6 outro frame
+    intact.
+- Evidence: [`acceptance/2026-11-25-macos-pr14-ef969f1/`](acceptance/2026-11-25-macos-pr14-ef969f1/README.md).
+
 
 ## 10. Remaining limitations and known risks
 - **Real acquisition is unverified.** `yt-dlp` and platform downloads are not authorized;
@@ -254,11 +265,11 @@ in `~/Claude/riftwire-env/`. It:
   (assets and docs only).
 
 ## 13. Merge-readiness assessment
-**Not ready to merge yet.** The code is complete for the approved scope, and the container
-verification is green. Merging still needs:
-1. the native Mac verification of the pinned head (§11), with its evidence committed;
-2. ChatGPT's independent source review of `51c8fa4` and the docs commit;
-3. the owner's merge decision. Before or after the merge, a documentation-only resolution
+**Ready for independent review; not yet approved to merge.** The code is complete for
+the approved scope. The container verification and the **native Mac verification of
+`ef969f1`** are green, and the evidence is committed (§9). Merging still needs:
+1. ChatGPT's independent source review of `51c8fa4` and the docs commits;
+2. the owner's merge decision. Before or after the merge, a documentation-only resolution
    with PR #13 is needed.
 
 No known blocker remains in the code. The open items in §10 are recorded limitations,
