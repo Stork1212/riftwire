@@ -76,6 +76,7 @@ JOB_USE: dict[JobType, str | None] = {
     # the download, after it, and again in the transaction that links the recording.
     JobType.ACQUIRE: None,
     JobType.HIGHLIGHT_SCAN: "analyze",
+    JobType.TRANSCRIBE: "analyze",
 }
 
 # Reason codes (stable; API, UI, events).

@@ -72,7 +72,7 @@ def recording(db, settings, assets, monkeypatch):
     drain(db, settings)
     with db.session() as s:
         acquisition.attach_media(s, settings, sid, rec.id)
-    monkeypatch.setattr(clips, "_transcribe", lambda *_a: list(WORDS))
+    monkeypatch.setattr(clips, "_words", lambda *_a: (list(WORDS), None))
     return rec.id
 
 
@@ -292,7 +292,7 @@ def limited(db, settings, assets, monkeypatch):
         with db.session() as s:
             acquisition.attach_media(s, settings, sid, rec.id)
         return rec.id
-    monkeypatch.setattr(clips, "_transcribe", lambda *_a: list(WORDS))
+    monkeypatch.setattr(clips, "_words", lambda *_a: (list(WORDS), None))
     return make
 
 

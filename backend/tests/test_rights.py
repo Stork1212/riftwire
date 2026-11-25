@@ -690,9 +690,9 @@ def test_clip_cut_checks_edit_rights_and_length(w, client, db, settings, media_d
     assert result.headers["content-type"] == "video/mp4"
     assert result.content[4:8] == b"ftyp"
 
-    monkeypatch.setattr(clips, "_transcribe", lambda *_: [
+    monkeypatch.setattr(clips, "_words", lambda *_: ([
         {"w": "Clutch!", "start_ms": 100, "end_ms": 800},
-    ])
+    ], None))
     result = client.post(path, params={**params, "subtitles": "true"})
     assert result.status_code == 200, result.text
     assert b"tx3g" in result.content

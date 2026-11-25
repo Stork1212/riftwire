@@ -37,8 +37,26 @@ from app.models.rights import (
     SourceKind,
     SourceStatus,
 )
+from app.models.transcripts import (
+    ChunkStatus,
+    Transcript,
+    TranscriptChunk,
+    TranscriptCorrection,
+    TranscriptionConfig,
+    TranscriptSegment,
+    TranscriptStatus,
+    TranscriptWord,
+)
 
 __all__ = [
+    "ChunkStatus",
+    "Transcript",
+    "TranscriptChunk",
+    "TranscriptCorrection",
+    "TranscriptSegment",
+    "TranscriptStatus",
+    "TranscriptWord",
+    "TranscriptionConfig",
     "AcquisitionMethod",
     "BrandChannel",
     "ChannelPlatform",

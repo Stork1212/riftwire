@@ -47,6 +47,9 @@ ALLOWED_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
 
 CLAIMABLE = (JobStatus.PENDING.value, JobStatus.RETRY_WAIT.value)
 NEXT_STAGE = {JobType.INGEST: JobType.METADATA, JobType.METADATA: JobType.THUMBNAIL}
+# Analysis jobs read a finished recording; their failure never changes the recording's
+# own status, and they can be re-run.
+ANALYSIS_JOB_TYPES = frozenset({JobType.HIGHLIGHT_SCAN.value, JobType.TRANSCRIBE.value})
 
 
 class InvalidTransition(Exception):
@@ -257,7 +260,7 @@ def complete(db: Database, claimed: ClaimedJob,
 
 
 def _apply_terminal_failure(s: Session, job: Job, error: str) -> None:
-    if job.recording_id is None or job.job_type == JobType.HIGHLIGHT_SCAN.value:
+    if job.recording_id is None or job.job_type in ANALYSIS_JOB_TYPES:
         return
     rec = s.get(Recording, job.recording_id)
     if rec is None:
@@ -303,8 +306,10 @@ def fail(db: Database, claimed: ClaimedJob, error: str, *, permanent: bool,
         return JobStatus(job.status)
 
 
-def defer(db: Database, claimed: ClaimedJob, reason: str, delay_seconds: float) -> None:
-    """Storage went offline: give the job back WITHOUT consuming the attempt.
+def defer(db: Database, claimed: ClaimedJob, reason: str, delay_seconds: float, *,
+          waiting_for: str = "storage") -> None:
+    """Storage went offline (or, M4, a dependency is not ready yet): give the job back
+    WITHOUT consuming the attempt.
 
     RUNNING -> RETRY_WAIT with ``attempt_count`` restored, eligible again after
     ``delay_seconds`` (the claim loop also skips it while the location stays offline)."""
@@ -320,10 +325,15 @@ def defer(db: Database, claimed: ClaimedJob, reason: str, delay_seconds: float) 
         job.process_pid = None
         job.process_started_at = None
         job.updated_at = now
-        job.last_error = f"waiting for storage: {reason}"[:4000]
-        record_event(s, Severity.WARNING, "worker", "job_waiting_for_storage",
-                     f"{job.job_type} job waiting for storage (attempt not counted): {reason}",
-                     job_id=job.id, recording_id=job.recording_id)
+        job.last_error = f"waiting for {waiting_for}: {reason}"[:4000]
+        if waiting_for == "storage":
+            record_event(s, Severity.WARNING, "worker", "job_waiting_for_storage",
+                         f"{job.job_type} job waiting for storage (attempt not counted): "
+                         f"{reason}", job_id=job.id, recording_id=job.recording_id)
+        else:
+            record_event(s, Severity.INFO, "worker", "job_waiting_for_dependency",
+                         f"{job.job_type} job waiting for {waiting_for} (attempt not "
+                         f"counted): {reason}", job_id=job.id, recording_id=job.recording_id)
 
 
 def release(db: Database, claimed: ClaimedJob, reason: str) -> None:
@@ -494,7 +504,7 @@ def retry_job(s: Session, job_id: str) -> Job:
     job.started_at = None
     job.updated_at = now
     rec = s.get(Recording, job.recording_id) if job.recording_id else None
-    if rec is not None and job.job_type != JobType.HIGHLIGHT_SCAN.value:
+    if rec is not None and job.job_type not in ANALYSIS_JOB_TYPES:
         if job.job_type == JobType.THUMBNAIL.value:
             rec.thumbnail_status = "PENDING"
         elif rec.status == RecordingStatus.FAILED.value:
@@ -503,5 +513,38 @@ def retry_job(s: Session, job_id: str) -> Job:
             rec.error_message = None
     record_event(s, Severity.INFO, "api", "job_retry_requested",
                  f"Manual retry of {job.job_type} job", job_id=job.id,
+                 recording_id=job.recording_id)
+    return job
+
+
+def wake_dependents(s: Session, recording_id: str) -> int:
+    """Make the recording's jobs that were deferred waiting for a dependency (M4: a scan
+    waiting for its transcript) eligible now, instead of after their retry delay."""
+    now = utcnow()
+    result = s.execute(update(Job).where(
+        Job.recording_id == recording_id, Job.status == JobStatus.RETRY_WAIT.value,
+        Job.last_error.like("waiting for a dependency%")).values(next_attempt_at=now))
+    return result.rowcount or 0
+
+
+def rearm(s: Session, job: Job) -> Job:
+    """Explicit regeneration of a finished TRANSCRIBE job (M4): COMPLETED or FAILED ->
+    PENDING with a fresh attempt budget, used when the transcription configuration changed
+    (a new transcript is written beside the old, immutable one). Only TRANSCRIBE jobs."""
+    if job.job_type != JobType.TRANSCRIBE.value:
+        raise ConflictError("only transcription jobs can be re-armed", code="not_rearmable")
+    if job.status not in (JobStatus.COMPLETED.value, JobStatus.FAILED.value):
+        return job
+    now = utcnow()
+    job.status = JobStatus.PENDING.value
+    job.attempt_count = 0
+    job.progress_percent = 0
+    job.next_attempt_at = now
+    job.completed_at = None
+    job.started_at = None
+    job.last_error = None
+    job.updated_at = now
+    record_event(s, Severity.INFO, "queue", "transcription_requested",
+                 "Transcription queued for the current configuration", job_id=job.id,
                  recording_id=job.recording_id)
     return job

@@ -25,7 +25,12 @@ from pathlib import Path
 from sqlalchemy import update
 
 from app.core.config import Settings, get_settings
-from app.core.errors import JobError, RightsRefusedJobError, StorageOfflineJobError
+from app.core.errors import (
+    DependencyPendingJobError,
+    JobError,
+    RightsRefusedJobError,
+    StorageOfflineJobError,
+)
 from app.core.logging import configure_logging, get_logger
 from app.db.base import utcnow
 from app.db.migrations import schema_status
@@ -49,6 +54,7 @@ EXIT_OK = 0
 EXIT_SCHEMA = 2
 EXIT_LOCKED = 3
 STORAGE_RETRY_SECONDS = 30.0
+DEPENDENCY_RETRY_SECONDS = 5.0
 
 
 class WorkerLockedError(RuntimeError):
@@ -300,6 +306,11 @@ class WorkerProcess:
                 self.db, claimed, msg, permanent=True,
                 backoff_base=self.settings.job_backoff_base_seconds,
                 backoff_cap=self.settings.job_backoff_max_seconds))
+        except DependencyPendingJobError as e:
+            why = str(e)
+            log.info(f"waiting for a dependency; deferring: {why}", extra=extra)
+            self._safe(lambda: queue.defer(self.db, claimed, why, DEPENDENCY_RETRY_SECONDS,
+                                           waiting_for="a dependency"))
         except StorageOfflineJobError as e:
             why = str(e)
             log.warning(f"storage offline; deferring: {why}", extra=extra)

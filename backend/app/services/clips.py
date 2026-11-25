@@ -14,12 +14,18 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
-from app.core.config import REPO_ROOT, Settings
-from app.core.errors import ConflictError, NotFoundError, ServiceUnavailable, ValidationFailed
+from app.core.config import Settings
+from app.core.errors import (
+    ConflictError,
+    NotFoundError,
+    PermanentJobError,
+    ServiceUnavailable,
+    ValidationFailed,
+)
 from app.core.logging import get_logger
 from app.db.session import Database
 from app.models import Job, JobType, Recording, RecordingStatus
-from app.services import media, outro, reservations, rights, split_shorts
+from app.services import media, outro, reservations, rights, split_shorts, transcripts
 from app.services.locations import get_layout, require_no_maintenance
 
 log = get_logger(__name__)
@@ -114,20 +120,25 @@ def _rank(words: list[dict], duration_ms: int) -> list[dict]:
     return picks
 
 
-def _transcribe(settings: Settings, source: Path, folder: Path, start_ms: int,
-                length_ms: int) -> list[dict]:
-    python, model = settings.clip_whisper_python, settings.clip_whisper_model
-    if not python or not python.is_file() or not model or not (model / "weights.npz").is_file():
-        raise ServiceUnavailable("Local Whisper is unavailable. Configure the benchmark model.")
-    audio, transcript = folder / "audio.wav", folder / "words.json"
-    _run([settings.ffmpeg_path, "-nostdin", "-v", "error", "-ss", f"{start_ms / 1000:.3f}",
-          "-i", str(source), "-t", f"{length_ms / 1000:.3f}", "-vn", "-ac", "1", "-ar",
-          "16000", str(audio)],
-         settings.ffmpeg_timeout_seconds, "Could not extract the recording's audio.")
-    _run([str(python), str(REPO_ROOT / "bench/riftbench/transcribe_child.py"),
-          str(model), str(audio), str(transcript)], _TIMEOUT,
-         "Local Whisper could not transcribe the recording.")
-    return json.loads(transcript.read_text())["words"]
+def _words(db: Database, settings: Settings, recording: Recording, start_ms: int,
+           length_ms: int) -> tuple[list[dict], str | None]:
+    """Words of ``[start_ms, start_ms + length_ms)`` from the recording's shared transcript
+    (M4), re-based to clip time, and the transcript's id. Nothing here runs Whisper: if the
+    current transcript does not exist yet, the TRANSCRIBE job is queued and the caller gets
+    ``409 transcript_pending`` to retry shortly."""
+    if recording.has_audio is False:
+        return [], None
+    with db.session() as session:
+        tr = transcripts.current(session, settings, recording.id)
+        if tr is not None:
+            return transcripts.words_for_clip(session, tr.id, start_ms, length_ms), tr.id
+    try:
+        with db.session() as session:            # committed before we answer 409
+            transcripts.request(session, settings, recording.id)
+    except PermanentJobError as e:
+        raise ServiceUnavailable(str(e), code="whisper_unavailable") from e
+    raise ConflictError("The recording's transcript is being produced. Try again shortly.",
+                        code="transcript_pending")
 
 
 def _srt_time(ms: int) -> str:
@@ -163,12 +174,11 @@ def suggest(db: Database, settings: Settings, recording_id: str) -> list[dict]:
     recording, source, decision = _recording(db, settings, recording_id, "analyze")
     if recording.has_audio is False:
         return []
-    with _workspace(db, settings) as folder:
-        words = _transcribe(settings, source, folder, 0, ANALYSIS_SECONDS * 1000)
-        picks = _rank(words, min(recording.duration_ms, ANALYSIS_SECONDS * 1000))
-        with db.session() as session:
-            rights.fence(session, decision)
-        return picks
+    words, _ = _words(db, settings, recording, 0, ANALYSIS_SECONDS * 1000)
+    picks = _rank(words, min(recording.duration_ms, ANALYSIS_SECONDS * 1000))
+    with db.session() as session:
+        rights.fence(session, decision)
+    return picks
 
 
 def highlight_frame(db: Database, settings: Settings, recording_id: str, index: int) -> bytes:
@@ -226,14 +236,14 @@ def outro_tail(db: Database, settings: Settings, recording: Recording, end_ms: i
 
 def _render_split(settings: Settings, source: Path, folder: Path, output: Path,
                   start_ms: int, length: int, recording: Recording, facecam: bool,
-                  title: str, tail: int = 0) -> None:
+                  title: str, tail: int = 0, words: list[dict] | None = None) -> None:
     """One FFmpeg pass: the 35/65 gameplay segment with its original audio untouched, then
     the whole outro (``services/outro.py``): ``length`` + the outro's own duration.
     ``tail``: milliseconds of source audio after the cut that the outro may use, already
     checked against the rights scope by :func:`outro_tail` (0 = none)."""
     asset = outro.load(settings)
     has_audio = recording.has_audio is not False
-    words = _transcribe(settings, source, folder, start_ms, length) if has_audio else []
+    words = list(words or []) if has_audio else []
     header, captions = split_shorts.overlays(folder, words, title, length)
     duration = f"{length / 1000:.3f}"
     end_ms = start_ms + length
@@ -282,16 +292,21 @@ def cut(db: Database, settings: Settings, recording_id: str, start_ms: int, end_
         if recording.has_audio is False:
             raise ValidationFailed("This recording has no audio to transcribe.")
         _, _, analyze = _recording(db, settings, recording_id, "analyze")
+    words: list[dict] = []
+    transcript_id = None
+    if subtitles or split:
+        words, transcript_id = _words(db, settings, recording, start_ms, length)
+    log.info("clip_transcript", extra={"recording_id": recording_id, "component": "clips",
+                                       "transcript_id": transcript_id, "words": len(words)})
     with _workspace(db, settings) as folder:
         output = folder / "clip.mp4"
         if split:
             _render_split(settings, source, folder, output, start_ms, length, recording,
-                          layout == "split_facecam", title, tail)
+                          layout == "split_facecam", title, tail, words)
         else:
             subtitle_input: list[str] = []
             subtitle_output: list[str] = []
             if subtitles:
-                words = _transcribe(settings, source, folder, start_ms, length)
                 captions = _captions(words, length)
                 if not captions:
                     raise ValidationFailed("No speech was detected in this clip.")

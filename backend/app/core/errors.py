@@ -86,6 +86,14 @@ class StorageOfflineJobError(TransientJobError):
     permanent = False
 
 
+class DependencyPendingJobError(TransientJobError):
+    """Raised inside a job that needs another job's output first (M4: a highlight scan
+    waiting for its shared transcript). The worker defers the job without consuming an
+    attempt; the dependency has already been queued."""
+
+    permanent = False
+
+
 # ---- Rights (M2) ----------------------------------------------------------
 
 class RightsRefused(AppError):

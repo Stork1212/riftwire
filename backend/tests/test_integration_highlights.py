@@ -112,7 +112,9 @@ def test_highlight_scan_results_survive_the_public_web_migration(settings):
         rows = sorted(_sql(settings, "SELECT id, job_type, result_json FROM jobs"))
         assert rows == expected, step
         assert _sql(settings, "SELECT related_job_id FROM system_events") == [(JOB,)]
-    assert _sql(settings, "SELECT version_num FROM alembic_version") == [("0009",)]
-    assert len(_sql(settings, "SELECT name FROM sqlite_master WHERE type='trigger'")) == 14
+    assert _sql(settings, "SELECT version_num FROM alembic_version") == [("0010",)]
+    names = [r[0] for r in _sql(settings, "SELECT name FROM sqlite_master WHERE type='trigger'")]
+    assert len([n for n in names if not n.startswith("trg_transcript")]) == 14
+    assert len([n for n in names if n.startswith("trg_transcript")]) == 8
     assert _sql(settings, "PRAGMA foreign_key_check") == []
 

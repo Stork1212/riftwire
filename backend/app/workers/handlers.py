@@ -11,11 +11,13 @@ from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.errors import (
     ConflictError,
+    DependencyPendingJobError,
     NotFoundError,
     PayloadTooLarge,
     PermanentJobError,
@@ -28,8 +30,23 @@ from app.core.errors import (
 )
 from app.core.logging import get_logger
 from app.db.session import Database
-from app.models import Job, JobType, Recording, RecordingStatus, Severity
-from app.services import highlight_scan, media, queue, reservations, url_download
+from app.models import (
+    Job,
+    JobStatus,
+    JobType,
+    Recording,
+    RecordingStatus,
+    Severity,
+    TranscriptChunk,
+)
+from app.services import (
+    highlight_scan,
+    media,
+    queue,
+    reservations,
+    transcripts,
+    url_download,
+)
 from app.services.acquisition import AcquisitionUnavailable
 from app.services.events import record_event
 from app.services.ingest import FinalizeError, finalize_recording
@@ -49,6 +66,7 @@ REQUIRED_KINDS: dict[JobType, tuple[str, ...]] = {
     # The download and the import's .part file are both on temp; INGEST then moves it.
     JobType.ACQUIRE: ("temp",),
     JobType.HIGHLIGHT_SCAN: ("recordings", "temp"),
+    JobType.TRANSCRIBE: ("recordings", "temp"),
 }
 
 THUMB_TMP_PREFIX = ".job-"           # thumbnails/.job-<job>-<token>.tmp.jpg
@@ -298,6 +316,104 @@ def handle_acquire(ctx: JobContext) -> None:
     queue.complete(ctx.db, ctx.claimed, link_job)
 
 
+def _shared_transcript(ctx: JobContext, recording: Recording) -> tuple[str | None, list]:
+    """The recording's current-configuration transcript (M4). Not ready yet: queue the
+    TRANSCRIBE job and defer this one without spending an attempt. Transcription failed
+    for good: fail with its reason rather than waiting forever. No local Whisper installed:
+    the scan runs on audio and visual signals only (as before M4), recorded as such."""
+    if recording.has_audio is False:
+        return None, []
+    try:
+        transcripts.require_engine(ctx.settings)
+    except PermanentJobError:
+        log.info("no local Whisper configured; scanning without speech",
+                 extra={"job_id": ctx.job_id, "recording_id": recording.id,
+                        "component": "highlight_scan"})
+        return None, []
+    with ctx.db.session() as s:
+        tr = transcripts.current(s, ctx.settings, recording.id)
+        if tr is not None:
+            ws = transcripts.words(s, tr.id)
+            return tr.id, [{"w": w["w"], "start_ms": w["start_ms"], "end_ms": w["end_ms"],
+                            "prob": w["prob"] or 0.0} for w in ws]
+        job = s.scalar(select(Job).where(Job.recording_id == recording.id,
+                                         Job.job_type == JobType.TRANSCRIBE.value))
+        if job is not None and job.status == JobStatus.FAILED.value:
+            raise PermanentJobError(f"The shared transcript could not be produced: "
+                                    f"{job.last_error or 'transcription failed'}")
+        transcripts.request(s, ctx.settings, recording.id)
+    raise DependencyPendingJobError("the shared transcript is being produced")
+
+
+# ------------------------------------------------------------------------- TRANSCRIBE
+def handle_transcribe(ctx: JobContext) -> None:
+    """The only place RIFTWIRE runs Whisper (M4). Resumable by chunk: every finished chunk
+    is stored in its own fenced transaction and never transcribed again."""
+    require_storage(ctx)
+    recording = _load_recording(ctx)
+    if recording.status != RecordingStatus.READY.value or not recording.duration_ms:
+        raise PermanentJobError("Wait for the recording to finish processing.")
+    settings = ctx.settings
+    with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
+        tr, chunks = transcripts.prepare(s, settings, recording, ctx.job_id)
+        tr_id, done = tr.id, tr.status == "COMPLETE"
+        pending = [c.idx for c in chunks if c.status != "DONE"]
+        total = len(chunks)
+    if done:
+        queue.complete(ctx.db, ctx.claimed)
+        return
+    if recording.has_audio is False:
+        def silent(session: Session) -> None:
+            transcripts.finalize_silent(session, tr_id)
+            queue.wake_dependents(session, recording.id)
+
+        queue.complete(ctx.db, ctx.claimed, silent)
+        return
+    source = settings.managed_path(recording.file_path)
+    if not source.is_file():
+        raise PermanentJobError("Recording file is missing.")
+    layout = get_layout(settings)
+    temp = layout.path("temp")
+    volume = layout.location("temp").volume_uuid
+    chunk_s = settings.transcribe_chunk_seconds + 2 * settings.transcribe_overlap_seconds
+    budget = 32_000 * chunk_s + 16 * 1024 * 1024      # one chunk's 16 kHz PCM + output
+    lease = max(600, settings.reservation_lease_seconds)
+    reservation = reservations.reserve_on_volume(
+        ctx.db, volume, temp, layout.floor_for_volume(volume), "transcribe",
+        f"job:{ctx.job_id}:{ctx.claimed.token}", budget, lease_seconds=lease)
+    try:
+        with TemporaryDirectory(prefix="transcribe-work-", dir=temp) as folder:
+            for n, idx in enumerate(pending):
+                ctx.check()
+                require_storage(ctx)
+                reservations.renew(ctx.db, layout, reservation, budget, lease_seconds=lease)
+                with ctx.db.session() as s:
+                    chunk = s.get(TranscriptChunk, (tr_id, idx))
+                    s.expunge(chunk)
+                raw, audio_sha, elapsed = transcripts.transcribe_chunk(
+                    settings, source, Path(folder), chunk, ctx.run)
+                with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
+                    transcripts.store_chunk(s, tr_id, idx, raw, audio_sha, elapsed)
+                ctx.progress(min(98, (total - len(pending) + n + 1) * 98 // max(1, total)))
+        ctx.check()
+        require_storage(ctx)
+
+        def apply(session: Session) -> None:
+            t = transcripts.finalize(session, tr_id)
+            woken = queue.wake_dependents(session, recording.id)
+            record_event(session, Severity.INFO, "worker", "transcript_completed",
+                         f"Transcript complete: {t.word_count} words; {woken} waiting "
+                         f"job(s) resumed.",
+                         job_id=ctx.job_id, recording_id=recording.id)
+
+        queue.complete(ctx.db, ctx.claimed, apply)
+    except (media.MediaError, OSError):
+        require_storage(ctx)
+        raise
+    finally:
+        reservations.release(ctx.db, reservation)
+
+
 def handle_highlight_scan(ctx: JobContext) -> None:
     require_storage(ctx)
     recording = _load_recording(ctx)
@@ -323,12 +439,13 @@ def handle_highlight_scan(ctx: JobContext) -> None:
         ctx.progress(percent)
 
     try:
+        transcript_id, words = _shared_transcript(ctx, recording)
         with TemporaryDirectory(prefix="highlight-work-", dir=temp) as folder:
             result = highlight_scan.scan_video(
                 source, recording.duration_ms, ffmpeg=settings.ffmpeg_path,
-                whisper_python=(settings.clip_whisper_python if recording.has_audio else None),
-                whisper_model=settings.clip_whisper_model, work=Path(folder),
-                run=ctx.run, checkpoint=checkpoint)
+                whisper_python=None, whisper_model=None, work=Path(folder),
+                run=ctx.run, checkpoint=checkpoint, existing_words=words)
+        result["transcript_id"] = transcript_id
         ctx.check()
         require_storage(ctx)
 
@@ -352,4 +469,5 @@ HANDLERS: dict[JobType, Callable[[JobContext], None]] = {
     JobType.THUMBNAIL: handle_thumbnail,
     JobType.ACQUIRE: handle_acquire,
     JobType.HIGHLIGHT_SCAN: handle_highlight_scan,
+    JobType.TRANSCRIBE: handle_transcribe,
 }

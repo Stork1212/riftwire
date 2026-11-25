@@ -84,8 +84,17 @@ class Settings(BaseSettings):
     # never permission.
     url_acquisition_enabled: bool = False
 
+    # Local Whisper (M4 shared transcription): the Python of the venv that has mlx-whisper,
+    # and the model directory (MLX ``base`` is the approved default; never downloaded).
+    # The names keep their pre-M4 ``clip_`` prefix (RIFTWIRE_CLIP_WHISPER_*).
     clip_whisper_python: Path | None = None
     clip_whisper_model: Path | None = None
+    # Chunking of the persistent TRANSCRIBE job. Part of the transcription configuration's
+    # fingerprint: changing them yields a new transcript beside the old one.
+    transcribe_chunk_seconds: int = Field(default=120, ge=10, le=1800)
+    transcribe_overlap_seconds: int = Field(default=4, ge=0, le=30)
+    transcribe_language: str = Field(default="en", min_length=2, max_length=8)
+    transcribe_child_timeout_seconds: int = Field(default=900, ge=30, le=7200)
     clip_outro_path: Path | None = None
     # Outro handling (services/outro.py). The duration always comes from the asset; this
     # optional brand value is validated against it (a mismatch refuses, never trims).

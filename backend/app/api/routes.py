@@ -36,7 +36,16 @@ from app.schemas.api import (
     RecordingDetail,
     RecordingOut,
 )
-from app.services import clip_lists, clips, media, queue, rights, rights_import, system
+from app.services import (
+    clip_lists,
+    clips,
+    media,
+    queue,
+    rights,
+    rights_import,
+    system,
+    transcripts,
+)
 from app.services.events import record_event
 from app.services.ingest import UploadSession, complete_upload
 from app.services.storage import safe_join
@@ -248,6 +257,21 @@ def get_highlight_scan(recording_id: str, db: DB):
             return {"job": None, "result": None}
         result = json.loads(job.result_json) if job.result_json else None
         return {"job": job_out(job), "result": result}
+
+
+@api.post("/recordings/{recording_id}/transcript", dependencies=[Depends(require_schema)])
+def request_transcript(recording_id: str, db: DB, cfg: CFG):
+    with db.session() as session:
+        return transcripts.request_checked(session, cfg, recording_id)
+
+
+@api.get("/recordings/{recording_id}/transcript", dependencies=[Depends(require_schema)])
+def get_transcript(recording_id: str, db: DB, cfg: CFG, words: bool = False,
+                   start_ms: Annotated[int | None, Query(ge=0)] = None,
+                   end_ms: Annotated[int | None, Query(ge=0)] = None):
+    with db.session() as session:
+        return transcripts.describe(session, cfg, recording_id, include_words=words,
+                                    start_ms=start_ms, end_ms=end_ms)
 
 
 @api.get("/recordings/{recording_id}/highlight-scan/frame/{index}",
