@@ -1,0 +1,46 @@
+PR #14 smoke re-run  started 2026-11-25T15:13:59Z  HEAD 7911092c897d07aadedc6dd4ce3616142d154341
+leftover smoke instance: /Users/gregstork/Claude/riftwire-env/smoke-data-20261125T024504Z ( api:83745 caffeinate:83747 worker:83746 )
+   stopped
+leftover smoke instance: /Users/gregstork/Claude/riftwire-env/smoke-data-20261125T024737Z ( api:87743 caffeinate:87745 worker:87744 )
+   stopped
+leftover smoke instance: /Users/gregstork/Claude/riftwire-env/smoke-data-20261125T044608Z ( api:16119 caffeinate:16121 worker:16120 )
+   stopped
+leftover smoke instances stopped: 3
+port 18930 is free
+
+== smoke (real 60 GiB floor, isolated data, port 18930)
+   PASS  start.sh exits 0
+   PASS  API process running (pid 55890)
+   PASS  worker process running (pid 55891)
+   PASS  caffeinate running while worker runs (pid 55892)
+   PASS  status.sh runs
+   PASS  /health ok
+   PASS  /health/ready ready=true
+   PASS  API bound to 127.0.0.1 only
+   PASS  dashboard HTML served at /
+   PASS  dashboard deep link served (/recordings)
+   PASS  worker heartbeat state RUNNING
+   PASS  synthetic 1080p H.264/AAC clip
+   PASS  synthetic 720p60 VP9 clip (no audio)
+   PASS  import mp4 → 201
+   PASS  import webm → 201
+   PASS  duplicate import → 409
+   PASS  both recordings READY with thumbnails (≤60 s)
+   PASS  thumbnail JPEG for 2db3d55e
+   PASS  thumbnail JPEG for 8f989942
+   PASS  metadata 1920x1080 30000/1001 h264/aac
+   PASS  stop.sh exits 0
+   PASS  API process gone
+   PASS  worker process gone
+   PASS  caffeinate gone
+   PASS  port closed after stop
+   PASS  worker recorded STOPPED (graceful)
+   PASS  PID files removed
+   PASS  start.sh again exits 0
+   PASS  2 recordings persisted across restart
+   PASS  6 COMPLETED jobs persisted across restart
+smoke exit 0: PASS 30  FAIL 0  SKIP 0
+smoke instance stopped (port 18930 closed)
+working tree after: clean
+
+SMOKE PASSED at 7911092

@@ -16,6 +16,9 @@ silence. Both are supported:
   silence when it has none.
 * The gameplay segment's audio is never mixed, limited or faded: only the outro portion is
   built from the tail, the sting and a peak limiter (−1 dBFS), then concatenated.
+* **Rights:** the post-cut tail is source footage. ``clips.outro_tail`` checks the ``edit``
+  rights for clip length + tail and drops the tail when that would exceed the scope (for
+  example a licence's ``max_clip_seconds``); the outro itself always plays whole.
 """
 
 from __future__ import annotations
