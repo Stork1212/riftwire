@@ -70,9 +70,11 @@ def tone_word_audio(path: Path, words: list[ToneWord], duration_s: float,
     pcm = [0] * n
     ramp = RAMP_S * RATE
     for w in words:
-        a, b = int(round(w.start_ms * RATE / 1000)), min(n, int(round(w.end_ms * RATE / 1000)))
+        # The envelope uses the word's own end; only the samples written stop at the file
+        # end, so a word cut by the end of the audio stays cut (no fade-out of its own).
+        a, b = int(round(w.start_ms * RATE / 1000)), int(round(w.end_ms * RATE / 1000))
         step = 2 * math.pi * w.hz / RATE
-        for i in range(a, b):
+        for i in range(a, min(n, b)):
             env = min(1.0, (i - a) / ramp, (b - i) / ramp)
             pcm[i] = int(round(32767 * AMPLITUDE * env * math.sin(step * i)))
     tmp = path.with_name(path.name + ".partial")
