@@ -2,7 +2,34 @@
 
 _Last updated: 2026-11-25_
 
-## Integration PR #14 (`phase2/integration`, draft; not merged)
+## Status at 2026-11-25 (after the PR #14 merge)
+- **M3 prototype scope merged:** PR #14 was merged as **`93a1534`** (a merge commit of the
+  reviewed head `485d16c`; last code `7911092`).
+  - Independent review: cleared, including the outro-audio rights follow-up.
+  - Owner authorization: 2026-11-25.
+  - Native Mac verification: `docs/acceptance/2026-11-25-macos-pr14-7911092/`.
+  - Scope: M3 acquisition infrastructure (stand-in downloader only; real downloads and
+    `yt-dlp` not authorized), durable acquire and highlight-scan jobs, the rule-based
+    highlight baseline (not AI), timestamp review, the 35/65 Shorts prototype with
+    captions and the full 2.5 s RumbleFrame outro, and Pillow 13.0.0.
+- **M4 (shared transcription and signals): in progress** on `phase2/m4-transcription`,
+  built on the M4 test fixtures (PR #17).
+- **M5 preparation, PR #16:**
+  - the provider layer, validator, prompt registry and scoring profiles;
+  - native local inference verified with Ollama 0.40.18 and **Qwen3.5 4B**;
+  - the benchmark at `0021021` passed its synthetic gate (owner, 2026-11-25);
+  - not yet wired into the job queue.
+- **Plans, PR #15:** the M4 and M5/M6 plans.
+- **PR #13** (M1 physical-SSD acceptance): open and separate.
+- **Retained decisions:** Qwen3.5 4B with Ollama; a $0 AI budget; the 60 GiB floor per
+  volume; scoring profile `editorial.default` v1 with a provisional cut of 60.
+- **YouTube channel verification has been received** (owner, 2026-11-25). Publishing stays
+  **disabled**: automated publishing waits for the publishing milestone (Phase 5) and its
+  own authorization.
+
+## Earlier history
+
+### Integration PR #14 (merged 2026-11-25 as `93a1534`)
 It combines URL acquisition with the highlight queue and the Shorts export, on `main` @
 `d9c878e`. **The scope is approved for inclusion by the owner (2026-11-25), subject to
 independent review:**
