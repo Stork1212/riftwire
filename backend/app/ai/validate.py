@@ -60,6 +60,12 @@ def _parse(raw: str, warnings: list[str]) -> object:
     return json.loads(raw)
 
 
+def _contains_words(needle: list[str], hay: list[str]) -> bool:
+    """Whole-word, contiguous match (``"he"`` is not in ``"the"``)."""
+    n = len(needle)
+    return any(hay[i:i + n] == needle for i in range(len(hay) - n + 1))
+
+
 def validate(raw: str, bundle: EvidenceBundle, *, images_shown: bool = False,
              min_clip_ms: int = 8_000, max_clip_ms: int = 60_000) -> Result:
     warnings: list[str] = []
@@ -107,7 +113,14 @@ def validate(raw: str, bundle: EvidenceBundle, *, images_shown: bool = False,
             else:
                 bounds.append(span)
         if len(bounds) == 2:
-            start, end = bounds[0][0], bounds[1][1]
+            # The clip may not leave its window: an item that only overlaps the window
+            # (a long event, a word straddling the edge) is cut at the window edge, so a
+            # long event cannot pull footage the window never offered into the clip.
+            start = max(bounds[0][0], win.t0)
+            end = min(bounds[1][1], win.t1)
+            if (start, end) != (bounds[0][0], bounds[1][1]):
+                warnings.append(f"{at}: clip clamped to window {win.id} "
+                                f"({win.t0}-{win.t1} ms)")
             if end <= start:
                 errors.append(f"{at}: end_id ends before start_id begins")
             elif not (min_clip_ms <= end - start <= max_clip_ms):
@@ -122,6 +135,10 @@ def validate(raw: str, bundle: EvidenceBundle, *, images_shown: bool = False,
             if unknown:
                 errors.append(f"{where}: unknown ids {unknown[:5]}")
                 continue
+            outside = [i for i in ev.ids if items[i][1] < win.t0 or items[i][0] > win.t1]
+            if outside:
+                errors.append(f"{where}: ids {outside[:5]} lie outside window {win.id}; "
+                              "evidence must come from the candidate's own window")
             allowed = _BASIS_PREFIXES[ev.basis]
             if not all(i.startswith(allowed) for i in ev.ids):
                 errors.append(f"{where}: basis {ev.basis!r} must cite only "
@@ -132,7 +149,8 @@ def validate(raw: str, bundle: EvidenceBundle, *, images_shown: bool = False,
                 cited = [words[i].text for i in ev.ids if i in words]
                 if not cited:
                     errors.append(f"{where}: a quote must cite transcript words")
-                elif _norm(ev.quote) not in _norm(" ".join(cited)) or not _norm(ev.quote):
+                elif not _norm(ev.quote) or not _contains_words(_norm(ev.quote).split(),
+                                                                 _norm(" ".join(cited)).split()):
                     errors.append(f"{where}: quote is not in the cited words")
 
     for i in range(len(clips)):

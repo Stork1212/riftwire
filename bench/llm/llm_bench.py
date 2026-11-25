@@ -404,6 +404,9 @@ def benchmark_gate(model_report: dict) -> list[str]:
     s = model_report["summary"]
     splits = s.get("splits") or {"all": s}
     reasons = []
+    if s.get("splits") is not None and not {"dev", "holdout"} <= set(splits):
+        return ["not a full gate: the run did not include both the dev and the held-out "
+                f"scenarios (ran {sorted(splits)})"]
     for label, sub in splits.items():
         reasons += _split_failures(sub, label)
     return reasons
