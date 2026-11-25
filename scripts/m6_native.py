@@ -13,8 +13,10 @@ authorized recording -> shared transcript (real MLX Whisper) -> audio and visual
 highlights with titles and hooks -> 35/65 Short with captions and the full outro.
 
 **Gate** (engineering, not quality): the request completes with at least one accepted AI
-run, cost 0 everywhere, every selected highlight is grounded (times from stored ids, inside
-the recording, 8-60 s, evidence ids resolve), titles pass the claim check, and the
+run, cost 0 everywhere, every selected highlight is grounded (the model's start and end
+ids map to the stored word times, the refined clip lies inside the recording and is 8-45 s,
+every evidence id resolves and lies inside the clip or is flagged in the boundary notes),
+the stored title and hook pass the claim check against the clip's own words, and the
 rendered Short is 1080x1920 with the outro's 2.5 s added. **Informative only:** whether
 the selected highlights overlap the scripted reaction moments (one synthetic recording
 says nothing about highlight quality).
@@ -48,24 +50,24 @@ os.environ.update({
 })
 sys.path.insert(0, str(Path.cwd()))
 
-from sqlalchemy import select  # noqa: E402
-
-from app.core import config as config_mod  # noqa: E402
-from app.db.session import Database  # noqa: E402
-from app.models import AIRun, Job  # noqa: E402
-from app.services import (  # noqa: E402
+from app.core import config as config_mod
+from app.db.session import Database
+from app.models import AIRun, Job
+from app.services import (
     acquisition,
     ai_highlights,
     analysis_evidence,
     clips,
     highlight_candidates,
     queue,
+    transcripts,
 )
-from app.services.locations import load_layout  # noqa: E402
-from app.workers.worker import WorkerProcess  # noqa: E402
-from tests.conftest import run_migrations  # noqa: E402
-from tests.helpers import import_file  # noqa: E402
-from tests.test_rights import World  # noqa: E402
+from app.services.locations import load_layout
+from app.workers.worker import WorkerProcess
+from sqlalchemy import select
+from tests.conftest import run_migrations
+from tests.helpers import import_file
+from tests.test_rights import World
 
 DURATION_S = 180
 PHRASES = [
@@ -186,17 +188,38 @@ def main() -> int:
                     8_000 <= length <= 45_000):
                 grounded = False
                 problems.append(f"{h['id']}: bounds {h['start_ms']}-{h['end_ms']}")
+            try:                         # the model's ids are the only source of its times
+                a = analysis_evidence.resolve(s, h["start_id"])["start_ms"]
+                b = analysis_evidence.resolve(s, h["end_id"])["end_ms"]
+                if [a, b] != list(h["model_clip"] or []):
+                    grounded = False
+                    problems.append(f"{h['id']}: ids map to {a}-{b}, stored "
+                                    f"{h['model_clip']}")
+            except Exception as e:  # noqa: BLE001
+                grounded = False
+                problems.append(f"{h['id']}: start/end ids do not resolve ({e})")
+            flagged = any("outside the final clip" in n for n in h["boundary_notes"])
             for ref in h["evidence"]:
                 for item in ref["ids"]:
                     try:
-                        analysis_evidence.resolve(s, item)
+                        r = analysis_evidence.resolve(s, item)
                     except Exception:  # noqa: BLE001
                         grounded = False
                         problems.append(f"{h['id']}: unresolved {item}")
-            ok, bad = highlight_candidates.ground_text(h["title"], [])
-            if not ok and not h["text_checks"]:
-                grounded = False
-                problems.append(f"{h['id']}: title claim {bad}")
+                        continue
+                    t0 = r.get("start_ms", r.get("pts_ms"))
+                    t1 = r.get("end_ms", t0)
+                    if t0 is not None and (t1 <= h["start_ms"] or t0 >= h["end_ms"]) \
+                            and not flagged:
+                        grounded = False
+                        problems.append(f"{h['id']}: {item} outside the clip, not flagged")
+            words = transcripts.words(s, h["transcript_id"], h["start_ms"], h["end_ms"]) \
+                if h["transcript_id"] else []
+            for key in ("title", "hook"):
+                ok, bad = highlight_candidates.ground_text(h[key], words)
+                if not ok:
+                    grounded = False
+                    problems.append(f"{h['id']}: stored {key} claims {bad}")
     check("highlights grounded", grounded and len(hl) <= 5,
           f"{len(hl)} of 5 returned; " + ("; ".join(problems) or "all bounds and ids valid"))
     for h in hl:

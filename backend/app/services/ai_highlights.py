@@ -53,7 +53,6 @@ from app.models import (
     RecordingStatus,
     RequestStatus,
     RunStatus,
-    SignalKind,
     SignalRun,
     TranscriptSegment,
 )
@@ -196,6 +195,8 @@ def bundle_for(session: Session, settings: Settings, recording: Recording,
                                      max_words=MAX_WORDS_PER_WINDOW + 1,
                                      max_events=MAX_EVENTS_PER_WINDOW + 1)
         meta["bundles"].append({"window": w.id, "fingerprint": b["fingerprint"]})
+        if b.get("audio", {}).get("available"):      # the run the evidence came from
+            meta["audio_run_id"] = b["audio"]["run_id"]
         tr = b.get("transcript", {})
         if tr.get("available"):
             transcript_id = tr["id"]
@@ -297,12 +298,18 @@ def _editorial(session: Session, req: HighlightRequest, row: dict, min_score: in
         words = transcripts.words(session, row["transcript_id"],
                                   max(0, clip["start_ms"] - MAX_CLIP_MS),
                                   clip["end_ms"] + MAX_CLIP_MS)
-    assessed = evidence_reliability.for_recording(session, recording, words)
+    # The audio run the model's evidence came from (not whatever is current now).
+    audio_id = row.get("audio_run_id")
+    audio = session.get(SignalRun, audio_id) if audio_id else None
+    series = signals.series(audio) if audio else None
+    assessed = evidence_reliability.assess_words(
+        words, series, audio_state="measured" if audio else "pending")
     reliability = {f"w:{row['transcript_id']}:{w['idx']}": a
                    for w, a in zip(words, assessed, strict=True)}
+    # Every word except suspected hallucinations: a boundary never cuts into speech, and
+    # low-confidence speech is still speech (not dead air).
     usable = [w for w, a in zip(words, assessed, strict=True) if a["caption"] == "show"]
-    audio = signals.current(session, recording.id, SignalKind.AUDIO)
-    silences = signals.series(audio).get("silences_ms", []) if audio else []
+    silences = series.get("silences_ms", []) if series else []
     cited = []
     for ref_ in c.get("evidence", []):
         for item in ref_.get("ids", []):
@@ -319,9 +326,8 @@ def _editorial(session: Session, req: HighlightRequest, row: dict, min_score: in
                                       silences=silences if audio else None, cited=cited)
     row["clip"] = {"start_ms": ref["start_ms"], "end_ms": ref["end_ms"]}
     row["boundary_notes"] = ref["notes"]
-    reliable_words = [w for w, a in zip(words, assessed, strict=True) if a["can_trigger"]]
     row["penalties"] = highlight_candidates.penalties(
-        start_ms=ref["start_ms"], end_ms=ref["end_ms"], candidate=c, words=reliable_words,
+        start_ms=ref["start_ms"], end_ms=ref["end_ms"], candidate=c, words=usable,
         silences=silences, word_reliability=reliability)
     row["score"] = max(0, row["model_score"] - sum(p["points"] for p in row["penalties"]))
     row["below_cut"] = row["score"] < min_score
@@ -372,7 +378,8 @@ def finalize(session: Session, req: HighlightRequest) -> dict:
             score_row = kept.get(c["window_id"]) or rejected[c["window_id"]]
             row = {"run": r, "c": c, "model_clip": clip, "model_score":
                    score_row["editorial_score"], "fingerprint": fp, "transcript_id": tr,
-                   "window": windows_meta.get(c["window_id"], {})}
+                   "window": windows_meta.get(c["window_id"], {}),
+                   "audio_run_id": json.loads(r.evidence_json)["meta"].get("audio_run_id")}
             _editorial(session, req, row, min_score)
             rows.append(row)
     rows.sort(key=lambda x: (-x["score"], x["clip"]["start_ms"], x["c"]["window_id"]))
@@ -459,8 +466,9 @@ def describe(session: Session, recording_id: str) -> dict:
         if isinstance(ev, list):                      # M5 rows: the references only
             ev = {"refs": ev}
         return {"id": c.id, "rank": c.rank, "status": c.status, "reason": c.reject_reason,
-                "start_ms": c.start_ms, "end_ms": c.end_ms, "category": c.category,
-                "title": c.title, "hook": c.hook, "what_happens": c.what_happens,
+                "start_ms": c.start_ms, "end_ms": c.end_ms, "start_id": c.start_id,
+                "end_id": c.end_id, "category": c.category, "title": c.title,
+                "hook": c.hook, "what_happens": c.what_happens,
                 "why_entertaining": c.why_entertaining,
                 "editorial_score": c.editorial_score, "confidence": c.confidence,
                 "scores": json.loads(c.scores_json), "evidence": ev.get("refs", []),

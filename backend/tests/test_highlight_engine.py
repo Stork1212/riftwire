@@ -195,3 +195,85 @@ def test_duplicate_window_error_names_the_window():
     res = validate(json.dumps(data), b)
     assert not res.ok
     assert any("appears 2 times" in e and "one candidate per window" in e for e in res.errors)
+
+
+# ------------------------------------------- independent review of PR #22 (2026-11-25)
+@pytest.mark.parametrize("text", [
+    "GTA-6 leaked!", "GTA6 gameplay", "Grand Theft Auto VI is here", "Grand Theft Auto Six",
+    "New trailers dropped", "Three easter eggs", "A world-record jump", "First-ever win",
+    "The leaks are real", "Rockstar confirms it"])
+def test_review_claim_evasions_are_caught(text):
+    ok, bad = highlight_candidates.ground_text(text, [{"w": "wow"}, {"w": "jump"}])
+    assert not ok and bad, text
+
+
+@pytest.mark.parametrize("text,spoken", [
+    ("GTA-6 trailer", "the gta six trailer"), ("Easter eggs everywhere", "an easter egg"),
+    ("World-record jump", "that is a world record")])
+def test_review_supported_claims_still_pass_after_normalisation(text, spoken):
+    ok, bad = highlight_candidates.ground_text(text, [{"w": w} for w in spoken.split()])
+    assert ok, bad
+
+
+def test_review_claims_need_the_token_sequence_not_a_substring():
+    ok, bad = highlight_candidates.ground_text("Leaked footage", [{"w": "bleak"}])
+    assert not ok
+    ok, _ = highlight_candidates.ground_text("Trailer reaction", [{"w": "trailer"},
+                                                                 {"w": "park"}])
+    assert ok
+
+
+def test_review_a_trimmed_window_keeps_its_seed():
+    # A long segment around a seed near its end: trimming must not drop the seed.
+    segs = [{"start_ms": 0, "end_ms": 200_000}]
+    for at in (5_000, 100_000, 195_000):
+        plan = highlight_candidates.plan([_seed(at)], segs, 200_000, max_windows=1,
+                                         max_window_ms=45_000)
+        assert plan and plan[0].start_ms <= at <= plan[0].end_ms, at
+        assert plan[0].end_ms - plan[0].start_ms <= 45_000
+
+
+def test_review_near_duplicate_windows_are_not_both_planned():
+    segs = [{"start_ms": 0, "end_ms": 300_000}]
+    seeds = [_seed(60_000, 2.0), _seed(100_000, 1.5), _seed(250_000, 1.0)]
+    plan = highlight_candidates.plan(seeds, segs, 300_000, max_windows=3,
+                                     max_window_ms=45_000)
+    spans = [(w.start_ms, w.end_ms) for w in plan]
+    for i, x in enumerate(spans):
+        for y in spans[i + 1:]:
+            assert highlight_candidates._overlap_of_shorter(x, y) <= 0.5, spans
+
+
+def test_review_dead_air_tie_is_not_split_and_notes_are_truthful():
+    words = [_w("go", 1_000, 1_400), _w("now", 1_500, 1_900), _w("yes", 12_000, 12_400),
+             _w("ok", 12_500, 12_900)]
+    silences = [[2_000, 11_900]]
+    tie = highlight_candidates.refine(800, 13_000, words, 60_000, silences=silences,
+                                      cited=[(1_000, 1_400), (12_000, 12_400)])
+    assert tie["start_ms"] <= 1_000 and tie["end_ms"] >= 12_900
+    assert not any("measured silence" in n for n in tie["notes"])
+    assert not any("in silence" in n for n in tie["notes"])
+
+
+def test_review_kept_as_chosen_reports_only_that():
+    words = [_w("a", 0, 400), _w("b", 450, 900)]
+    r = highlight_candidates.refine(100, 850, words, 60_000)          # under 8 s anyway
+    assert r["start_ms"] == 100 and r["end_ms"] == 850
+    assert r["notes"] == ["kept as chosen: refinement would make it too short"]
+
+
+def test_review_cited_items_outside_the_clip_are_flagged():
+    words = [_w("go", 1_000, 1_400), _w("yes", 12_000, 12_400), _w("ok", 12_500, 12_900)] + \
+        [_w("more", t, t + 400) for t in range(13_000, 22_000, 500)]
+    r = highlight_candidates.refine(800, 22_000, words, 60_000, silences=[[1_500, 11_900]],
+                                    cited=[(12_000, 12_400), (12_500, 12_900), (1_000, 1_400)])
+    assert r["start_ms"] >= 11_000                                     # majority after
+    assert r["cited_outside"] == 1 and any("outside the final clip" in n for n in r["notes"])
+
+
+def test_review_penalty_counts_overlapping_spans_once():
+    words = [_w("a", 0, 1_000), _w("a2", 500, 1_000), _w("b", 9_000, 10_000)]
+    silences = [[1_000, 9_000], [2_000, 8_000]]                       # overlapping silences
+    p = highlight_candidates.penalties(start_ms=0, end_ms=10_000, candidate={}, words=words,
+                                       silences=silences, word_reliability={})
+    assert p and p[0]["name"] == "dead_air" and p[0]["reason"].startswith("80%")

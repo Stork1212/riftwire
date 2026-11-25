@@ -55,4 +55,15 @@ describe("AIHighlights", () => {
     await userEvent.click(screen.getByRole("button", { name: "Use for Short" }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: "h1", start_ms: 12_000 }));
   });
+
+  it("shows a loading state, then an empty state before any request", async () => {
+    let resolve: (v: AIHighlightState) => void = () => undefined;
+    vi.mocked(getAIHighlights).mockReturnValue(new Promise((r) => { resolve = r; }));
+    render(<AIHighlights recordingId="rec-1" disabled={false} onSelect={() => undefined} />);
+    expect(screen.getByText("Loading AI highlights…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Find highlights" })).toBeDisabled();
+    resolve({ request: null, job: null, highlights: [], rejected: [], runs: [] });
+    expect(await screen.findByText(/No highlights requested/)).toBeInTheDocument();
+    expect(screen.queryByText("Loading AI highlights…")).not.toBeInTheDocument();
+  });
 });

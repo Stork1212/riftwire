@@ -446,7 +446,7 @@ def test_review_bad_prompt_voice_or_scoring_is_a_422(db, settings, recording, pr
 
 @requires_ffmpeg
 def test_review_retries_use_the_windows_planned_on_the_first_run(db, settings, recording,
-                                                                provider):
+                                                                provider, monkeypatch):
     provider["p"] = Scripted(fail_first=1)
     req = _ask(db, settings, recording)
     worker = WorkerProcess(settings, db)
@@ -459,8 +459,13 @@ def test_review_retries_use_the_windows_planned_on_the_first_run(db, settings, r
                 break
     with db.session() as s:
         planned = json.loads(s.get(HighlightRequest, req).plan_json)
-    assert len(planned) >= 2
+    assert planned
+
+    def replanned(*a, **k):
+        raise AssertionError("a retry must reuse the pinned windows")
+
     settings.ai_max_windows = 1                             # a configuration change
+    monkeypatch.setattr(ai_highlights, "windows", replanned)
     drain(db, settings, max_jobs=40)
     with db.session() as s:
         assert json.loads(s.get(HighlightRequest, req).plan_json) == planned
