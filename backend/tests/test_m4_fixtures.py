@@ -57,9 +57,55 @@ def test_runs_are_logged_and_crash_on_demand(speech, tmp_path):
     audio, _ = speech
     log = tmp_path / "runs.jsonl"
     env = {"RIFTWIRE_STUB_WHISPER_LOG": str(log), "RIFTWIRE_STUB_WHISPER_FAIL_AFTER": "2"}
-    assert [run_stub(audio, tmp_path / f"{i}.json", env).returncode for i in range(3)] == [0, 0, 70]
-    assert len(log.read_text().splitlines()) == 3
-    assert not (tmp_path / "2.json").exists()          # a crash leaves no partial output
+    codes = [run_stub(audio, tmp_path / f"{i}.json", env).returncode for i in range(4)]
+    assert codes == [0, 0, 70, 0]                      # exactly one crash, then it recovers
+    assert len(log.read_text().splitlines()) == 4
+    assert not (tmp_path / "2.json").exists()          # this crash mode writes nothing
+
+
+def test_crash_can_leave_truncated_output_like_a_killed_child(speech, tmp_path):
+    audio, _ = speech
+    env = {"RIFTWIRE_STUB_WHISPER_LOG": str(tmp_path / "runs.jsonl"),
+           "RIFTWIRE_STUB_WHISPER_FAIL_AFTER": "0", "RIFTWIRE_STUB_WHISPER_TRUNCATE": "1"}
+    r = run_stub(audio, tmp_path / "out.json", env)
+    assert r.returncode == 70
+    with pytest.raises(json.JSONDecodeError):
+        json.loads((tmp_path / "out.json").read_text())
+
+
+def test_fail_after_without_a_log_is_refused(speech, tmp_path):
+    audio, _ = speech
+    r = run_stub(audio, tmp_path / "out.json", {"RIFTWIRE_STUB_WHISPER_FAIL_AFTER": "1"})
+    assert r.returncode == 64
+
+
+def test_stub_output_keys_match_the_real_child(speech, tmp_path):
+    audio, _ = speech
+    assert run_stub(audio, tmp_path / "o.json", {}).returncode == 0
+    out = json.loads((tmp_path / "o.json").read_text())
+    assert {"words", "text", "language", "import_s", "load_s", "transcribe_s",
+            "mlx_version", "mlx_whisper_version", "torch_installed",
+            "mlx_peak_bytes"} <= set(out)
+
+
+def test_a_word_starting_at_sample_zero_is_not_an_edge_word(tmp_path):
+    words = plan_words(3, start_s=0.0)
+    audio = tone_word_audio(tmp_path / "z.wav", words, 2.0)
+    assert run_stub(audio, tmp_path / "z.json", {}).returncode == 0
+    got = json.loads((tmp_path / "z.json").read_text())["words"]
+    assert [w["prob"] for w in got] == [0.95, 0.95, 0.95]
+
+
+def test_long_audio_is_fast_and_deterministic(tmp_path):
+    import hashlib
+    import time
+
+    words = plan_words(1200, start_s=0.5)            # ~8.5 minutes of speech
+    t0 = time.monotonic()
+    a = tone_word_audio(tmp_path / "a.wav", words, 520.0)
+    assert time.monotonic() - t0 < 60
+    b = tone_word_audio(tmp_path / "b.wav", words, 520.0)
+    assert hashlib.sha256(a.read_bytes()).digest() == hashlib.sha256(b.read_bytes()).digest()
 
 
 def _frames(path: Path) -> list[tuple[float, float]]:
@@ -99,3 +145,12 @@ def test_marker_clip_puts_flashes_and_beeps_at_the_markers(tmp_path, vfr):
     assert all(abs(b - m) <= 0.05 for b, m in zip(beeps, markers, strict=True))
     gaps = {round(b - a, 3) for (a, _), (b, _) in zip(frames, frames[1:], strict=False)}
     assert (len(gaps) > 1) is vfr            # VFR really has irregular frame durations
+
+
+def test_off_grid_markers_still_flash_once_in_step_with_the_beep(tmp_path):
+    clip = marker_clip(tmp_path / "off.mp4", [1.0005, 2.0009, 3.517], 5.0)
+    frames = _frames(clip)
+    flashes = [t for t, y in frames if y > 128]
+    assert len(flashes) == 3                          # none dropped
+    beeps = _beeps(clip)
+    assert all(abs(f - b) <= 0.03 for f, b in zip(flashes, beeps, strict=True))
