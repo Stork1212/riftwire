@@ -56,6 +56,8 @@ class Outcome:
     raw_last: str = ""
     rendered_sha256: str = ""       # SHA-256 of the exact system + user text sent
     channel_voice_sha256: str = ""  # the channel voice file's text (versioned with it)
+    error_code: str | None = None   # provider_error only: the provider's code
+    error_transient: bool | None = None   # provider_error only: may a retry succeed?
 
     def record(self) -> dict:
         return {
@@ -121,6 +123,7 @@ def evaluate(bundle: EvidenceBundle, provider: Provider, prompt: prompt_registry
             resp = provider.generate(req)
         except ProviderError as e:
             out.status, out.error = "provider_error", f"{e.code}: {e}"
+            out.error_code, out.error_transient = e.code, e.transient
             return _finish(out, provider, unload_after, started)
         res = validate(resp.text, bundle, min_clip_ms=mins, max_clip_ms=maxs)
         out.raw_last = resp.text

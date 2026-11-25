@@ -266,6 +266,10 @@ def complete(db: Database, claimed: ClaimedJob,
 
 
 def _apply_terminal_failure(s: Session, job: Job, error: str) -> None:
+    if job.recording_id is not None and job.job_type == JobType.AI_HIGHLIGHTS.value:
+        from app.services import ai_highlights  # its request ends with the job
+
+        ai_highlights.fail_active(s, job.recording_id, f"the AI job failed: {error}")
     if job.recording_id is None or job.job_type in ANALYSIS_JOB_TYPES:
         return
     rec = s.get(Recording, job.recording_id)

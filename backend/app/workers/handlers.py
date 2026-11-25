@@ -392,6 +392,10 @@ def _fail_if(error: str | None, what: str) -> None:
 def handle_transcribe(ctx: JobContext) -> None:
     """The only place RIFTWIRE runs Whisper (M4). Resumable by chunk: every finished chunk
     is stored in its own fenced transaction and never transcribed again."""
+    from app.ai import registry
+
+    if registry.calls_in_flight():          # one heavy workload at a time (M5)
+        raise MemoryPressureJobError("an earlier local AI call is still finishing")
     require_storage(ctx)
     recording = _load_recording(ctx)
     if recording.status != RecordingStatus.READY.value or not recording.duration_ms:
@@ -606,16 +610,23 @@ def handle_highlight_scan(ctx: JobContext) -> None:
 
 
 # ------------------------------------------------------------------------ AI_HIGHLIGHTS
-PERMANENT_PROVIDER_CODES = {"non_loopback_endpoint", "provider_disabled", "model_missing",
-                            "structured_output_unavailable", "engine_not_implemented"}
+
+class _Superseded(Exception):
+    pass
+
 
 def handle_ai_highlights(ctx: JobContext) -> None:
     """M5: evaluate candidate windows with the local model, batch by batch, from stored
     analysis only. Each batch's run is stored in its own fenced transaction, so a retry
-    (provider down, worker restart, lost lease) resumes at the first unfinished batch.
-    One heavy workload at a time is the worker's single-job loop; the model is unloaded
-    after every batch."""
-    from app.ai import registry
+    (provider down, worker restart, lost lease) resumes at the first unfinished batch of
+    the windows pinned on the request's first run. One heavy workload at a time is the
+    worker's single-job loop; the model is unloaded after every batch.
+
+    A newer request supersedes the one in progress: the job stops at the next batch (or
+    at finalization) without finishing the old request, and waits briefly, without
+    spending an attempt, to pick up the new one."""
+    from app.ai import prompts as prompt_registry
+    from app.ai import registry, scoring
     from app.models import HighlightRequest, RequestStatus
     from app.services import ai_highlights
 
@@ -625,30 +636,54 @@ def handle_ai_highlights(ctx: JobContext) -> None:
     settings = ctx.settings
     with ctx.db.session() as s:
         req = ai_highlights.active_request(s, recording.id)
-        if req is None:                       # superseded or nothing to do
-            queue.complete(ctx.db, ctx.claimed)
-            return
-        req_id = req.id
+        req_id = req.id if req is not None else None
+    if req_id is None:                        # nothing to do (all requests finished)
+        queue.complete(ctx.db, ctx.claimed)
+        return
+    if registry.calls_in_flight():
+        raise MemoryPressureJobError("an earlier local AI call is still finishing")
     transcript = _shared_transcript(ctx, recording)
     visual = _shared_visual(ctx, recording)
-    audio = _shared_audio(ctx, recording) if transcript != (None, []) else None
+    audio = _shared_audio(ctx, recording) if transcript != (None, []) else \
+        ("unused", None, None)
     pending = [n for n, v in (("transcript", transcript), ("visual signals", visual),
                               ("audio signals", audio)) if v is _PENDING]
     if pending:
         raise DependencyPendingJobError(f"waiting for the shared {' and '.join(pending)}")
     _transcript_id, words = transcript
-    assessed = evidence_reliability.assess_words(
-        words, audio[1] if audio else None, has_audio=recording.has_audio)
-    triggering = [w for w, a in zip(words, assessed, strict=True) if a["can_trigger"]]
-    planned = ai_highlights.windows(visual[1], triggering, recording.duration_ms,
-                                    settings.ai_max_windows)
-    per = settings.ai_windows_per_call
-    batches = [planned[i:i + per] for i in range(0, len(planned), per)]
+    audio_state, _audio_run, audio_series = audio
+
+    def superseded() -> None:
+        # Never finalize a superseded request. The job is still needed if a newer request
+        # is waiting (request() does not re-arm a running job): wait, no attempt spent.
+        with ctx.db.session() as s:
+            newer = ai_highlights.active_request(s, recording.id)
+        if newer is None:
+            queue.complete(ctx.db, ctx.claimed)
+            return
+        raise DependencyPendingJobError("superseded by a newer highlight request; "
+                                        "starting it next")
+
     with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
         r = s.get(HighlightRequest, req_id)
-        if r.status == RequestStatus.PENDING.value:
-            r.status = RequestStatus.RUNNING.value
-        done = ai_highlights.finished_batches(s, req_id)
+        if r.status == RequestStatus.SUPERSEDED.value:
+            planned = None
+        else:
+            planned = ai_highlights.pinned_plan(r)
+            if planned is None:   # first run: plan once, reuse on every retry
+                assessed = evidence_reliability.assess_words(words, audio_series,
+                                                             audio_state=audio_state)
+                triggering = evidence_reliability.triggering(words, assessed, audio_state)
+                planned = ai_highlights.windows(visual[1], triggering, recording.duration_ms,
+                                                settings.ai_max_windows)
+                ai_highlights.pin_plan(r, planned)
+            if r.status == RequestStatus.PENDING.value:
+                r.status = RequestStatus.RUNNING.value
+            done = ai_highlights.finished_batches(s, req_id)
+    if planned is None:
+        return superseded()
+    per = settings.ai_windows_per_call
+    batches = [planned[i:i + per] for i in range(0, len(planned), per)]
     todo = [n for n in range(len(batches)) if n not in done]
     if todo:
         free = registry.available_memory_mb()
@@ -661,39 +696,50 @@ def handle_ai_highlights(ctx: JobContext) -> None:
         except registry.AIDisabled as e:
             raise PermanentJobError(str(e)) from e
     ctx.progress(5)
-    for k, n in enumerate(todo):
+    try:
+        for k, n in enumerate(todo):
+            ctx.check()
+            with ctx.db.session() as s:
+                r = s.get(HighlightRequest, req_id)
+                superseded = r.status == RequestStatus.SUPERSEDED.value
+                if not superseded:
+                    bundle, meta = ai_highlights.bundle_for(s, settings, recording,
+                                                            batches[n], r.game)
+                    s.expunge(r)
+            if superseded:
+                raise _Superseded()
+            try:
+                outcome = ai_highlights.evaluate_batch(bundle, provider, r, settings)
+            except (prompt_registry.PromptError, scoring.ScoringError) as e:
+                raise PermanentJobError(f"the request's prompt or scoring is no longer "
+                                        f"available: {e}") from e
+            if outcome.status == "provider_error" and outcome.error_code == "cancelled":
+                ctx.check()                    # raises: cancellation or lost lease
+            with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
+                ai_highlights.store_run(s, s.get(HighlightRequest, req_id), n, outcome,
+                                        bundle, meta, settings)
+            if outcome.status == "provider_error":
+                if outcome.error_transient is False:
+                    raise PermanentJobError(f"local AI provider refused: {outcome.error}")
+                raise TransientJobError(f"local AI provider error on batch {n + 1}: "
+                                        f"{outcome.error}")
+            ctx.progress(5 + 90 * (k + 1) // max(1, len(todo)))
         ctx.check()
-        with ctx.db.session() as s:
-            r = s.get(HighlightRequest, req_id)
-            if r.status == RequestStatus.SUPERSEDED.value:
-                queue.complete(ctx.db, ctx.claimed)
-                return
-            bundle, meta = ai_highlights.bundle_for(s, settings, recording, batches[n], r.game)
-            s.expunge(r)
-        outcome = ai_highlights.evaluate_batch(bundle, provider, r, settings)
-        if outcome.status == "provider_error" and "cancelled" in (outcome.error or ""):
-            ctx.check()                        # raises: cancellation or lost lease
-        with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
-            ai_highlights.store_run(s, s.get(HighlightRequest, req_id), n, outcome, bundle,
-                                    meta, settings)
-        if outcome.status == "provider_error":
-            if (outcome.error or "").split(":", 1)[0] in PERMANENT_PROVIDER_CODES:
-                raise PermanentJobError(f"local AI provider refused: {outcome.error}")
-            raise TransientJobError(f"local AI provider error on batch {n + 1}: "
-                                    f"{outcome.error}")
-        ctx.progress(5 + 90 * (k + 1) // max(1, len(todo)))
-    ctx.check()
 
-    def apply(session: Session) -> None:
-        r = session.get(HighlightRequest, req_id)
-        summary = ai_highlights.finalize(session, r)
-        record_event(session, Severity.INFO, "worker", "ai_highlights_completed",
-                     f"AI highlights: {summary['returned']} of {summary['requested']} "
-                     f"requested ({summary['candidates_validated']} validated candidates, "
-                     f"{summary['batches']} batches).",
-                     job_id=ctx.job_id, recording_id=recording.id)
+        def apply(session: Session) -> None:
+            r = session.get(HighlightRequest, req_id)
+            if r.status == RequestStatus.SUPERSEDED.value:     # superseded at the last step
+                raise _Superseded()
+            summary = ai_highlights.finalize(session, r)
+            record_event(session, Severity.INFO, "worker", "ai_highlights_completed",
+                         f"AI highlights: {summary['returned']} of {summary['requested']} "
+                         f"requested ({summary['candidates_validated']} validated "
+                         f"candidates, {summary['batches']} batches).",
+                         job_id=ctx.job_id, recording_id=recording.id)
 
-    queue.complete(ctx.db, ctx.claimed, apply)
+        queue.complete(ctx.db, ctx.claimed, apply)
+    except _Superseded:
+        return superseded()
 
 
 HANDLERS: dict[JobType, Callable[[JobContext], None]] = {

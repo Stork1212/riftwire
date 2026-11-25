@@ -31,16 +31,15 @@ def build(settings: Settings) -> Provider:
 
 def available_memory_mb() -> int | None:
     """Memory the OS can hand to a new process now (MB), or ``None`` if unknown.
-    macOS: free + inactive + speculative + purgeable pages (``vm_stat``); Linux:
-    ``MemAvailable``."""
+    macOS: free + inactive + speculative pages (``vm_stat``; purgeable pages are already
+    counted among those and would be double-counted); Linux: ``MemAvailable``."""
     try:
         if sys.platform == "darwin":
             out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5,
                                  check=True).stdout
             size = int(re.search(r"page size of (\d+) bytes", out).group(1))
             pages = 0
-            for key in ("Pages free", "Pages inactive", "Pages speculative",
-                        "Pages purgeable"):
+            for key in ("Pages free", "Pages inactive", "Pages speculative"):
                 m = re.search(rf"^{key}:\s+(\d+)\.", out, re.MULTILINE)
                 pages += int(m.group(1)) if m else 0
             return pages * size // (1024 * 1024)
@@ -53,13 +52,31 @@ def available_memory_mb() -> int | None:
     return None
 
 
+_live: set[threading.Thread] = set()
+_live_lock = threading.Lock()
+
+
+def calls_in_flight() -> int:
+    """Generation calls still running in this process, including ones abandoned by a
+    stopped job (an HTTP call cannot be interrupted; it ends at the provider's timeout).
+    Heavy jobs wait while this is non-zero, so two workloads never share the memory."""
+    with _live_lock:
+        for t in [t for t in _live if not t.is_alive()]:
+            _live.discard(t)
+        return len(_live)
+
+
 class Cancellable:
     """Wraps a provider so a blocking ``generate`` can be abandoned when the job is
     cancelled or loses its lease: the call runs in a worker thread (bounded by the
-    provider's own HTTP timeout) and the model is asked to unload."""
+    provider's own HTTP timeout), the model is asked to unload, and the thread is joined
+    for up to ``join_s``. A thread still alive after that stays counted by
+    :func:`calls_in_flight`, which keeps heavy jobs from starting beside it."""
 
-    def __init__(self, inner: Provider, should_stop, poll_s: float = 0.25):
+    def __init__(self, inner: Provider, should_stop, poll_s: float = 0.25,
+                 join_s: float = 30.0):
         self.inner, self.should_stop, self.poll_s = inner, should_stop, poll_s
+        self.join_s = join_s
 
     def identity(self) -> Identity:
         return self.inner.identity()
@@ -81,6 +98,8 @@ class Cancellable:
                 box["error"] = e
 
         t = threading.Thread(target=call, name="ai-generate", daemon=True)
+        with _live_lock:
+            _live.add(t)
         t.start()
         while t.is_alive():
             if self.should_stop():
@@ -88,7 +107,10 @@ class Cancellable:
                     self.unload()
                 except ProviderError:
                     pass
-                raise ProviderError("the job was cancelled during generation",
+                t.join(self.join_s)
+                raise ProviderError("the job was cancelled during generation"
+                                    + ("" if not t.is_alive() else
+                                       " (the call is still finishing)"),
                                     transient=True, code="cancelled")
             t.join(self.poll_s)
             time.sleep(0)

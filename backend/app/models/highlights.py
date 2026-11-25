@@ -36,7 +36,8 @@ class RunStatus(enum.StrEnum):
     ACCEPTED = "accepted"
     FAILED_VALIDATION = "failed_validation"
     PROVIDER_ERROR = "provider_error"
-    CANCELLED = "cancelled"
+    # A call abandoned because the job was stopped is not stored: the batch is simply not
+    # finished, and the retry makes the call again.
 
 
 class CandidateStatus(enum.StrEnum):
@@ -72,6 +73,8 @@ class HighlightRequest(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False,
                                         default=RequestStatus.PENDING.value)
     settings_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    # The candidate windows, planned once on the first run and reused on every retry.
+    plan_json: Mapped[str | None] = mapped_column(Text)
     summary_json: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
     job_id: Mapped[str | None] = mapped_column(UUIDStr)

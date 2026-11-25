@@ -27,7 +27,7 @@ TRIGGERS = {
         BEGIN SELECT RAISE(ABORT, 'AI runs are immutable'); END""",
     "trg_highlight_candidates_immutable": """
         CREATE TRIGGER trg_highlight_candidates_immutable
-        BEFORE UPDATE OF request_id, ai_run_id, status, rank, reject_reason, window_id,
+        BEFORE UPDATE OF id, created_at, request_id, ai_run_id, status, rank, reject_reason, window_id,
             start_ms, end_ms, start_id, end_id, category, title, hook, what_happens,
             why_entertaining, scores_json, editorial_score, confidence, evidence_json,
             uncertainty, transcript_id, evidence_fingerprint ON highlight_candidates
@@ -56,6 +56,7 @@ def upgrade() -> None:
         sa.Column("target_count", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("settings_json", sa.Text(), nullable=False),
+        sa.Column("plan_json", sa.Text()),
         sa.Column("summary_json", sa.Text()),
         sa.Column("error", sa.Text()),
         sa.Column("job_id", sa.String(36)),
@@ -95,8 +96,8 @@ def upgrade() -> None:
         sa.Column("wall_s", sa.Float(), nullable=False),
         sa.Column("cost_usd", sa.Float(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.CheckConstraint("status IN ('accepted','failed_validation','provider_error',"
-                           "'cancelled')", name=op.f("ck_ai_runs_status_valid")),
+        sa.CheckConstraint("status IN ('accepted','failed_validation','provider_error')",
+                           name=op.f("ck_ai_runs_status_valid")),
         sa.CheckConstraint("cost_usd = 0", name=op.f("ck_ai_runs_cost_zero")),
     )
     op.create_index("ix_ai_runs_request", "ai_runs", ["request_id"])
