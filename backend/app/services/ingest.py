@@ -33,7 +33,15 @@ from app.core.logging import get_logger
 from app.core.testhooks import crashpoint
 from app.db.base import utcnow
 from app.db.session import Database
-from app.models import Job, JobStatus, JobType, Recording, RecordingStatus, Severity
+from app.models import (
+    Job,
+    JobStatus,
+    JobType,
+    Keyframe,
+    Recording,
+    RecordingStatus,
+    Severity,
+)
 from app.services import media, reservations, transfer
 from app.services.events import record_event
 from app.services.locations import Layout, get_layout, require_no_maintenance
@@ -310,7 +318,9 @@ LINK_UNSUPPORTED = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, e
 # <rec>[.<ext>].<token>.partial — attempt-scoped staging copies (see services.transfer).
 _PARTIAL_RE = re.compile(
     r"^(?P<rec>[0-9a-f-]{36})(?:\.[a-z0-9]{1,10})?\.(?P<token>[0-9a-z-]+)\.partial$")
-_THUMB_TMP_RE = re.compile(r"^\.job-(?P<job>[0-9a-f-]{36})-(?P<token>[0-9a-z-]+)\.tmp\.jpg$")
+# Thumbnails (.job-<job>-<token>.tmp.jpg) and M4 keyframes (.job-<job>-<token>.kf<n>.tmp.jpg)
+_THUMB_TMP_RE = re.compile(
+    r"^\.job-(?P<job>[0-9a-f-]{36})-(?P<token>[0-9a-z-]+)(?:\.kf\d+)?\.tmp\.jpg$")
 _JOB_TMP_RE = re.compile(r"^job-(?P<job>[0-9a-f-]{36})-(?P<token>[0-9a-z-]+)\.tmp\.")
 
 
@@ -542,6 +552,14 @@ def reconcile(db: Database, settings: Settings, component: str,
                 if not settings.managed_path(rec.file_path).exists():
                     report.missing_files.append(rec.id)
 
+        # M4 keyframes published by os.link whose transaction then failed: reported, kept
+        # (only files older than an hour, so an in-flight publish is never reported).
+        if settings.thumbnails_dir.is_dir():
+            known_kf = set(s.scalars(select(Keyframe.stored_filename)))
+            for p in sorted(settings.thumbnails_dir.glob("kf-*.jpg")):
+                if p.name not in known_kf and now_ts - p.stat().st_mtime > 3600:
+                    report.orphan_files.append(f"thumbnails/{p.name}")
+
         if report.removed_temp:
             record_event(s, Severity.INFO, component, "temp_cleanup",
                          f"Removed {len(report.removed_temp)} stale temporary file(s)")
@@ -549,8 +567,9 @@ def reconcile(db: Database, settings: Settings, component: str,
             record_event(s, Severity.WARNING, component, "ingest_reenqueued",
                          "STAGED recording had no INGEST job; re-enqueued", recording_id=rid)
         for name in report.orphan_files:
+            shown = name if name.startswith("thumbnails/") else f"recordings/{name}"
             record_event(s, Severity.WARNING, component, "orphan_recording_file",
-                         f"File in recordings/ has no database record (kept): {name}")
+                         f"File has no database record (kept): {shown}")
         for rid in report.missing_files:
             record_event(s, Severity.ERROR, component, "recording_file_missing",
                          "READY recording's file is missing from recordings/",

@@ -330,12 +330,13 @@ def defer(db: Database, claimed: ClaimedJob, reason: str, delay_seconds: float, 
         job.process_pid = None
         job.process_started_at = None
         job.updated_at = now
+        already = (job.last_error or "").startswith(f"waiting for {waiting_for}:")
         job.last_error = f"waiting for {waiting_for}: {reason}"[:4000]
         if waiting_for == "storage":
             record_event(s, Severity.WARNING, "worker", "job_waiting_for_storage",
                          f"{job.job_type} job waiting for storage (attempt not counted): "
                          f"{reason}", job_id=job.id, recording_id=job.recording_id)
-        else:
+        elif not already:            # one event per wait, not one per re-check
             record_event(s, Severity.INFO, "worker", "job_waiting_for_dependency",
                          f"{job.job_type} job waiting for {waiting_for} (attempt not "
                          f"counted): {reason}", job_id=job.id, recording_id=job.recording_id)

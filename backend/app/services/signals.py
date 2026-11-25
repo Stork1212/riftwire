@@ -25,6 +25,8 @@ import hashlib
 import json
 import math
 import re
+from array import array
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable
 from pathlib import Path
 
@@ -59,7 +61,8 @@ VISUAL_CONFIG = {
 KEYFRAME_RESERVE_BYTES = 300_000
 JOB_FOR = {SignalKind.AUDIO: JobType.AUDIO_SIGNALS, SignalKind.VISUAL: JobType.VISUAL_SIGNALS}
 KIND_FOR = {v: k for k, v in JOB_FOR.items()}
-_FRAME = re.compile(r"^frame:\s*\d+\s+pts:\s*-?\d+\s+pts_time:\s*(-?[\d.]+)")
+_FRAME = re.compile(r"^frame:\s*\d+\s+pts:\s*(?:-?\d+|NOPTS)\s+pts_time:\s*(-?[\d.]+|NOPTS)")
+_UNSAFE_PATH = re.compile(r"[\\':,;\[\]=]")
 _KV = re.compile(r"^lavfi\.([\w.]+)=(.*)$")
 
 
@@ -73,19 +76,31 @@ def fingerprint(cfg: dict) -> str:
 
 
 # ------------------------------------------------------------------- FFmpeg metadata
-def parse_metadata(text: str) -> list[tuple[float, dict[str, str]]]:
-    """``metadata=print`` / ``ametadata=print`` output -> ``[(pts_seconds, {key: value})]``
-    in decode order. Keys lose their ``lavfi.`` prefix."""
-    frames: list[tuple[float, dict[str, str]]] = []
-    for line in text.splitlines():
+def iter_metadata(lines, offset_s: float = 0.0):
+    """Stream ``metadata=print`` / ``ametadata=print`` lines -> ``(pts_seconds, {key:
+    value})`` per frame, in decode order, with ``offset_s`` (the stream's start time)
+    subtracted so times are relative to the recording's start, like the transcript's. A
+    frame without a timestamp (``NOPTS``) is skipped with its values."""
+    t: float | None = None
+    kv: dict[str, str] = {}
+    have = False
+    for line in lines:
         m = _FRAME.match(line)
         if m:
-            frames.append((float(m.group(1)), {}))
+            if have and t is not None:
+                yield t, kv
+            have, kv = True, {}
+            t = None if m.group(1) == "NOPTS" else float(m.group(1)) - offset_s
             continue
-        kv = _KV.match(line.strip())
-        if kv and frames:
-            frames[-1][1][kv.group(1)] = kv.group(2)
-    return frames
+        x = _KV.match(line.strip())
+        if x and have:
+            kv[x.group(1)] = x.group(2)
+    if have and t is not None:
+        yield t, kv
+
+
+def parse_metadata(text: str, offset_s: float = 0.0) -> list[tuple[float, dict[str, str]]]:
+    return list(iter_metadata(text.splitlines(), offset_s))
 
 
 def _num(value: str | None, floor: float) -> float:
@@ -156,13 +171,20 @@ def analyse_audio(frames: list[tuple[float, dict[str, str]]], duration_ms: int,
 
 
 # -------------------------------------------------------------------------- visual
-def analyse_visual(frames: list[tuple[float, dict[str, str]]], duration_ms: int,
-                   cfg: dict = VISUAL_CONFIG) -> tuple[dict, list[dict], list[dict]]:
-    """Series, events and scenes from per-frame ``scdet`` metadata (real frame times)."""
-    pts = [int(round(t * 1000)) for t, _ in frames]
-    mafd = [_num(kv.get("scd.mafd"), 0.0) for _, kv in frames]
-    score = [_num(kv.get("scd.score"), 0.0) for _, kv in frames]
-    cuts = [int(round(float(kv["scd.time"]) * 1000)) for _, kv in frames if "scd.time" in kv]
+def analyse_visual(frames, duration_ms: int, cfg: dict = VISUAL_CONFIG
+                   ) -> tuple[dict, list[dict], list[dict]]:
+    """Series, events and scenes from per-frame ``scdet`` metadata (real frame times).
+    ``frames`` may be any iterable (streamed from a file): only compact arrays are kept
+    (a 3-hour 60 fps recording is ~650,000 frames)."""
+    pts, mafd, score = array("q"), array("d"), array("d")
+    cuts: list[int] = []
+    for t, kv in frames:
+        ms = int(round(t * 1000))
+        pts.append(ms)
+        mafd.append(_num(kv.get("scd.mafd"), 0.0))
+        score.append(_num(kv.get("scd.score"), 0.0))
+        if "scd.time" in kv:
+            cuts.append(ms)
     bin_ms = cfg["bin_ms"]
     n_bins = max(1, math.ceil(duration_ms / bin_ms))
     sums, counts, peaks = [0.0] * n_bins, [0] * n_bins, [0.0] * n_bins
@@ -193,9 +215,9 @@ def analyse_visual(frames: list[tuple[float, dict[str, str]]], duration_ms: int,
         else:
             i += 1
     w = cfg["calm_window_ms"]
-    for c in cuts:
-        before = [m for t, m in zip(pts, mafd, strict=True) if c - w <= t < c]
-        after = [m for t, m in zip(pts, mafd, strict=True) if c < t <= c + w]
+    for c in cuts:                       # bisect: O(cuts x frames in the window)
+        before = mafd[bisect_left(pts, c - w):bisect_left(pts, c)]
+        after = mafd[bisect_right(pts, c):bisect_right(pts, c + w)]
         if before and after and max(before) <= cfg["calm_mafd"] and max(after) <= cfg["calm_mafd"]:
             events.append({"type": "potential_camera_change", "kind": "inferred",
                            "start_ms": c, "end_ms": c, "method": "scene cut with low motion "
@@ -210,9 +232,14 @@ def analyse_visual(frames: list[tuple[float, dict[str, str]]], duration_ms: int,
     return series, events, scenes
 
 
-def _vfr(pts: list[int]) -> bool:
-    gaps = [b - a for a, b in zip(pts, pts[1:], strict=False) if b > a]
-    return bool(gaps) and max(gaps) - min(gaps) > 2
+def _vfr(pts) -> bool:
+    lo = hi = None
+    for a, b in zip(pts, pts[1:], strict=False):
+        if b > a:
+            g = b - a
+            lo = g if lo is None else min(lo, g)
+            hi = g if hi is None else max(hi, g)
+    return lo is not None and hi - lo > 2
 
 
 def keyframe_plan(scenes: list[dict], duration_ms: int, cfg: dict = VISUAL_CONFIG) -> list[dict]:
@@ -224,44 +251,101 @@ def keyframe_plan(scenes: list[dict], duration_ms: int, cfg: dict = VISUAL_CONFI
 
 
 # ------------------------------------------------------------------------- runs
-def audio_command(ffmpeg: str, source: Path, cfg: dict = AUDIO_CONFIG) -> list[str]:
+def _sink(meta_file: Path | None) -> str:
+    """Where ``metadata=print`` writes: a file when its path is safe inside a filtergraph
+    (no escaping surprises), otherwise stdout."""
+    if meta_file is None or _UNSAFE_PATH.search(str(meta_file)):
+        return "-"
+    return str(meta_file)
+
+
+def audio_command(ffmpeg: str, source: Path, cfg: dict = AUDIO_CONFIG,
+                  meta_file: Path | None = None) -> list[str]:
     n = cfg["sample_rate"] * cfg["window_ms"] // 1000
     return [ffmpeg, "-nostdin", "-v", "error", "-i", str(source), "-vn", "-map", "0:a:0",
             "-af", f"aresample={cfg['sample_rate']},pan=mono|c0=c0,asetnsamples=n={n}:p=0,"
                    "astats=metadata=1:reset=1:measure_overall=RMS_level+Peak_level:"
-                   "measure_perchannel=none,ametadata=print:file=-",
+                   f"measure_perchannel=none,ametadata=print:file={_sink(meta_file)}",
             "-f", "null", "-"]
 
 
-def visual_command(ffmpeg: str, source: Path, cfg: dict = VISUAL_CONFIG) -> list[str]:
+def visual_command(ffmpeg: str, source: Path, cfg: dict = VISUAL_CONFIG,
+                   meta_file: Path | None = None) -> list[str]:
     return [ffmpeg, "-nostdin", "-v", "error", "-i", str(source), "-an", "-map", "0:v:0",
             "-fps_mode", "passthrough",
             "-vf", f"scale={cfg['proxy_width']}:-2,format=gray,"
-                   f"scdet=threshold={cfg['scdet_threshold']},metadata=print:file=-",
+                   f"scdet=threshold={cfg['scdet_threshold']},"
+                   f"metadata=print:file={_sink(meta_file)}",
             "-f", "null", "-"]
 
 
+def start_offset_s(ffprobe: str, source: Path, run) -> float:
+    """The file's start time. FFmpeg's metadata reports absolute presentation times, while
+    transcript chunks and keyframe seeks are relative to the file start, so signal times
+    are shifted by this to share the recording's time base."""
+    r = run([ffprobe, "-v", "error", "-show_entries", "format=start_time", "-of",
+             "default=nw=1:nk=1", str(source)], 60)
+    out = getattr(r, "stdout", b"")
+    out = out.decode(errors="replace") if isinstance(out, bytes) else (out or "")
+    try:
+        v = float(out.strip().splitlines()[0])
+        return v if math.isfinite(v) else 0.0
+    except (ValueError, IndexError):
+        return 0.0
+
+
 def measure(kind: SignalKind, ffmpeg: str, source: Path, duration_ms: int,
-            run: Callable[[list[str], float], object], timeout: float
+            run: Callable[[list[str], float], object], timeout: float, *,
+            work: Path | None = None, ffprobe: str = "ffprobe"
             ) -> tuple[dict, list[dict], list[dict]]:
-    cmd = (audio_command if kind == SignalKind.AUDIO else visual_command)(ffmpeg, source)
+    """One FFmpeg pass. With ``work`` (a temporary folder), the per-frame metadata goes to a
+    file there and is parsed as a stream, so memory does not grow with the recording."""
+    offset = start_offset_s(ffprobe, source, run)
+    meta = (work / f"{kind.value}-metadata.txt") if work is not None else None
+    build = audio_command if kind == SignalKind.AUDIO else visual_command
+    cmd = build(ffmpeg, source, meta_file=meta)
+    to_file = meta is not None and _sink(meta) != "-"
     r = run(cmd, timeout)
     if getattr(r, "returncode", 1):
-        raise TransientJobError(f"FFmpeg {kind.value} analysis failed: "
-                                f"{(getattr(r, 'stderr', '') or '')[-300:]}")
-    out = getattr(r, "stdout", b"")
-    frames = parse_metadata(out.decode("utf-8", "replace") if isinstance(out, bytes) else out)
-    if not frames:
-        raise PermanentJobError(f"FFmpeg reported no {kind.value} frames for this recording")
-    if kind == SignalKind.AUDIO:
-        series, events = analyse_audio(frames, duration_ms)
-        return series, events, []
-    return analyse_visual(frames, duration_ms)
+        err = getattr(r, "stderr", "") or ""
+        err = err.decode(errors="replace") if isinstance(err, bytes) else err
+        raise TransientJobError(f"FFmpeg {kind.value} analysis failed: {err[-300:]}")
+    if to_file:
+        if not meta.is_file():
+            raise TransientJobError(f"FFmpeg wrote no {kind.value} metadata")
+        fh = meta.open(encoding="utf-8", errors="replace")
+        lines = fh
+    else:
+        out = getattr(r, "stdout", b"")
+        fh = None
+        lines = (out.decode("utf-8", "replace") if isinstance(out, bytes) else out).splitlines()
+    try:
+        frames = iter_metadata(lines, offset)
+        if kind == SignalKind.AUDIO:
+            frames = list(frames)                 # ~10 rows per second: small
+            if not frames:
+                raise PermanentJobError("FFmpeg reported no audio frames for this recording")
+            series, events = analyse_audio(frames, duration_ms)
+            series["start_offset_s"] = offset
+            return series, events, []
+        series, events, scenes = analyse_visual(frames, duration_ms)
+        if not series["frames"]:
+            raise PermanentJobError("FFmpeg reported no video frames for this recording")
+        series["start_offset_s"] = offset
+        return series, events, scenes
+    finally:
+        if fh is not None:
+            fh.close()
+        if meta is not None:
+            meta.unlink(missing_ok=True)
 
 
 def prepare(session: Session, recording: Recording, kind: SignalKind, job_id: str) -> SignalRun:
     cfg = config(kind)
     fp = fingerprint(cfg)
+    job = session.get(Job, job_id)
+    if job is not None:                     # which configuration this attempt works on
+        job.result_json = json.dumps({"config_fingerprint": fp})
     run = session.scalar(select(SignalRun).where(
         SignalRun.recording_id == recording.id, SignalRun.kind == kind.value,
         SignalRun.config_fingerprint == fp))
@@ -299,6 +383,19 @@ def current(session: Session, recording_id: str, kind: SignalKind) -> SignalRun 
         SignalRun.recording_id == recording_id, SignalRun.kind == kind.value,
         SignalRun.config_fingerprint == fingerprint(config(kind)),
         SignalRun.status == SignalStatus.COMPLETE.value))
+
+
+def failed_for_current_config(session: Session, recording_id: str,
+                              kind: SignalKind) -> str | None:
+    """The error of this kind's signal job if it failed for the current configuration."""
+    job = session.scalar(select(Job).where(Job.recording_id == recording_id,
+                                           Job.job_type == JOB_FOR[kind].value))
+    if job is None or job.status != JobStatus.FAILED.value:
+        return None
+    ran = json.loads(job.result_json or "{}").get("config_fingerprint")
+    if ran is not None and ran != fingerprint(config(kind)):
+        return None
+    return job.last_error or f"{kind.value} signal measurement failed"
 
 
 def series(run: SignalRun) -> dict:

@@ -45,8 +45,10 @@ def _check(col: str, e: type[enum.Enum]) -> str:
 
 class TranscriptionConfig(Base):
     """An immutable transcription configuration, identified by the SHA-256 of its canonical
-    JSON (engine, engine version, model id and checksum, language, chunking, audio format,
-    merge version)."""
+    JSON (engine, model id and checksum, language, chunking, decoding options, audio format,
+    merge version). The engine's package version is not part of it: each chunk stores the
+    version that produced it (raw output) and the transcript lists every version used, so a
+    transcript resumed across an engine upgrade says so."""
 
     __tablename__ = "transcription_configs"
     __table_args__ = (UniqueConstraint("fingerprint"),)
