@@ -277,3 +277,12 @@ def test_review_penalty_counts_overlapping_spans_once():
     p = highlight_candidates.penalties(start_ms=0, end_ms=10_000, candidate={}, words=words,
                                        silences=silences, word_reliability={})
     assert p and p[0]["name"] == "dead_air" and p[0]["reason"].startswith("80%")
+
+
+def test_review_continuous_commentary_does_not_stretch_the_clip_to_the_limit():
+    # Found by the container dry run of the evaluation runner: words every 0.5 s made
+    # the "reaction" rule extend the model's end by 35 s.
+    words = [_w(f"w{i}", i * 500, i * 500 + 400) for i in range(200)]
+    r = highlight_candidates.refine(10_000, 25_200, words, 100_000, max_ms=45_000)
+    assert r["end_ms"] - 25_200 <= 5_000 + 600                 # cap plus post-roll at most
+    assert any("capped at 5 s" in n for n in r["notes"])

@@ -50,10 +50,12 @@ os.environ.update({
 })
 sys.path.insert(0, str(Path.cwd()))
 
-from app.core import config as config_mod
-from app.db.session import Database
-from app.models import AIRun, Job
-from app.services import (
+from sqlalchemy import select  # noqa: E402
+
+from app.core import config as config_mod  # noqa: E402
+from app.db.session import Database  # noqa: E402
+from app.models import AIRun, Job  # noqa: E402
+from app.services import (  # noqa: E402
     acquisition,
     ai_highlights,
     analysis_evidence,
@@ -62,12 +64,11 @@ from app.services import (
     queue,
     transcripts,
 )
-from app.services.locations import load_layout
-from app.workers.worker import WorkerProcess
-from sqlalchemy import select
-from tests.conftest import run_migrations
-from tests.helpers import import_file
-from tests.test_rights import World
+from app.services.locations import load_layout  # noqa: E402
+from app.workers.worker import WorkerProcess  # noqa: E402
+from tests.conftest import run_migrations  # noqa: E402
+from tests.helpers import import_file  # noqa: E402
+from tests.test_rights import World  # noqa: E402
 
 DURATION_S = 180
 PHRASES = [
