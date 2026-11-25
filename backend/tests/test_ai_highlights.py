@@ -257,6 +257,8 @@ def test_runs_and_candidates_are_immutable_but_review_status_is_not(db, settings
                 "UPDATE highlight_candidates SET title = 'x'",
                 "UPDATE highlight_candidates SET start_ms = 0",
                 "DELETE FROM highlight_candidates",
+                "UPDATE highlight_candidates SET id = 'z'",
+                "UPDATE highlight_candidates SET created_at = '2000-01-01 00:00:00'",
                 "INSERT INTO ai_runs (id) VALUES ('x')"):
         with pytest.raises(sqlite3.DatabaseError):
             conn.execute(sql)
@@ -301,12 +303,18 @@ def test_cancellable_abandons_a_blocking_call_and_unloads():
 
     stop = {"v": False}
     threading.Timer(0.3, lambda: stop.update(v=True)).start()
-    wrapped = registry.Cancellable(Slow(), lambda: stop["v"], poll_s=0.05)
+    wrapped = registry.Cancellable(Slow(), lambda: stop["v"], poll_s=0.05, join_s=0.1)
     t0 = time.monotonic()
     with pytest.raises(ProviderError) as e:
         wrapped.generate(Request(system="s", user="u"))
     assert e.value.code == "cancelled" and time.monotonic() - t0 < 2
     assert unloaded.is_set()
+    # The abandoned HTTP call is still running: heavy work waits until it ends.
+    assert "still finishing" in str(e.value) and registry.calls_in_flight() == 1
+    deadline = time.monotonic() + 10
+    while registry.calls_in_flight() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert registry.calls_in_flight() == 0
 
 
 def test_ai_migration_round_trips_and_refuses_with_runs(db, settings):
@@ -343,3 +351,165 @@ def test_ai_migration_round_trips_and_refuses_with_runs(db, settings):
     conn.close()
     with pytest.raises(Exception, match="AI runs exist"):
         command.downgrade(cfg, "0011")
+
+
+# ------------------------------------------- independent review of PR #21 (2026-11-25)
+def _run_with_timeout(fn, seconds=60):
+    """Runs ``fn`` in a thread; a nested-session deadlock shows up as a timeout."""
+    box = {}
+    t = threading.Thread(target=lambda: box.update(v=fn()), daemon=True)
+    t.start()
+    t.join(seconds)
+    assert not t.is_alive(), "the job hung (nested session?)"
+    return box.get("v")
+
+
+@requires_ffmpeg
+def test_review_superseded_with_nothing_newer_completes_without_hanging(db, settings,
+                                                                        recording, provider):
+    req = _ask(db, settings, recording)
+    with db.session() as s:
+        s.get(HighlightRequest, req).status = "SUPERSEDED"
+    _run_with_timeout(lambda: drain(db, settings, max_jobs=40))
+    with db.session() as s:
+        job = s.scalar(select(Job).where(Job.job_type == "AI_HIGHLIGHTS"))
+        assert job.status == "COMPLETED"
+        assert s.scalar(select(func.count()).select_from(HighlightCandidate)) == 0
+    assert provider["p"].calls == []
+
+
+@requires_ffmpeg
+def test_review_supersede_during_the_last_batch_never_finalizes_the_old_request(
+        db, settings, recording, provider):
+    settings.ai_windows_per_call = 10                       # one batch: it is the last
+    holder = {}
+    inner = Scripted()
+
+    class Superseding(Scripted):
+        def generate(self, request):
+            if "second" not in holder:                      # a newer request arrives now
+                holder["second"] = _ask(db, settings, recording, n=1)
+            return inner.generate(request)
+
+    provider["p"] = Superseding()
+    first = _ask(db, settings, recording, n=3)
+    _run_with_timeout(lambda: drain(db, settings, max_jobs=40))
+    with db.session() as s:
+        old = s.get(HighlightRequest, first)
+        assert old.status == "SUPERSEDED" and old.summary_json is None
+        assert s.scalar(select(func.count()).select_from(HighlightCandidate).where(
+            HighlightCandidate.request_id == first)) == 0
+        assert s.get(HighlightRequest, holder["second"]).status == "COMPLETE"
+        job = s.scalar(select(Job).where(Job.job_type == "AI_HIGHLIGHTS"))
+        assert job.status == "COMPLETED" and job.attempt_count <= 2
+
+
+@requires_ffmpeg
+def test_review_a_failed_job_fails_its_request(db, settings, recording, provider):
+    class Refusing(Scripted):
+        def generate(self, request):
+            self.calls.append(request)
+            raise ProviderError("model not pulled", transient=False, code="provider_error")
+
+    provider["p"] = Refusing()
+    req = _ask(db, settings, recording)
+    drain(db, settings, max_jobs=40)
+    with db.session() as s:
+        r = s.get(HighlightRequest, req)
+        assert r.status == "FAILED" and "model not pulled" in r.error
+        job = s.scalar(select(Job).where(Job.job_type == "AI_HIGHLIGHTS"))
+        assert job.status == "FAILED" and job.attempt_count == 1       # not retried
+    assert len(provider["p"].calls) == 1
+
+
+@requires_ffmpeg
+def test_review_bad_prompt_voice_or_scoring_is_a_422(db, settings, recording, provider,
+                                                    monkeypatch):
+    from app.ai import scoring
+
+    with TestClient(create_app(settings)) as client:
+        url = f"/api/v1/recordings/{recording.id}/highlights"
+        r = client.post(url, json={"target_count": 2, "channel": "no-such-channel"})
+        assert r.status_code == 422 and r.json()["error"]["code"] == "ai_configuration_invalid"
+
+        def no_profile(**kw):
+            raise scoring.ScoringError("no scoring profile matches")
+
+        monkeypatch.setattr(scoring, "resolve", no_profile)
+        r = client.post(url, json={"target_count": 2, "channel": "rumbleframe"})
+        assert r.status_code == 422 and "no scoring profile" in r.text
+    with db.session() as s, pytest.raises(Exception) as e:
+        ai_highlights.request(s, settings, recording.id, game="gta", channel="rumbleframe",
+                              target_count=2, prompt_id="no.such.prompt")
+    assert getattr(e.value, "status_code", None) == 422
+
+
+@requires_ffmpeg
+def test_review_retries_use_the_windows_planned_on_the_first_run(db, settings, recording,
+                                                                provider):
+    provider["p"] = Scripted(fail_first=1)
+    req = _ask(db, settings, recording)
+    worker = WorkerProcess(settings, db)
+    for _ in range(20):                                     # until the provider error
+        claimed = queue.claim_next(db, worker.id, settings.job_lease_seconds)
+        assert claimed is not None
+        worker._execute(claimed)
+        with db.session() as s:
+            if s.scalar(select(AIRun.id).where(AIRun.request_id == req)):
+                break
+    with db.session() as s:
+        planned = json.loads(s.get(HighlightRequest, req).plan_json)
+    assert len(planned) >= 2
+    settings.ai_max_windows = 1                             # a configuration change
+    drain(db, settings, max_jobs=40)
+    with db.session() as s:
+        assert json.loads(s.get(HighlightRequest, req).plan_json) == planned
+        batches = {r.batch for r in s.scalars(select(AIRun).where(AIRun.request_id == req))}
+    assert batches == set(range(len(planned)))              # every pinned window evaluated
+
+
+def test_review_memory_figure_leaves_out_purgeable_pages(monkeypatch):
+    out = ("Mach Virtual Memory Statistics: (page size of 16384 bytes)\n"
+           "Pages free:                               1000.\n"
+           "Pages inactive:                           2000.\n"
+           "Pages speculative:                         500.\n"
+           "Pages purgeable:                         99999.\n")
+
+    class Done:
+        stdout = out
+
+    monkeypatch.setattr(registry.sys, "platform", "darwin")
+    monkeypatch.setattr(registry.subprocess, "run", lambda *a, **k: Done())
+    assert registry.available_memory_mb() == 3500 * 16384 // (1024 * 1024)
+
+
+@requires_ffmpeg
+def test_review_heavy_jobs_wait_for_an_abandoned_ai_call(db, settings, recording, provider,
+                                                         monkeypatch):
+    monkeypatch.setattr(registry, "calls_in_flight", lambda: 1)
+    _ask(db, settings, recording)
+    worker = WorkerProcess(settings, db)
+    claimed = queue.claim_next(db, worker.id, settings.job_lease_seconds)
+    while claimed is not None and claimed.job_type not in ("AI_HIGHLIGHTS", "TRANSCRIBE"):
+        worker._execute(claimed)
+        claimed = queue.claim_next(db, worker.id, settings.job_lease_seconds)
+    assert claimed is not None
+    worker._execute(claimed)
+    with db.session() as s:
+        job = s.get(Job, claimed.id)
+        assert job.status == "RETRY_WAIT" and job.attempt_count == 0
+        assert "still finishing" in job.last_error
+    assert provider["p"].calls == []
+
+
+def test_review_no_cancelled_run_status(db, settings):
+    conn = sqlite3.connect(settings.db_path)
+    conn.execute("PRAGMA foreign_keys = OFF")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO ai_runs (id, request_id, batch, status, provider, model, "
+                     "identity_json, prompt_id, prompt_version, prompt_sha256, "
+                     "contract_version, contract_sha256, scoring_json, evidence_fingerprint, "
+                     "evidence_json, record_json, raw_last, attempts, wall_s, cost_usd, "
+                     "created_at) VALUES ('a', 'q', 0, 'cancelled', 'p', 'm', '{}', 'p', 1, "
+                     "'x', 2, 'x', '{}', 'x', '{}', '{}', '', 0, 0, 0, '2026-11-25')")
+    conn.close()

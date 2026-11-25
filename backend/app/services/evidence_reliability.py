@@ -12,27 +12,39 @@ out. Consumers decide what to do with it:
 
 **Classes (one per word; ``reasons`` lists every rule that applied):**
 
-* ``suspected_hallucination``: the word lies (mostly) inside a span the audio run measured
-  as silence **and** the audio under it does not rise above the local noise floor. Two
-  independent measurements contradict the word. It is suppressed in captions by default
-  and can neither trigger nor support.
-* ``degenerate_timing``: the engine gave the word (almost) no duration, so its time
-  cannot be trusted. It can neither trigger nor support; captions keep it only if asked.
-* ``low_confidence``: the engine's own probability is below the profile's
-  ``low_prob``. **That threshold is inherited from the pre-M4 scan and is not validated**
-  (``validated: false``). It therefore never suppresses anything: the word stays in
-  captions and may support a claim *together with* corroborating evidence, but it cannot
-  trigger a highlight on its own.
+* ``suspected_hallucination``: three indications agree. The word lies (mostly) inside a span
+  the audio run measured as silence, the audio under it does not rise ``min_snr_db`` above
+  the local noise floor, **and** the engine itself is unsure (``prob < low_prob``). The two
+  audio indications come from one measurement (the AUDIO_SIGNALS run: its silence detector
+  and its RMS series), so they are not independent of each other; the engine's confidence
+  is the independent one. Suppressed in captions by default; can neither trigger nor
+  support.
+* ``degenerate_timing``: the engine gave the word (almost) no duration, so its time cannot
+  be trusted. It can neither trigger nor support. Captions still show it.
+* ``audio_contradicted``: the audio indications above hold but the engine is confident.
+  Quiet commentary over a quiet bed looks like this, so the word is **shown** in captions
+  and may support a claim with corroboration, but it cannot trigger on its own.
+* ``unassessed_audio``: no audio measurement exists (not measured yet, no audio track, or
+  the measurement failed), so hallucination cannot be ruled out. The word is kept but
+  cannot trigger on its own, except in the documented fallback (``triggering``).
+* ``low_confidence``: the engine's own probability is below ``low_prob``. It never
+  suppresses anything: the word stays in captions and may support a claim *together with*
+  corroborating evidence, but it cannot trigger a highlight on its own.
 * ``reliable``: none of the above.
-* ``unassessed_audio``: no audio measurement exists (no run yet, or no audio track), so
-  hallucination cannot be ruled out. The word is kept but cannot trigger on its own.
+
+**Thresholds are not validated.** ``low_prob`` (0.5) is inherited from the pre-M4 scan and
+suggestion filter, which already ignored words below it; keeping it keeps those consumers'
+behaviour unchanged. ``min_snr_db`` and ``silence_coverage`` are first estimates. Both are
+marked ``validated: false`` in the profile and need authorized real commentary to tune.
 
 **Why relative energy, not absolute loudness:** genuine quiet commentary can sit below the
-audio run's silence level (-50 dBFS) while still being well above the room's own floor,
-and background music is loud everywhere. Comparing the word's peak level with the local
-floor (a low percentile of the surrounding windows) separates "nothing was there" from
-"something quiet was there". It does not decide whether a word over music is right; that
-stays ``low_confidence`` when the engine itself is unsure.
+audio run's silence level (-50 dBFS) while still being above the room's own floor, and
+background music is loud everywhere. Comparing the word's peak level with the local floor
+(a low percentile of the surrounding windows) separates "nothing was there" from "something
+quiet was there". It does not decide whether a word over music is right.
+
+**Time basis:** assessments always use the raw (engine) word times, never a correction
+layer, so a correction can never change what was measured under a word.
 """
 
 from __future__ import annotations
@@ -50,9 +62,16 @@ PROFILE = {
     "degenerate_ms": 20,
     "low_prob": 0.5,              # inherited from the pre-M4 scan filter
     "low_prob_validated": False,
+    "audio_thresholds_validated": False,   # silence_coverage and min_snr_db
 }
-CLASSES = ("reliable", "low_confidence", "unassessed_audio", "degenerate_timing",
-           "suspected_hallucination")
+CLASSES = ("reliable", "low_confidence", "unassessed_audio", "audio_contradicted",
+           "degenerate_timing", "suspected_hallucination")
+TIME_BASIS = "raw word times"
+AUDIO_REASONS = {
+    "pending": "audio signals not measured",
+    "no_audio": "recording has no audio track",
+    "failed": "audio signal measurement failed",
+}
 
 
 def profile_fingerprint(profile: dict = PROFILE) -> str:
@@ -95,9 +114,11 @@ class _Audio:
 
 
 def assess_words(words: list[dict], audio_series: dict | None, *,
-                 has_audio: bool | None = True, profile: dict = PROFILE) -> list[dict]:
+                 audio_state: str = "pending", profile: dict = PROFILE) -> list[dict]:
     """One assessment per word (same order). ``words`` items need ``idx``, ``start_ms``,
-    ``end_ms`` and ``prob`` (raw values; this function copies nothing back)."""
+    ``end_ms`` and ``prob`` (raw values; this function copies nothing back).
+    ``audio_state`` explains a missing ``audio_series``: ``pending``, ``no_audio`` or
+    ``failed``."""
     audio = _Audio(audio_series, profile) if audio_series else None
     out = []
     for w in words:
@@ -109,21 +130,26 @@ def assess_words(words: list[dict], audio_series: dict | None, *,
             reasons.append(f"degenerate_timing: duration {b - a} ms < "
                            f"{profile['degenerate_ms']} ms")
         if audio is None:
-            reasons.append("unassessed_audio: " + ("recording has no audio track"
-                                                   if has_audio is False
-                                                   else "audio signals not measured"))
+            reasons.append("unassessed_audio: "
+                           + AUDIO_REASONS.get(audio_state, AUDIO_REASONS["pending"]))
         else:
             frac = audio.silence_fraction(a, b)
             peak, floor = audio.peak(a, b), audio.floor(a, b)
             snr = None if peak is None or floor is None else round(peak - floor, 1)
             measured.update({"silence_fraction": round(frac, 2), "peak_rms_db": peak,
                              "floor_rms_db": floor, "snr_db": snr})
+            low = prob is None or prob < profile["low_prob"]
             if frac >= profile["silence_coverage"] and (snr is None
                                                         or snr < profile["min_snr_db"]):
-                reasons.append(
-                    f"suspected_hallucination: {frac:.0%} of the word lies in measured "
-                    f"silence and its level is {snr if snr is not None else 'n/a'} dB above "
-                    f"the local floor (< {profile['min_snr_db']} dB)")
+                what = (f"{frac:.0%} of the word lies in measured silence and its level is "
+                        f"{snr if snr is not None else 'n/a'} dB above the local floor "
+                        f"(< {profile['min_snr_db']} dB, thresholds not validated)")
+                if low:
+                    reasons.append(f"suspected_hallucination: {what}, and the engine is "
+                                   "unsure")
+                else:
+                    reasons.append(f"audio_contradicted: {what}, but the engine is "
+                                   "confident")
         if prob is None or prob < profile["low_prob"]:
             reasons.append(f"low_confidence: engine probability "
                            f"{'unknown' if prob is None else round(prob, 3)} < "
@@ -133,30 +159,60 @@ def assess_words(words: list[dict], audio_series: dict | None, *,
         out.append({
             "idx": w.get("idx"), "class": cls, "reasons": reasons, "measured": measured,
             "can_trigger": cls == "reliable",
-            "can_support": cls in ("reliable", "low_confidence", "unassessed_audio"),
-            "needs_corroboration": cls in ("low_confidence", "unassessed_audio"),
+            "can_support": cls in ("reliable", "low_confidence", "unassessed_audio",
+                                   "audio_contradicted"),
+            "needs_corroboration": cls in ("low_confidence", "unassessed_audio",
+                                           "audio_contradicted"),
+            "kinds": kinds,
             "caption": "suppress" if cls == "suspected_hallucination" else "show",
         })
     return out
 
 
-def summary(assessments: list[dict]) -> dict:
+def summary(assessments: list[dict], audio_state: str = "measured") -> dict:
     counts = {c: 0 for c in CLASSES}
     for a in assessments:
         counts[a["class"]] += 1
     return {"profile": PROFILE["name"], "profile_version": PROFILE["version"],
-            "profile_fingerprint": profile_fingerprint(), "counts": counts}
+            "profile_fingerprint": profile_fingerprint(), "counts": counts,
+            "audio": audio_state, "time_basis": TIME_BASIS}
 
 
-def for_recording(session, recording, words: list[dict]) -> list[dict]:
-    """Assess ``words`` of a recording against its current audio signal run (if any)."""
+def audio_basis(session, recording) -> tuple[str, int | None, dict | None]:
+    """``(state, signal_run_id, series)`` for a recording's current audio measurement.
+    ``state``: ``measured``, ``no_audio``, ``failed`` (for the current configuration) or
+    ``pending`` (nothing requested here; callers decide whether to queue it)."""
     from app.models import SignalKind
     from app.services import signals
 
-    run = signals.current(session, recording.id, SignalKind.AUDIO) \
-        if recording.has_audio is not False else None
-    return assess_words(words, signals.series(run) if run else None,
-                        has_audio=recording.has_audio)
+    if recording.has_audio is False:
+        return "no_audio", None, None
+    run = signals.current(session, recording.id, SignalKind.AUDIO)
+    if run is not None:
+        return "measured", run.id, signals.series(run)
+    if signals.failed_for_current_config(session, recording.id, SignalKind.AUDIO):
+        return "failed", None, None
+    return "pending", None, None
+
+
+def for_recording(session, recording, words: list[dict]) -> tuple[list[dict], str]:
+    """Assess ``words`` (raw times) against the recording's current audio run, if any;
+    returns the assessments and the audio state."""
+    state, _, series = audio_basis(session, recording)
+    return assess_words(words, series, audio_state=state), state
+
+
+def triggering(words: list[dict], assessments: list[dict], audio_state: str) -> list[dict]:
+    """Words that may trigger a highlight on their own.
+
+    Normally only ``reliable`` words. **Fallback:** when the audio measurement failed for
+    the current configuration (it will not appear by waiting), words whose only finding is
+    the missing audio assessment may trigger too. That is the pre-M4 behaviour (confident,
+    non-degenerate words), and callers record that the fallback was used."""
+    if audio_state == "failed":
+        return [w for w, a in zip(words, assessments, strict=True)
+                if set(a["kinds"]) <= {"unassessed_audio"}]
+    return [w for w, a in zip(words, assessments, strict=True) if a["can_trigger"]]
 
 
 def caption_words(assessments: list[dict], words: list[dict], *, suppress: bool = True

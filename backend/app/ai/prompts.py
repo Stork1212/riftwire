@@ -73,6 +73,11 @@ def load(prompt_id: str, version: int | None = None, root: Path = PROMPTS_DIR) -
     found = [p for p in (load_file(f) for f in sorted(root.rglob("*.md"))
                          if f.read_text(encoding="utf-8").startswith("+++"))
              if p.id == prompt_id and (version is None or p.version == version)]
+    versions = [p.version for p in found]
+    dup = sorted({v for v in versions if versions.count(v) > 1})
+    if dup:
+        raise PromptError(f"prompt {prompt_id!r} has more than one file for version(s) {dup}; "
+                          "each (id, version) must be unique")
     if not found:
         raise PromptError(f"no prompt {prompt_id!r}" + (f" v{version}" if version else ""))
     return max(found, key=lambda p: p.version)

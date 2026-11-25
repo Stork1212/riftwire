@@ -24,13 +24,14 @@ from app.core.errors import (
 )
 from app.core.logging import get_logger
 from app.db.session import Database
-from app.models import Job, JobType, Recording, RecordingStatus, Severity
+from app.models import Job, JobType, Recording, RecordingStatus, Severity, SignalKind
 from app.services import (
     evidence_reliability,
     media,
     outro,
     reservations,
     rights,
+    signals,
     split_shorts,
     transcripts,
 )
@@ -130,6 +131,38 @@ def _rank(words: list[dict], duration_ms: int) -> list[dict]:
     return picks
 
 
+SUPPRESSED_PER_EVENT = 20
+
+
+def _record_suppressed(session, transcript_id: str, recording_id: str,
+                       dropped: list[dict]) -> None:
+    """Record suppressed caption words, each word once per transcript (rendering the same
+    clip again adds nothing), in as many events as needed: never truncated."""
+    from app.models import SystemEvent
+
+    seen: set[int] = set()
+    for msg in session.scalars(select(SystemEvent.message).where(
+            SystemEvent.related_recording_id == recording_id,
+            SystemEvent.event_type == "caption_words_suppressed")):
+        head, _, body = msg.partition(" :: ")
+        if f"transcript {transcript_id} " in head:
+            try:
+                seen.update(d["idx"] for d in json.loads(body))
+            except (ValueError, KeyError, TypeError):
+                continue
+    parts: list[list[dict]] = [[]]
+    for d in (d for d in dropped if d["idx"] not in seen):
+        if parts[-1] and (len(parts[-1]) >= SUPPRESSED_PER_EVENT or
+                          len(json.dumps(parts[-1] + [d], ensure_ascii=False)) > 3500):
+            parts.append([])
+        parts[-1].append(d)
+    for part in (p for p in parts if p):
+        record_event(session, Severity.INFO, "clips", "caption_words_suppressed",
+                     f"{len(part)} caption word(s) of transcript {transcript_id} left out "
+                     f"(raw transcript unchanged) :: {json.dumps(part, ensure_ascii=False)}",
+                     recording_id=recording_id)
+
+
 def _words(db: Database, settings: Settings, recording: Recording, start_ms: int,
            length_ms: int, purpose: Literal["captions", "trigger"] = "captions"
            ) -> tuple[list[dict], str | None]:
@@ -139,33 +172,53 @@ def _words(db: Database, settings: Settings, recording: Recording, start_ms: int
     ``409 transcript_pending`` to retry shortly.
 
     Evidence reliability (raw words untouched): for ``"captions"``, words suspected to be
-    hallucinated (inside measured silence, no sound above the local floor) are left out and
-    each omission is recorded with its reasons; for ``"trigger"`` (suggestions), only words
-    that may trigger a highlight on their own are returned."""
+    hallucinated are left out and every omission is recorded once, in full, with its
+    reasons. For ``"trigger"`` (suggestions), only words that may trigger a highlight on
+    their own are returned; that needs the recording's audio measurement, which is queued
+    (``409 audio_signals_pending``) when missing. If it failed for the current
+    configuration, the documented fallback (``evidence_reliability.triggering``) applies."""
     if recording.has_audio is False:
         return [], None
     with db.session() as session:
         tr = transcripts.current(session, settings, recording.id)
         if tr is not None:
             raw = transcripts.words(session, tr.id, start_ms, start_ms + length_ms)
-            assessed = evidence_reliability.for_recording(session, recording, raw)
+            assessed, audio_state = evidence_reliability.for_recording(session, recording,
+                                                                       raw)
             if purpose == "trigger":
-                chosen = [w for w, a in zip(raw, assessed, strict=True) if a["can_trigger"]]
+                if audio_state == "pending":
+                    signals.request(session, settings, recording.id, SignalKind.AUDIO)
+                    chosen = None
+                else:
+                    chosen = evidence_reliability.triggering(raw, assessed, audio_state)
+                    if audio_state == "failed":
+                        log.warning("audio signals failed; suggestions use the pre-M4 "
+                                    "word filter", extra={"recording_id": recording.id,
+                                                          "component": "clips"})
             else:
                 chosen, dropped = evidence_reliability.caption_words(assessed, raw)
                 if dropped:
-                    record_event(session, Severity.INFO, "clips", "caption_words_suppressed",
-                                 f"{len(dropped)} caption word(s) left out of transcript "
-                                 f"{tr.id} (raw transcript unchanged): "
-                                 + json.dumps(dropped, ensure_ascii=False)[:3500],
-                                 recording_id=recording.id)
-            return [{**w, "start_ms": max(0, w["start_ms"] - start_ms),
-                     "end_ms": min(length_ms, w["end_ms"] - start_ms)} for w in chosen], tr.id
+                    _record_suppressed(session, tr.id, recording.id, dropped)
+            if chosen is not None:
+                return [{**w, "start_ms": max(0, w["start_ms"] - start_ms),
+                         "end_ms": min(length_ms, w["end_ms"] - start_ms)}
+                        for w in chosen], tr.id
+    if tr is not None:                              # committed before we answer 409
+        raise ConflictError("The recording's audio is being measured (needed to tell real "
+                            "speech from transcription errors). Try again shortly.",
+                            code="audio_signals_pending")
     try:
-        with db.session() as session:            # committed before we answer 409
-            transcripts.request(session, settings, recording.id)
+        transcripts.require_engine(settings)
     except PermanentJobError as e:
         raise ServiceUnavailable(str(e), code="whisper_unavailable") from e
+    with db.session() as session:                # committed before we answer 409
+        failure = transcripts.failed_for_current_config(session, settings, recording.id)
+        if failure is not None:
+            # Retrying is an explicit choice (POST .../transcript or the job's retry),
+            # never a side effect of asking for captions.
+            raise ServiceUnavailable(f"The transcript could not be produced: {failure}",
+                                     code="transcript_failed")
+        transcripts.request(session, settings, recording.id)
     raise ConflictError("The recording's transcript is being produced. Try again shortly.",
                         code="transcript_pending")
 

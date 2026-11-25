@@ -96,9 +96,13 @@ def request(session: Session, settings: Settings, recording_id: str, *, game: st
         raise ValidationFailed("Ask for between 1 and 20 highlights.")
     if settings.ai_provider == "none":
         raise ConflictError("Local AI is turned off.", code="ai_disabled")
-    prompt = prompt_registry.load(prompt_id or settings.ai_default_prompt)
-    ranking = scoring.resolve(game=game or prompt.meta.get("game"), channel=channel,
-                              prompt=prompt.id)
+    try:                       # a bad prompt, voice or scoring choice is the caller's
+        prompt = prompt_registry.load(prompt_id or settings.ai_default_prompt)
+        ranking = scoring.resolve(game=game or prompt.meta.get("game"), channel=channel,
+                                  prompt=prompt.id)
+        prompt_registry.channel_voice(channel)
+    except (prompt_registry.PromptError, scoring.ScoringError) as e:
+        raise ValidationFailed(str(e), code="ai_configuration_invalid") from e
     session.execute(update(HighlightRequest).where(
         HighlightRequest.recording_id == recording_id,
         HighlightRequest.status.in_([RequestStatus.PENDING.value, RequestStatus.RUNNING.value]))
@@ -126,6 +130,18 @@ def request(session: Session, settings: Settings, recording_id: str, *, game: st
     return req
 
 
+def fail_active(session: Session, recording_id: str, error: str) -> int:
+    """Mark the recording's unfinished requests FAILED (the AI job failed for good)."""
+    n = 0
+    for r in session.scalars(select(HighlightRequest).where(
+            HighlightRequest.recording_id == recording_id,
+            HighlightRequest.status.in_([RequestStatus.PENDING.value,
+                                         RequestStatus.RUNNING.value]))):
+        r.status, r.error, r.completed_at = RequestStatus.FAILED.value, error[:2000], utcnow()
+        n += 1
+    return n
+
+
 def active_request(session: Session, recording_id: str) -> HighlightRequest | None:
     return session.scalar(select(HighlightRequest).where(
         HighlightRequest.recording_id == recording_id,
@@ -151,6 +167,17 @@ def windows(session: Session, recording: Recording, *, transcript_id: str | None
         transcript_id=transcript_id, audio_run_id=audio_run_id, visual_run_id=visual_run_id)
     return highlight_candidates.plan(seed_list, segs, recording.duration_ms, max_windows,
                                      max_window_ms=TARGET_MAX_MS)
+
+
+def pinned_plan(req: HighlightRequest) -> list[PlannedWindow] | None:
+    """The windows planned for this request on its first run, if any."""
+    if not req.plan_json:
+        return None
+    return [PlannedWindow(**w) for w in json.loads(req.plan_json)]
+
+
+def pin_plan(req: HighlightRequest, planned: list[PlannedWindow]) -> None:
+    req.plan_json = json.dumps([asdict(w) for w in planned], sort_keys=True)
 
 
 def bundle_for(session: Session, settings: Settings, recording: Recording,
