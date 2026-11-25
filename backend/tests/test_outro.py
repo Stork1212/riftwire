@@ -269,3 +269,99 @@ def test_failed_render_leaves_no_output(db, settings, assets, recording, monkeyp
     with pytest.raises(ServiceUnavailable):
         _render(db, settings, recording)
     _no_leftovers(db, settings)
+
+
+# ------------------------------------------- rights scope of the post-cut audio tail
+# Independent review of PR #14 (2026-11-25): in ``continue`` mode, and ``outro`` mode with
+# a fade, the outro plays source audio from *after* the clip. That audio is footage used
+# in the export, so it must stay within the rights-checked length.
+
+@pytest.fixture
+def limited(db, settings, assets, monkeypatch):
+    from tests.test_rights import FULL_SCOPE
+
+    def make(max_clip_seconds: int | None) -> str:
+        w = World(db)
+        scope = dict(FULL_SCOPE)
+        if max_clip_seconds is not None:
+            scope["max_clip_seconds"] = max_clip_seconds
+        w.licence(scope=scope)
+        sid = w.source(url=None, kind="local", creator_channel_id=w.local)
+        rec = import_file(db, settings, assets["gameplay"]).recording
+        drain(db, settings)
+        with db.session() as s:
+            acquisition.attach_media(s, settings, sid, rec.id)
+        return rec.id
+    monkeypatch.setattr(clips, "_transcribe", lambda *_a: list(WORDS))
+    return make
+
+
+def _tail(db, settings, rec_id, start_ms, length=CLIP_MS):
+    from app.models import Recording
+    with db.session() as s:
+        rec = s.get(Recording, rec_id)
+        s.expunge(rec)
+    return clips.outro_tail(db, settings, rec, start_ms + length, length)
+
+
+@pytest.mark.parametrize("limit, mode, fade, expect_ms, reason", [
+    (None, "continue", 500, 2500, "within_rights_scope"),        # no limit: the whole bumper
+    (18, "continue", 500, 2500, "within_rights_scope"),          # 15 + 2.5 <= 18
+    (15, "continue", 500, 0, "tail_dropped:clip_too_long"),      # limit reached at the cut
+    (17, "continue", 500, 0, "tail_dropped:clip_too_long"),      # 17.5 > 17: dropped whole
+    (16, "outro", 400, 400, "within_rights_scope"),              # fade tail fits
+    (15, "outro", 400, 0, "tail_dropped:clip_too_long"),         # fade tail would exceed
+    (15, "outro", 0, 0, "no_tail_wanted_or_recording_ends_at_the_cut"),
+])
+def test_tail_is_checked_against_the_rights_scope(db, settings, assets, limited, limit, mode,
+                                                  fade, expect_ms, reason):
+    settings.clip_outro_path = assets["silent"]
+    settings.clip_outro_audio, settings.clip_outro_fade_ms = mode, fade
+    rec = limited(limit)
+    tail, decision, why = _tail(db, settings, rec, start_ms=2_000)
+    assert (tail, why) == (expect_ms, reason)
+    assert (decision is not None) == (tail > 0)
+
+
+def test_restricted_clip_renders_without_post_cut_audio_and_with_the_whole_outro(
+        db, settings, assets, limited):
+    settings.clip_outro_path = assets["silent"]                  # isolate the gameplay part
+    settings.clip_outro_audio, settings.clip_outro_fade_ms = "continue", 500
+    rec = limited(15)                                            # clip uses the full limit
+    path = _render(db, settings, rec, start_ms=2_000)
+    info = _probe(path)
+    video = next(x for x in info["streams"] if x["codec_type"] == "video")
+    assert abs(float(info["format"]["duration"]) - 17.5) <= 0.05
+    assert int(video["nb_read_frames"]) == 450 + OUTRO_FRAMES        # outro intact
+    assert _rms_db(_pcm(path, 15.05, 2.3)) < -60                 # no source audio past 15 s
+    assert _rms_db(_pcm(path, 13.0, 1.5)) > -6                   # the clip's own audio intact
+
+
+def test_allowed_tail_still_continues_the_gameplay(db, settings, assets, limited):
+    settings.clip_outro_path = assets["silent"]
+    settings.clip_outro_audio, settings.clip_outro_fade_ms = "continue", 500
+    rec = limited(18)
+    path = _render(db, settings, rec, start_ms=2_000)
+    under = _pcm(path, 15.1, 1.5)
+    assert _rms_db(under) > -6
+    assert _corr(under, _pcm(assets["gameplay"], 17.1, 1.5)) > 0.99
+
+
+@pytest.mark.parametrize("limit, tail_audible", [(15, False), (16, True)])
+def test_fade_mode_tail_respects_the_limit(db, settings, assets, limited, limit, tail_audible):
+    settings.clip_outro_path = assets["none"]
+    settings.clip_outro_audio, settings.clip_outro_fade_ms = "outro", 400
+    path = _render(db, settings, limited(limit), start_ms=2_000)
+    level = _rms_db(_pcm(path, 15.0, 0.15))
+    assert (level > -30) if tail_audible else (level < -60)       # fade tail only if it fits
+    assert abs(float(_probe(path)["format"]["duration"]) - 17.5) <= 0.05
+
+
+def test_recording_ending_at_the_clip_boundary_uses_no_tail(db, settings, assets, limited):
+    settings.clip_outro_path = assets["sting"]
+    settings.clip_outro_audio, settings.clip_outro_fade_ms = "continue", 500
+    rec = limited(15)
+    tail, decision, why = _tail(db, settings, rec, start_ms=5_000)      # ends at 20 s
+    assert (tail, decision, why) == (0, None, "no_tail_wanted_or_recording_ends_at_the_cut")
+    path = _render(db, settings, rec, start_ms=5_000)
+    assert abs(float(_probe(path)["format"]["duration"]) - 17.5) <= 0.05
