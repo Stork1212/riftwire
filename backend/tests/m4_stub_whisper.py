@@ -1,9 +1,10 @@
 """Deterministic stand-in for the Whisper child, for M4 tests.
 
-    python m4_stub_whisper.py MODEL_DIR AUDIO OUT_JSON
+    python m4_stub_whisper.py MODEL_DIR AUDIO OUT_JSON [LANGUAGE]
 
-Same command line and output shape as ``bench/riftbench/transcribe_child.py``
-(``{"words": [{"w", "start_ms", "end_ms", "prob"}], "text", ...}``), but it *listens*: it
+Same command line and the same output keys as ``bench/riftbench/transcribe_child.py``
+(``words``, ``text``, ``language``, timings and engine versions; engine-only values are
+``null``), but it *listens*: it
 decodes the tone-coded words written by :func:`tests.m4_fixtures.tone_word_audio` from the
 audio file it is given (FFmpeg → 16 kHz PCM, amplitude segmentation, zero-crossing frequency;
 pure Python). Times
@@ -12,8 +13,10 @@ offset themselves. A word cut by the file edge is reported with the part that is
 and a lower ``prob``, like an edge word from a real model.
 
 Every invocation is appended to ``$RIFTWIRE_STUB_WHISPER_LOG`` (if set), so tests can count
-Whisper runs. ``$RIFTWIRE_STUB_WHISPER_FAIL_AFTER=N`` makes the N+1th call in that log exit
-with an error, to simulate a crash mid-transcription.
+Whisper runs. ``$RIFTWIRE_STUB_WHISPER_FAIL_AFTER=N`` makes exactly one call crash: the one
+made when N calls are already in the log (it needs the log; without it the stub refuses).
+``$RIFTWIRE_STUB_WHISPER_TRUNCATE=1`` makes that crash first write a truncated OUT_JSON, as
+a real child killed mid-write can, so callers must check the exit status and the output.
 """
 
 from __future__ import annotations
@@ -23,10 +26,13 @@ import os
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from m4_fixtures import AMPLITUDE, BASE_HZ, MAX_WORDS, STEP_HZ  # noqa: E402  (one source)
+
 RATE = 16_000
 FRAME = 160                      # 10 ms
-BASE_HZ, STEP_HZ, MAX_WORDS = 600.0, 40.0, 60
 THRESHOLD = 0.05
+CUT_LEVEL = 0.6 * AMPLITUDE      # an uncut word's first/last 10 ms frame is still ramping
 
 
 def _pcm(audio: str) -> list[float]:
@@ -69,15 +75,21 @@ def decode(samples: list[float]) -> list[dict]:
             if hz is not None:
                 k = round((hz - BASE_HZ) / STEP_HZ)
                 if 0 <= k < MAX_WORDS:
-                    edge = i == 0 or j == total
+                    first = max(abs(x) for x in samples[i * FRAME:(i + 1) * FRAME])
+                    last = max(abs(x) for x in samples[(j - 1) * FRAME:j * FRAME])
+                    edge = (i == 0 and first > CUT_LEVEL) or (j == total and last > CUT_LEVEL)
                     words.append({"w": f"w{k:02d}", "start_ms": i * 10.0, "end_ms": j * 10.0,
                                   "prob": 0.5 if edge else 0.95})
         i = j
     return words
 
 
-def main(model_dir: str, audio: str, out_json: str) -> int:
+def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int:
     log = os.environ.get("RIFTWIRE_STUB_WHISPER_LOG")
+    fail_after = os.environ.get("RIFTWIRE_STUB_WHISPER_FAIL_AFTER")
+    if fail_after is not None and not log:
+        print("stub whisper: FAIL_AFTER needs RIFTWIRE_STUB_WHISPER_LOG", file=sys.stderr)
+        return 64
     calls = 0
     if log:
         if os.path.exists(log):
@@ -85,18 +97,23 @@ def main(model_dir: str, audio: str, out_json: str) -> int:
                 calls = sum(1 for _ in f)
         with open(log, "a", encoding="utf-8") as f:
             f.write(json.dumps({"model": model_dir, "audio": audio}) + "\n")
-    fail_after = os.environ.get("RIFTWIRE_STUB_WHISPER_FAIL_AFTER")
-    if fail_after is not None and calls >= int(fail_after):
+    if fail_after is not None and calls == int(fail_after):
+        if os.environ.get("RIFTWIRE_STUB_WHISPER_TRUNCATE"):
+            with open(out_json, "w", encoding="utf-8") as f:
+                f.write('{"words": [{"w": "w0')            # killed mid-write
         print("stub whisper: simulated crash", file=sys.stderr)
         return 70
     words = decode(_pcm(audio))
     tmp = out_json + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"words": words, "text": " ".join(w["w"] for w in words),
-                   "engine": "stub-tone-decoder", "mlx_peak_bytes": None}, f)
+                   "language": language, "engine": "stub-tone-decoder",
+                   "mlx_peak_bytes": None, "import_s": None, "load_s": None,
+                   "transcribe_s": None, "mlx_version": None, "mlx_whisper_version": None,
+                   "torch_installed": None}, f)
     os.replace(tmp, out_json)
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(*sys.argv[1:4]))
+    raise SystemExit(main(*sys.argv[1:5]))
