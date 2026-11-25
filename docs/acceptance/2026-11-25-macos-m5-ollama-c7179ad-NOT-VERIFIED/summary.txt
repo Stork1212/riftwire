@@ -1,0 +1,44 @@
+RIFTWIRE M5 Ollama + qwen3.5:4b  started 2026-11-25T05:13:35Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m5-ollama-c7179ad-20261125T051335Z
+HEAD: c7179ad6de5af5b405ab66b1a6ac1af60f5e3567 (branch phase2/m5-ai-prep; depends on PR #14)
+free space on the models volume: 127.48 GiB (floor 60 GiB, pull headroom 6 GiB)
+
+== test: scripts/test.sh
+   exit 0  (489 passed, 3 skipped, 1 warning in 96.08s (0:01:36))
+
+== Ollama
+   installing with Homebrew: brew install ollama
+   Warning: could not connect to a running Ollama instance at /opt/homebrew/bin/ollama (not registered as a login service)
+   listening on 127.0.0.1:11434 only
+   cloud features disabled (log confirms)
+
+== model qwen3.5:4b
+   pulled in 66 s
+manifest sha256: 3b6225ff07117608fdd54a729806671494c57980272eab2b7e7dd2b972423c1c
+   models folder: 3.71 GiB
+   licence: Apache License 2.0 (model-license.txt)
+   free space after pull: 123.30 GiB
+
+== benchmark (synthetic grounded tasks; 2 repeats)
+   server stopped
+identity: {"provider": "ollama", "model": "qwen3.5:4b", "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13", "details": {"parent_model": "", "format": "safetensors", "family": "", "families": null, "parameter_size": "", "quantization_level": "nvfp4", "runner": "mlx", "size_bytes": 3973305013}, "kind": "local_model"}
+  tasks_run: 10
+  accepted: 0
+  valid_first_try: 0
+  failed_validation: 0
+  provider_errors: 10
+  mean_precision: None
+  mean_recall: None
+  trap_selected: 0
+  padded: 0
+  unsupported_claims: 0
+  payoff_kept: []
+  first_load_ms: None
+  prompt_tok_per_s_median: None
+  output_tok_per_s_median: None
+  wall_s_median: 0.0
+  memory: {"ollama_loaded_peak_mb": 3785.5, "ollama_rss_peak_mb": 43.9, "ollama_rss_before_mb": 43.9, "swap_used_before_mb": 1829.06, "swap_used_peak_mb": 1829.06, "swap_used_after_mb": 3334.19, "free_before_mb": 286.3, "free_min_mb": 286.2}
+
+RESULT  test=0  localhost=0  cloud-off=0  licence=0  bench=0
+free space: before 127.48 GiB, after 122.29 GiB
+ALL PASSED (benchmark numbers are synthetic engineering measurements)

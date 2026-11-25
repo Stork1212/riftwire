@@ -1,0 +1,73 @@
+/Users/gregstork/Claude/riftwire-env/riftwire-m5prep-2582087.bundle is okay
+The bundle contains this ref:
+258208780fa0595a9b799751b332cea1fff43ea8 refs/heads/phase2/m5-ai-prep
+The bundle requires this ref:
+9f7b499ec0b0b8f0f1b619832bf6cd1e97ed3e10 
+The bundle uses this hash algorithm: sha1
+From /Users/gregstork/Claude/riftwire-env/riftwire-m5prep-2582087.bundle
+   9f7b499..2582087  phase2/m5-ai-prep -> bundle/m5-ai-prep
+Already on 'phase2/m5-ai-prep'
+Updating 9f7b499..2582087
+Fast-forward
+ backend/app/ai/analyze.py                          |   11 +-
+ backend/app/ai/schemas.py                          |   51 +
+ backend/tests/test_ai.py                           |   48 +
+ bench/llm/llm_bench.py                             |   50 +-
+ bench/llm/probe.py                                 |    2 +-
+ docs/AI_PROVIDERS.md                               |   21 +
+ .../README.md                                      |   37 +
+ .../api-tags.json                                  |    1 +
+ .../api-version.json                               |    1 +
+ .../bench.txt                                      |   13 +
+ .../df-after.txt                                   |    2 +
+ .../df-before.txt                                  |    2 +
+ .../environment.txt                                |    8 +
+ .../2026-11-25-macos-m5-inference-9f7b499/git.txt  |   67 +
+ .../listen.txt                                     |    2 +
+ .../llm-bench.json                                 | 9264 ++++++++++++++++++++
+ .../llm-bench.md                                   |  107 +
+ .../memory-snapshots.txt                           |   87 +
+ .../model-license.txt                              |  203 +
+ .../model-modelfile.txt                            |  218 +
+ .../model-show.txt                                 |   32 +
+ .../ollama-list.txt                                |    2 +
+ .../ollama-ps-after.txt                            |    1 +
+ .../ollama-serve.txt                               | 1042 +++
+ .../ollama-version.txt                             |    2 +
+ .../port-after.txt                                 |    0
+ .../port-before.txt                                |    0
+ .../probe.json                                     |  157 +
+ .../probe.txt                                      |    8 +
+ .../summary.txt                                    |   67 +
+ .../2026-11-25-macos-m5-inference-9f7b499/test.txt |  116 +
+ .../verify-script.sh                               |  205 +
+ prompts/README.md                                  |    3 +-
+ prompts/gaming/gta/highlight.v2.md                 |   64 +
+ 34 files changed, 11883 insertions(+), 11 deletions(-)
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/README.md
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/api-tags.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/api-version.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/bench.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/df-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/df-before.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/environment.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/git.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/listen.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/llm-bench.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/llm-bench.md
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/memory-snapshots.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/model-license.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/model-modelfile.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/model-show.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/ollama-list.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/ollama-ps-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/ollama-serve.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/ollama-version.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/port-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/port-before.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/probe.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/probe.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/summary.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/test.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/verify-script.sh
+ create mode 100644 prompts/gaming/gta/highlight.v2.md

@@ -1,0 +1,70 @@
+RIFTWIRE M5 inference re-verification (qwen3.5:4b)  started 2026-11-25T05:58:12Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m5-inference-2582087-20261125T055812Z
+HEAD: 258208780fa0595a9b799751b332cea1fff43ea8 (branch phase2/m5-ai-prep; depends on PR #14)
+free space on the models volume: 121.26 GiB (floor 60 GiB)
+
+== test: scripts/test.sh
+   exit 0  (498 passed, 3 skipped, 1 warning in 99.49s (0:01:39))
+
+== Ollama
+   0.40.18 at /opt/homebrew/bin/ollama (not registered as a login service)
+   listening on 127.0.0.1:11434 only
+   cloud features disabled (log confirms)
+
+== model qwen3.5:4b (reused; no download)
+   digest 7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13 (matches the 05:13Z download)
+manifest sha256: 3b6225ff07117608fdd54a729806671494c57980272eab2b7e7dd2b972423c1c
+   models folder: 3.71 GiB
+   licence: Apache License 2.0 (model-license.txt)
+
+== probe (simplest request first)
+   PASS        health           {"version": "0.40.18"}
+   PASS        model_available  {"digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13", "details": {"parent_model": "", "format": "safetensors", "family": "", "families": null, "parameter_size": "", "quantization_level":
+   PASS        plain_text       {"content": "OK", "thinking_chars": 0, "output_tokens": 1, "load_ms": 2012, "total_ms": 2196, "done_reason": "stop"}
+   PASS        engine_residency {"loaded": [{"name": "qwen3.5:4b", "model": "qwen3.5:4b", "size": 4065441280, "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13", "details": {"parent_model": "", "format": "safetensors"
+   UNAVAILABLE json_mode        {"code": "structured_output_unavailable", "message": "Ollama /api/chat returned HTTP 501: structured output is unavailable"}
+   UNAVAILABLE json_schema_mode {"code": "structured_output_unavailable", "message": "Ollama /api/chat returned HTTP 501: structured output is unavailable"}
+   PASS        provider_path    {"outcome": "accepted", "error": null, "attempts": [{"ok": true, "errors": [], "metrics": {"total_ms": 39562.7, "load_ms": 0.2, "prompt_tokens": 2556, "prompt_ms": 4879.7, "output_tokens": 1248, "output_ms": 346
+   PROBE PASSED
+
+== benchmark (synthetic grounded tasks; 2 repeats)
+   server stopped
+   == before server start  06:00:18Z	swap: total = 5120.00M  used = 4097.06M  free = 1022.94M  (encrypted)
+   == before probe  06:00:20Z	swap: total = 5120.00M  used = 4097.06M  free = 1022.94M  (encrypted)
+   == after probe (model unloaded)  06:01:02Z	swap: total = 5120.00M  used = 4126.19M  free = 993.81M  (encrypted)
+   == after benchmark (model unloaded)  06:08:22Z	swap: total = 5120.00M  used = 4110.94M  free = 1009.06M  (encrypted)
+   == server stopped  06:08:24Z	swap: total = 5120.00M  used = 4110.94M  free = 1009.06M  (encrypted)
+   == 30 s after shutdown  06:08:55Z	swap: total = 5120.00M  used = 4110.94M  free = 1009.06M  (encrypted)
+   == 60 s after shutdown  06:09:25Z	swap: total = 5120.00M  used = 4110.94M  free = 1009.06M  (encrypted)
+identity: {"provider": "ollama", "model": "qwen3.5:4b", "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13", "details": {"parent_model": "", "format": "safetensors", "family": "", "families": null, "parameter_size": "", "quantization_level": "nvfp4", "runner": "mlx", "size_bytes": 3973305013}, "kind": "local_model"}
+inference verified: True  failures: []
+benchmark passed: True  failures: []
+  tasks_run: 10
+  accepted_with_candidates: 8
+  highlight_tasks: 8
+  inference_verified: True
+  generations_with_output: 14
+  output_constraint: ['none']
+  constraint_notes: ['Ollama /api/chat returned HTTP 501: structured output is unavailable']
+  errors_by_message: {}
+  thinking_chars_max: 0
+  accepted: 10
+  valid_first_try: 8
+  failed_validation: 0
+  provider_errors: 0
+  mean_precision: 0.8
+  mean_recall: 1.0
+  trap_selected: 0
+  padded: 4
+  unsupported_claims: 0
+  payoff_kept: [True, True]
+  first_load_ms: 0.4
+  prompt_tok_per_s_median: 525.1
+  output_tok_per_s_median: 35.7
+  wall_s_median: 14.9
+  memory: {"ollama_loaded_peak_mb": 4218.2, "ollama_rss_peak_mb": 3048.2, "ollama_rss_before_mb": 24.7, "swap_used_before_mb": 4126.19, "swap_used_peak_mb": 4126.19, "swap_used_after_mb": 4110.94, "free_before_mb": 7574.2, "free_min_mb": 1974.4, "pressure_free_pct_before": 57, "pressure_free_pct_after": 39}
+
+RESULT  test=0  localhost=0  cloud-off=0  licence=0  probe=0  bench=0
+free space: before 121.26 GiB, after 121.25 GiB
+ALL PASSED: inference verified AND grounded benchmark passed (>= 80% accepted, highlights selected, no trap, no unsupported claim).
+Benchmark numbers are synthetic engineering measurements, not highlight quality.

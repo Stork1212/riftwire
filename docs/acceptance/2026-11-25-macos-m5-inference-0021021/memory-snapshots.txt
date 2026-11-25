@@ -1,0 +1,87 @@
+== before server start  14:03:23Z
+swap: total = 6144.00M  used = 4712.38M  free = 1431.62M  (encrypted)
+System-wide memory free percentage: 73%
+Pages free:                                    32799.
+Pages active:                                 399786.
+Pages inactive:                               397563.
+Pages speculative:                              2770.
+Pages wired down:                             182991.
+Pages purgeable:                               29966.
+Pages occupied by compressor:                 122617.
+Swapins:                                      952929.
+Swapouts:                                    1675538.
+== before probe  14:03:25Z
+swap: total = 6144.00M  used = 4712.38M  free = 1431.62M  (encrypted)
+System-wide memory free percentage: 72%
+Pages free:                                    21746.
+Pages active:                                 400095.
+Pages inactive:                               397481.
+Pages speculative:                              4457.
+Pages wired down:                             192692.
+Pages purgeable:                               23770.
+Pages occupied by compressor:                 122541.
+Swapins:                                      952937.
+Swapouts:                                    1675538.
+ollama pid 26462 rss 31.6 MB
+== after probe (model unloaded)  14:05:38Z
+swap: total = 6144.00M  used = 4696.38M  free = 1447.62M  (encrypted)
+System-wide memory free percentage: 59%
+Pages free:                                   254400.
+Pages active:                                 218217.
+Pages inactive:                               208397.
+Pages speculative:                             13892.
+Pages wired down:                             218017.
+Pages purgeable:                               16312.
+Pages occupied by compressor:                 226157.
+Swapins:                                      954042.
+Swapouts:                                    1675538.
+ollama pid 26462 rss 23.7 MB
+== after benchmark (model unloaded)  14:21:32Z
+swap: total = 6144.00M  used = 5266.69M  free = 877.31M  (encrypted)
+System-wide memory free percentage: 59%
+Pages free:                                   396365.
+Pages active:                                 144934.
+Pages inactive:                               144375.
+Pages speculative:                              2207.
+Pages wired down:                             190831.
+Pages purgeable:                                5900.
+Pages occupied by compressor:                 260034.
+Swapins:                                      962692.
+Swapouts:                                    1720230.
+ollama pid 26462 rss 19.3 MB
+== server stopped  14:21:34Z
+swap: total = 6144.00M  used = 5266.69M  free = 877.31M  (encrypted)
+System-wide memory free percentage: 61%
+Pages free:                                   393141.
+Pages active:                                 157357.
+Pages inactive:                               152233.
+Pages speculative:                              4406.
+Pages wired down:                             175114.
+Pages purgeable:                               13536.
+Pages occupied by compressor:                 256604.
+Swapins:                                      962744.
+Swapouts:                                    1720230.
+== 30 s after shutdown  14:22:04Z
+swap: total = 6144.00M  used = 5266.69M  free = 877.31M  (encrypted)
+System-wide memory free percentage: 61%
+Pages free:                                   336846.
+Pages active:                                 185312.
+Pages inactive:                               173623.
+Pages speculative:                             10939.
+Pages wired down:                             192296.
+Pages purgeable:                                1689.
+Pages occupied by compressor:                 239915.
+Swapins:                                      962888.
+Swapouts:                                    1720230.
+== 60 s after shutdown  14:22:34Z
+swap: total = 6144.00M  used = 5258.69M  free = 885.31M  (encrypted)
+System-wide memory free percentage: 65%
+Pages free:                                   323574.
+Pages active:                                 214539.
+Pages inactive:                               196710.
+Pages speculative:                             17385.
+Pages wired down:                             151158.
+Pages purgeable:                               24441.
+Pages occupied by compressor:                 235628.
+Swapins:                                      963100.
+Swapouts:                                    1720230.

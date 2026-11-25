@@ -1,0 +1,2 @@
+swap before: total = 3072.00M  used = 1829.06M  free = 1242.94M  (encrypted)
+swap after:  total = 4096.00M  used = 3334.19M  free = 761.81M  (encrypted)
