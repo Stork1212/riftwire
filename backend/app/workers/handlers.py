@@ -12,7 +12,6 @@ from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -35,7 +34,6 @@ from app.core.logging import get_logger
 from app.db.session import Database
 from app.models import (
     Job,
-    JobStatus,
     JobType,
     Recording,
     RecordingStatus,
@@ -73,9 +71,10 @@ REQUIRED_KINDS: dict[JobType, tuple[str, ...]] = {
     JobType.ACQUIRE: ("temp",),
     JobType.HIGHLIGHT_SCAN: ("recordings", "temp"),
     JobType.TRANSCRIBE: ("recordings", "temp"),
-    # Signals read the recording; keyframes go to the internal thumbnails folder.
-    JobType.AUDIO_SIGNALS: ("recordings",),
-    JobType.VISUAL_SIGNALS: ("recordings",),
+    # Signals read the recording and stream FFmpeg's metadata through temp; keyframes go
+    # to the internal thumbnails folder.
+    JobType.AUDIO_SIGNALS: ("recordings", "temp"),
+    JobType.VISUAL_SIGNALS: ("recordings", "temp"),
     # Reads stored analysis only; writes database rows.
     JobType.AI_HIGHLIGHTS: (),
 }
@@ -349,21 +348,21 @@ def _shared_transcript(ctx: JobContext, recording: Recording):
             ws = transcripts.words(s, tr.id)
             return tr.id, [{"idx": w["idx"], "w": w["w"], "start_ms": w["start_ms"],
                             "end_ms": w["end_ms"], "prob": w["prob"] or 0.0} for w in ws]
-        _fail_if_failed(s, recording.id, JobType.TRANSCRIBE, "shared transcript")
+        _fail_if(transcripts.failed_for_current_config(s, ctx.settings, recording.id),
+                 "shared transcript")
         transcripts.request(s, ctx.settings, recording.id)
     return _PENDING
 
 
 def _shared_audio(ctx: JobContext, recording: Recording):
-    """The current audio signal run's series (for word reliability), ``None`` for a
-    recording without audio, or ``_PENDING`` after queueing it."""
-    if recording.has_audio is False:
-        return None
+    """``(state, signal_run_id, series)`` of the recording's audio measurement (word
+    reliability), or ``_PENDING`` after queueing it. A measurement that failed for the
+    current configuration does not fail the scan: ``state == "failed"`` and the scan uses
+    the documented fallback (``evidence_reliability.triggering``)."""
     with ctx.db.session() as s:
-        run = signals.current(s, recording.id, SignalKind.AUDIO)
-        if run is not None:
-            return run.id, signals.series(run)
-        _fail_if_failed(s, recording.id, JobType.AUDIO_SIGNALS, "audio signals")
+        state, run_id, series = evidence_reliability.audio_basis(s, recording)
+        if state != "pending":
+            return state, run_id, series
         signals.request(s, ctx.settings, recording.id, SignalKind.AUDIO)
     return _PENDING
 
@@ -375,23 +374,28 @@ def _shared_visual(ctx: JobContext, recording: Recording):
         run = signals.current(s, recording.id, SignalKind.VISUAL)
         if run is not None:
             return run.id, signals.series(run)
-        _fail_if_failed(s, recording.id, JobType.VISUAL_SIGNALS, "visual signals")
+        _fail_if(signals.failed_for_current_config(s, recording.id, SignalKind.VISUAL),
+                 "visual signals")
         signals.request(s, ctx.settings, recording.id, SignalKind.VISUAL)
     return _PENDING
 
 
-def _fail_if_failed(s: Session, recording_id: str, job_type: JobType, what: str) -> None:
-    job = s.scalar(select(Job).where(Job.recording_id == recording_id,
-                                     Job.job_type == job_type.value))
-    if job is not None and job.status == JobStatus.FAILED.value:
-        raise PermanentJobError(f"The {what} could not be produced: "
-                                f"{job.last_error or 'the job failed'}")
+def _fail_if(error: str | None, what: str) -> None:
+    """A dependency that failed for the current configuration fails this job too (with its
+    reason) instead of being waited for forever. One that failed for an older
+    configuration is re-armed by the caller's request."""
+    if error is not None:
+        raise PermanentJobError(f"The {what} could not be produced: {error}")
 
 
 # ------------------------------------------------------------------------- TRANSCRIBE
 def handle_transcribe(ctx: JobContext) -> None:
     """The only place RIFTWIRE runs Whisper (M4). Resumable by chunk: every finished chunk
     is stored in its own fenced transaction and never transcribed again."""
+    from app.ai import registry
+
+    if registry.calls_in_flight():          # one heavy workload at a time (M5)
+        raise MemoryPressureJobError("an earlier local AI call is still finishing")
     require_storage(ctx)
     recording = _load_recording(ctx)
     if recording.status != RecordingStatus.READY.value or not recording.duration_ms:
@@ -420,7 +424,9 @@ def handle_transcribe(ctx: JobContext) -> None:
     volume = layout.location("temp").volume_uuid
     chunk_s = settings.transcribe_chunk_seconds + 2 * settings.transcribe_overlap_seconds
     budget = 32_000 * chunk_s + 16 * 1024 * 1024      # one chunk's 16 kHz PCM + output
-    lease = max(600, settings.reservation_lease_seconds)
+    # Renewed between chunks: it must outlive one chunk's extraction and transcription.
+    lease = max(600, settings.reservation_lease_seconds, settings.ffmpeg_timeout_seconds
+                + settings.transcribe_child_timeout_seconds + 120)
     reservation = reservations.reserve_on_volume(
         ctx.db, volume, temp, layout.floor_for_volume(volume), "transcribe",
         f"job:{ctx.job_id}:{ctx.claimed.token}", budget, lease_seconds=lease)
@@ -462,9 +468,10 @@ KEYFRAME_PREFIX = "kf-"
 
 
 def _analysis_timeout(settings: Settings, duration_ms: int) -> float:
-    """A whole-recording FFmpeg pass: the base timeout plus real time (decoding a proxy is
-    far faster than real time; this is a hang guard, not a budget)."""
-    return settings.ffmpeg_timeout_seconds + duration_ms / 1000
+    """A whole-recording FFmpeg pass: the base timeout plus four times real time. It is a
+    hang guard, not a budget: software decoding of 4K60 HEVC can run slower than real
+    time, so one times real time would fail such sources every attempt."""
+    return settings.ffmpeg_timeout_seconds + 4 * duration_ms / 1000
 
 
 def handle_signals(ctx: JobContext, kind: SignalKind) -> None:
@@ -487,9 +494,11 @@ def handle_signals(ctx: JobContext, kind: SignalKind) -> None:
     if not source.is_file():
         raise PermanentJobError("Recording file is missing.")
     ctx.progress(5)
-    series, events, scenes = signals.measure(
-        kind, s.ffmpeg_path, source, recording.duration_ms, ctx.run,
-        _analysis_timeout(s, recording.duration_ms))
+    with TemporaryDirectory(prefix="signals-work-", dir=get_layout(s).path("temp")) as wd:
+        series, events, scenes = signals.measure(
+            kind, s.ffmpeg_path, source, recording.duration_ms, ctx.run,
+            _analysis_timeout(s, recording.duration_ms), work=Path(wd),
+            ffprobe=s.ffprobe_path)
     ctx.progress(60)
     ctx.check()
     plan = signals.keyframe_plan(scenes, recording.duration_ms) if kind == SignalKind.VISUAL \
@@ -511,7 +520,7 @@ def handle_signals(ctx: JobContext, kind: SignalKind) -> None:
             ctx.check()
             name = f"{KEYFRAME_PREFIX}{uuid.uuid4()}.jpg"
             tmp = safe_join(s.thumbnails_dir,
-                            f"{THUMB_TMP_PREFIX}{ctx.job_id}-{ctx.claimed.token}-{n}.tmp.jpg")
+                            f"{THUMB_TMP_PREFIX}{ctx.job_id}-{ctx.claimed.token}.kf{n}.tmp.jpg")
             staged.append((tmp, safe_join(s.thumbnails_dir, name)))
             media.render_thumbnail(s.ffmpeg_path, source, tmp, seek=k["pts_ms"] / 1000,
                                    width=cfg["keyframe_width"], height=cfg["keyframe_height"],
@@ -561,23 +570,33 @@ def handle_highlight_scan(ctx: JobContext) -> None:
         raise PermanentJobError("Wait for the recording to finish processing.")
     transcript = _shared_transcript(ctx, recording)
     visual = _shared_visual(ctx, recording)
-    audio = _shared_audio(ctx, recording) if transcript != (None, []) else None
+    audio = _shared_audio(ctx, recording) if transcript != (None, []) else \
+        ("unused", None, None)
     pending = [n for n, v in (("transcript", transcript), ("visual signals", visual),
                               ("audio signals", audio)) if v is _PENDING]
     if pending:
         raise DependencyPendingJobError(f"waiting for the shared {' and '.join(pending)}")
     transcript_id, words = transcript
     run_id, series = visual
+    audio_state, audio_run, audio_series = audio
     ctx.progress(50)
     # Evidence reliability: only words that may trigger a highlight on their own feed
     # the speech cues (raw transcript unchanged; reasons are in the evidence layer).
-    assessed = evidence_reliability.assess_words(
-        words, audio[1] if audio else None, has_audio=recording.has_audio)
-    triggering = [w for w, a in zip(words, assessed, strict=True) if a["can_trigger"]]
+    assessed = evidence_reliability.assess_words(words, audio_series,
+                                                 audio_state=audio_state)
+    triggering = evidence_reliability.triggering(words, assessed, audio_state)
+    if audio_state == "failed":
+        log.warning("audio signals failed; speech cues use the pre-M4 word filter",
+                    extra={"job_id": ctx.job_id, "recording_id": recording.id,
+                           "component": "highlight_scan"})
     result = highlight_scan.scan_signals(series, triggering, recording.duration_ms)
     result["transcript_id"] = transcript_id
-    result["signal_run_ids"] = {"visual": run_id, **({"audio": audio[0]} if audio else {})}
-    result["word_reliability"] = evidence_reliability.summary(assessed)
+    result["signal_run_ids"] = {"visual": run_id,
+                                **({"audio": audio_run} if audio_run else {})}
+    result["word_reliability"] = {
+        **evidence_reliability.summary(assessed, audio_state),
+        "fallback": "pre-M4 word filter (audio signals failed)"
+        if audio_state == "failed" else None}
     ctx.check()
     require_storage(ctx)
 
@@ -591,16 +610,23 @@ def handle_highlight_scan(ctx: JobContext) -> None:
 
 
 # ------------------------------------------------------------------------ AI_HIGHLIGHTS
-PERMANENT_PROVIDER_CODES = {"non_loopback_endpoint", "provider_disabled", "model_missing",
-                            "structured_output_unavailable", "engine_not_implemented"}
+
+class _Superseded(Exception):
+    pass
+
 
 def handle_ai_highlights(ctx: JobContext) -> None:
     """M5: evaluate candidate windows with the local model, batch by batch, from stored
     analysis only. Each batch's run is stored in its own fenced transaction, so a retry
-    (provider down, worker restart, lost lease) resumes at the first unfinished batch.
-    One heavy workload at a time is the worker's single-job loop; the model is unloaded
-    after every batch."""
-    from app.ai import registry
+    (provider down, worker restart, lost lease) resumes at the first unfinished batch of
+    the windows pinned on the request's first run. One heavy workload at a time is the
+    worker's single-job loop; the model is unloaded after every batch.
+
+    A newer request supersedes the one in progress: the job stops at the next batch (or
+    at finalization) without finishing the old request, and waits briefly, without
+    spending an attempt, to pick up the new one."""
+    from app.ai import prompts as prompt_registry
+    from app.ai import registry, scoring
     from app.models import HighlightRequest, RequestStatus
     from app.services import ai_highlights
 
@@ -610,33 +636,56 @@ def handle_ai_highlights(ctx: JobContext) -> None:
     settings = ctx.settings
     with ctx.db.session() as s:
         req = ai_highlights.active_request(s, recording.id)
-        if req is None:                       # superseded or nothing to do
-            queue.complete(ctx.db, ctx.claimed)
-            return
-        req_id = req.id
+        req_id = req.id if req is not None else None
+    if req_id is None:                        # nothing to do (all requests finished)
+        queue.complete(ctx.db, ctx.claimed)
+        return
+    if registry.calls_in_flight():
+        raise MemoryPressureJobError("an earlier local AI call is still finishing")
     transcript = _shared_transcript(ctx, recording)
     visual = _shared_visual(ctx, recording)
-    audio = _shared_audio(ctx, recording) if transcript != (None, []) else None
+    audio = _shared_audio(ctx, recording) if transcript != (None, []) else \
+        ("unused", None, None)
     pending = [n for n, v in (("transcript", transcript), ("visual signals", visual),
                               ("audio signals", audio)) if v is _PENDING]
     if pending:
         raise DependencyPendingJobError(f"waiting for the shared {' and '.join(pending)}")
     transcript_id, words = transcript
-    assessed = evidence_reliability.assess_words(
-        words, audio[1] if audio else None, has_audio=recording.has_audio)
-    triggering = [w for w, a in zip(words, assessed, strict=True) if a["can_trigger"]]
-    with ctx.db.session() as s:
-        planned = ai_highlights.windows(
-            s, recording, transcript_id=transcript_id, trigger_words=triggering,
-            audio_run_id=audio[0] if audio else None, visual_run_id=visual[0],
-            max_windows=settings.ai_max_windows)
-    per = settings.ai_windows_per_call
-    batches = [planned[i:i + per] for i in range(0, len(planned), per)]
+    audio_state, audio_run, audio_series = audio
+
+    def superseded() -> None:
+        # Never finalize a superseded request. The job is still needed if a newer request
+        # is waiting (request() does not re-arm a running job): wait, no attempt spent.
+        with ctx.db.session() as s:
+            newer = ai_highlights.active_request(s, recording.id)
+        if newer is None:
+            queue.complete(ctx.db, ctx.claimed)
+            return
+        raise DependencyPendingJobError("superseded by a newer highlight request; "
+                                        "starting it next")
+
     with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
         r = s.get(HighlightRequest, req_id)
-        if r.status == RequestStatus.PENDING.value:
-            r.status = RequestStatus.RUNNING.value
-        done = ai_highlights.finished_batches(s, req_id)
+        if r.status == RequestStatus.SUPERSEDED.value:
+            planned = None
+        else:
+            planned = ai_highlights.pinned_plan(r)
+            if planned is None:   # first run: plan once, reuse on every retry
+                assessed = evidence_reliability.assess_words(words, audio_series,
+                                                             audio_state=audio_state)
+                triggering = evidence_reliability.triggering(words, assessed, audio_state)
+                planned = ai_highlights.windows(
+                    s, recording, transcript_id=transcript_id, trigger_words=triggering,
+                    audio_run_id=audio_run, visual_run_id=visual[0],
+                    max_windows=settings.ai_max_windows)
+                ai_highlights.pin_plan(r, planned)
+            if r.status == RequestStatus.PENDING.value:
+                r.status = RequestStatus.RUNNING.value
+            done = ai_highlights.finished_batches(s, req_id)
+    if planned is None:
+        return superseded()
+    per = settings.ai_windows_per_call
+    batches = [planned[i:i + per] for i in range(0, len(planned), per)]
     todo = [n for n in range(len(batches)) if n not in done]
     if todo:
         free = registry.available_memory_mb()
@@ -649,39 +698,50 @@ def handle_ai_highlights(ctx: JobContext) -> None:
         except registry.AIDisabled as e:
             raise PermanentJobError(str(e)) from e
     ctx.progress(5)
-    for k, n in enumerate(todo):
+    try:
+        for k, n in enumerate(todo):
+            ctx.check()
+            with ctx.db.session() as s:
+                r = s.get(HighlightRequest, req_id)
+                superseded = r.status == RequestStatus.SUPERSEDED.value
+                if not superseded:
+                    bundle, meta = ai_highlights.bundle_for(s, settings, recording,
+                                                            batches[n], r.game)
+                    s.expunge(r)
+            if superseded:
+                raise _Superseded()
+            try:
+                outcome = ai_highlights.evaluate_batch(bundle, provider, r, settings)
+            except (prompt_registry.PromptError, scoring.ScoringError) as e:
+                raise PermanentJobError(f"the request's prompt or scoring is no longer "
+                                        f"available: {e}") from e
+            if outcome.status == "provider_error" and outcome.error_code == "cancelled":
+                ctx.check()                    # raises: cancellation or lost lease
+            with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
+                ai_highlights.store_run(s, s.get(HighlightRequest, req_id), n, outcome,
+                                        bundle, meta, settings)
+            if outcome.status == "provider_error":
+                if outcome.error_transient is False:
+                    raise PermanentJobError(f"local AI provider refused: {outcome.error}")
+                raise TransientJobError(f"local AI provider error on batch {n + 1}: "
+                                        f"{outcome.error}")
+            ctx.progress(5 + 90 * (k + 1) // max(1, len(todo)))
         ctx.check()
-        with ctx.db.session() as s:
-            r = s.get(HighlightRequest, req_id)
-            if r.status == RequestStatus.SUPERSEDED.value:
-                queue.complete(ctx.db, ctx.claimed)
-                return
-            bundle, meta = ai_highlights.bundle_for(s, settings, recording, batches[n], r.game)
-            s.expunge(r)
-        outcome = ai_highlights.evaluate_batch(bundle, provider, r, settings)
-        if outcome.status == "provider_error" and "cancelled" in (outcome.error or ""):
-            ctx.check()                        # raises: cancellation or lost lease
-        with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
-            ai_highlights.store_run(s, s.get(HighlightRequest, req_id), n, outcome, bundle,
-                                    meta, settings)
-        if outcome.status == "provider_error":
-            if (outcome.error or "").split(":", 1)[0] in PERMANENT_PROVIDER_CODES:
-                raise PermanentJobError(f"local AI provider refused: {outcome.error}")
-            raise TransientJobError(f"local AI provider error on batch {n + 1}: "
-                                    f"{outcome.error}")
-        ctx.progress(5 + 90 * (k + 1) // max(1, len(todo)))
-    ctx.check()
 
-    def apply(session: Session) -> None:
-        r = session.get(HighlightRequest, req_id)
-        summary = ai_highlights.finalize(session, r)
-        record_event(session, Severity.INFO, "worker", "ai_highlights_completed",
-                     f"AI highlights: {summary['returned']} of {summary['requested']} "
-                     f"requested ({summary['candidates_validated']} validated candidates, "
-                     f"{summary['batches']} batches).",
-                     job_id=ctx.job_id, recording_id=recording.id)
+        def apply(session: Session) -> None:
+            r = session.get(HighlightRequest, req_id)
+            if r.status == RequestStatus.SUPERSEDED.value:     # superseded at the last step
+                raise _Superseded()
+            summary = ai_highlights.finalize(session, r)
+            record_event(session, Severity.INFO, "worker", "ai_highlights_completed",
+                         f"AI highlights: {summary['returned']} of {summary['requested']} "
+                         f"requested ({summary['candidates_validated']} validated "
+                         f"candidates, {summary['batches']} batches).",
+                         job_id=ctx.job_id, recording_id=recording.id)
 
-    queue.complete(ctx.db, ctx.claimed, apply)
+        queue.complete(ctx.db, ctx.claimed, apply)
+    except _Superseded:
+        return superseded()
 
 
 HANDLERS: dict[JobType, Callable[[JobContext], None]] = {

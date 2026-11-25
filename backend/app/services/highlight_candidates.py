@@ -102,6 +102,39 @@ def seeds(*, visual_series: dict, trigger_words: list[dict], audio_events: list[
     return out
 
 
+def _overlap_of_shorter(x: tuple[int, int], y: tuple[int, int]) -> float:
+    inter = min(x[1], y[1]) - max(x[0], y[0])
+    shorter = min(x[1] - x[0], y[1] - y[0])
+    return inter / shorter if inter > 0 and shorter > 0 else 0.0
+
+
+def _union(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    out: list[tuple[int, int]] = []
+    for a, b in sorted(s for s in spans if s[1] > s[0]):
+        if out and a <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+def _length(spans: list[tuple[int, int]]) -> int:
+    return sum(b - a for a, b in spans)
+
+
+def _intersect(x: list[tuple[int, int]], y: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    out, i, j = [], 0, 0
+    while i < len(x) and j < len(y):
+        a, b = max(x[i][0], y[j][0]), min(x[i][1], y[j][1])
+        if b > a:
+            out.append((a, b))
+        if x[i][1] < y[j][1]:
+            i += 1
+        else:
+            j += 1
+    return out
+
+
 def _snap(t: int, segments: list[dict], *, start: bool) -> int:
     for s in segments:
         if s["start_ms"] <= t < s["end_ms"]:
@@ -126,9 +159,13 @@ def plan(seed_list: list[Seed], segments: list[dict], duration_ms: int,
         if b - a < cfg["min_window_ms"]:                     # widen around the seed
             pad = (cfg["min_window_ms"] - (b - a)) // 2
             a, b = max(0, a - pad), min(duration_ms, b + pad)
-        if b - a > cfg["max_window_ms"]:
-            a = max(0, min(a, s.at_ms - cfg["max_window_ms"] // 2))
-            b = a + cfg["max_window_ms"]
+        if b - a > cfg["max_window_ms"]:            # trim around the seed, keeping it
+            m = cfg["max_window_ms"]
+            a = max(a, min(s.at_ms - m // 2, b - m))
+            b = min(duration_ms, a + m)
+            a = max(0, b - m)
+        if not a <= s.at_ms <= b:
+            continue                                  # never plan a window without its seed
         if b - a < MIN_CLIP_MS:
             continue
         raw.append(PlannedWindow("", a, b, "", [s.source], list(s.ids), s.weight))
@@ -144,7 +181,14 @@ def plan(seed_list: list[Seed], segments: list[dict], duration_ms: int,
             last.weight += w.weight
         else:
             merged.append(w)
-    best = sorted(merged, key=lambda w: (-w.weight, w.start_ms))[:max_windows]
+    best: list[PlannedWindow] = []
+    for w in sorted(merged, key=lambda w: (-w.weight, w.start_ms)):
+        if len(best) >= max_windows:
+            break
+        if any(_overlap_of_shorter((w.start_ms, w.end_ms), (o.start_ms, o.end_ms)) > 0.5
+               for o in best):
+            continue                                  # near-duplicate of a stronger window
+        best.append(w)
     best.sort(key=lambda w: w.start_ms)
     for n, w in enumerate(best, 1):
         w.id = f"c:{n}"
@@ -167,11 +211,13 @@ def _split_dead_air(a: int, b: int, ws: list[dict], silences: list[list[int]],
             continue
         before = sum(1 for s, e in cited if (s + e) / 2 <= gap[0])
         after = sum(1 for s, e in cited if (s + e) / 2 >= gap[1])
-        if before >= after:
+        if before == after:                       # no side is better supported: keep both
+            continue
+        if before > after:
             return a, gap[0], (f"cut {gap[1] - gap[0]} ms of measured silence and what followed "
-                               f"it (the cited evidence lies before it)")
-        return gap[1], b, (f"cut what preceded {gap[1] - gap[0]} ms of measured silence (the "
-                           "cited evidence lies after it)")
+                               f"it ({before} of {before + after} cited items lie before it)")
+        return gap[1], b, (f"cut what preceded {gap[1] - gap[0]} ms of measured silence "
+                           f"({after} of {before + after} cited items lie after it)")
     return a, b, None
 
 
@@ -216,24 +262,48 @@ def refine(start_ms: int, end_ms: int, words: list[dict], duration_ms: int, *,
     if b + post - (a - pre) <= max_ms:
         a, b = a - pre, b + post
         if pre or post:
-            notes.append(f"pre-roll {pre} ms and post-roll {post} ms in silence")
-    if b - a < MIN_CLIP_MS:
-        notes.append("kept as chosen: refinement would make it too short")
-        return {"start_ms": start_ms, "end_ms": end_ms, "notes": notes}
-    if b - a > max_ms:
-        notes.append(f"kept as chosen: refinement would exceed the {max_ms // 1000} s limit")
-        return {"start_ms": start_ms, "end_ms": end_ms, "notes": notes}
-    return {"start_ms": max(0, a), "end_ms": min(duration_ms, b), "notes": notes}
+            notes.append(f"pre-roll {pre} ms and post-roll {post} ms with no transcribed "
+                         "speech")
+    if b - a < MIN_CLIP_MS or b - a > max_ms:    # nothing above is applied: say only that
+        why = "too short" if b - a < MIN_CLIP_MS else f"over the {max_ms // 1000} s limit"
+        a, b = start_ms, end_ms
+        notes = [f"kept as chosen: refinement would make it {why}"]
+    a, b = max(0, a), min(duration_ms, b)
+    outside = [c for c in (cited or []) if c[1] <= a or c[0] >= b]
+    if outside:
+        notes.append(f"{len(outside)} cited item(s) lie outside the final clip")
+    return {"start_ms": a, "end_ms": b, "notes": notes, "cited_outside": len(outside)}
 
 
 # ------------------------------------------------------------------- editorial checks
 PENALTIES = {"dead_air": 10, "unclear_boundaries": 5, "not_standalone": 5,
              "weak_support": 5}
 DEAD_AIR_FRACTION = 0.4
-# Factual claims a title or hook must not make unless the clip's own words say so.
-CLAIM_TERMS = re.compile(
-    r"\b(gta\s*(?:6|vi)|leak(?:ed|s)?|release date|trailer|rockstar|confirmed|official|"
-    r"world record|first ever|never seen before|secret ending|easter egg)\b", re.IGNORECASE)
+# Factual claims a title or hook must not make unless the clip's own words say so. Both
+# sides are normalised to canonical tokens first (lower case, punctuation and hyphens as
+# spaces, "grand theft auto" -> "gta", "vi"/"six" -> "6", plural "s" and leak* folded), and
+# a claim counts as supported only when its token sequence occurs in the clip's words.
+CLAIM_PATTERNS = [re.compile(p) for p in (
+    r"\bgta 6\b", r"\bleak\b", r"\brelease date\b", r"\btrailer\b", r"\brockstar\b",
+    r"\bconfirm\w*\b", r"\bofficial\w*\b", r"\bworld record\b", r"\bfirst ever\b",
+    r"\bnever seen before\b", r"\bsecret ending\b", r"\beaster egg\b",
+)]
+
+
+def _canonical(text: str) -> str:
+    t = re.sub(r"[^a-z0-9]+", " ", text.lower())
+    t = re.sub(r"\bgrand theft auto\b", "gta", t)
+    t = re.sub(r"\bgta(6|vi|six)\b", r"gta \1", t)
+    toks = []
+    for tok in t.split():
+        if tok in ("vi", "six"):
+            tok = "6"
+        elif tok.startswith("leak"):
+            tok = "leak"
+        elif len(tok) > 3 and tok.endswith("s") and not tok.endswith("ss"):
+            tok = tok[:-1]
+        toks.append(tok)
+    return " ".join(toks)
 
 
 def penalties(*, start_ms: int, end_ms: int, candidate: dict, words: list[dict],
@@ -242,13 +312,10 @@ def penalties(*, start_ms: int, end_ms: int, candidate: dict, words: list[dict],
     score; recorded with the candidate)."""
     out = []
     span = max(1, end_ms - start_ms)
-    spoken = [(max(start_ms, w["start_ms"]), min(end_ms, w["end_ms"])) for w in words
-              if w["end_ms"] > start_ms and w["start_ms"] < end_ms]
-    quiet = 0
-    for s, e in silences:
-        a, b = max(start_ms, s), min(end_ms, e)
-        if b > a:
-            quiet += (b - a) - sum(max(0, min(b, y) - max(a, x)) for x, y in spoken)
+    clip = [(start_ms, end_ms)]
+    spoken = _intersect(_union([(w["start_ms"], w["end_ms"]) for w in words]), clip)
+    silent = _intersect(_union([(int(s), int(e)) for s, e in silences]), clip)
+    quiet = _length(silent) - _length(_intersect(silent, spoken))
     if quiet / span > DEAD_AIR_FRACTION:
         out.append({"name": "dead_air", "points": PENALTIES["dead_air"],
                     "reason": f"{quiet / span:.0%} of the clip is measured silence without "
@@ -269,11 +336,12 @@ def penalties(*, start_ms: int, end_ms: int, candidate: dict, words: list[dict],
 
 def ground_text(text: str, clip_words: list[dict]) -> tuple[bool, list[str]]:
     """Whether a title/hook makes a factual claim the clip's words do not contain."""
-    spoken = " ".join(w["w"] if "w" in w else w.get("text", "") for w in clip_words).lower()
-    spoken = re.sub(r"[^a-z0-9 ]+", " ", spoken)
+    said = " " + _canonical(" ".join(w["w"] if "w" in w else w.get("text", "")
+                                     for w in clip_words)) + " "
+    claim = _canonical(text)
     bad = []
-    for m in CLAIM_TERMS.finditer(text):
-        term = re.sub(r"[^a-z0-9 ]+", " ", m.group(0).lower())
-        if " ".join(term.split()) not in " ".join(spoken.split()):
-            bad.append(m.group(0))
+    for pattern in CLAIM_PATTERNS:
+        for m in pattern.finditer(claim):
+            if f" {m.group(0)} " not in said and m.group(0) not in bad:
+                bad.append(m.group(0))
     return not bad, bad

@@ -29,7 +29,19 @@ from urllib.parse import urlsplit
 from app.ai.providers.base import Identity, ProviderError, Request, Response
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
-_NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """A redirect could send a call (and its prompt) to another host, past the loopback
+    check: every redirect is refused."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401, N802
+        raise ProviderError(f"refusing HTTP {code} redirect from the local AI endpoint to "
+                            f"{newurl!r}: local inference only", transient=False,
+                            code="non_loopback_endpoint")
+
+
+_NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RefuseRedirects())
 
 
 def _check_loopback(base_url: str) -> str:
@@ -37,6 +49,10 @@ def _check_loopback(base_url: str) -> str:
     if parts.scheme != "http" or parts.hostname not in LOOPBACK_HOSTS:
         raise ProviderError(f"refusing non-loopback AI endpoint {base_url!r}: local inference "
                             "only", transient=False, code="non_loopback_endpoint")
+    if parts.hostname == "localhost":
+        # Never resolve a name (hosts file, DNS): use the literal loopback address.
+        port = f":{parts.port}" if parts.port else ""
+        base_url = f"http://127.0.0.1{port}{parts.path}"
     return base_url.rstrip("/")
 
 
@@ -78,7 +94,13 @@ class OllamaProvider:
         except TimeoutError as e:
             raise ProviderError(f"Ollama {path} timed out after {timeout:.0f} s",
                                 transient=True, code="provider_timeout") from e
-        except (urllib.error.URLError, ConnectionError, OSError) as e:
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, TimeoutError):
+                raise ProviderError(f"Ollama {path} timed out after {timeout:.0f} s",
+                                    transient=True, code="provider_timeout") from e
+            raise ProviderError(f"Ollama is not reachable at {self.base_url}: {e}",
+                                transient=True, code="provider_unreachable") from e
+        except (ConnectionError, OSError) as e:
             raise ProviderError(f"Ollama is not reachable at {self.base_url}: {e}",
                                 transient=True, code="provider_unreachable") from e
         if len(body) > 8 * 1024 * 1024:

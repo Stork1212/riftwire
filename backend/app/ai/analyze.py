@@ -9,6 +9,7 @@ only under its own provider name.
 
 from __future__ import annotations
 
+import hashlib
 import time
 from dataclasses import asdict, dataclass, field
 
@@ -53,19 +54,26 @@ class Outcome:
     attempts: list[Attempt] = field(default_factory=list)
     error: str | None = None
     raw_last: str = ""
+    rendered_sha256: str = ""       # SHA-256 of the exact system + user text sent
+    channel_voice_sha256: str = ""  # the channel voice file's text (versioned with it)
+    error_code: str | None = None   # provider_error only: the provider's code
+    error_transient: bool | None = None   # provider_error only: may a retry succeed?
 
     def record(self) -> dict:
         return {
             "status": self.status,
             "provider": asdict(self.identity) if self.identity else None,
             "prompt": {"id": self.prompt_id, "version": self.prompt_version,
-                       "sha256": self.prompt_sha256},
+                       "sha256": self.prompt_sha256, "rendered_sha256": self.rendered_sha256,
+                       "channel_voice_sha256": self.channel_voice_sha256},
             "evidence_fingerprint": self.evidence_fingerprint,
             "output_contract": {"version": OUTPUT_CONTRACT_VERSION,
                                 "sha256": output_contract_sha256()},
             "wall_s": self.wall_s,
             "attempts": [asdict(a) for a in self.attempts],
             "error": self.error,
+            "raw_last": self.raw_last,
+            "raw_last_sha256": hashlib.sha256(self.raw_last.encode()).hexdigest(),
             "result": self.value.model_dump(by_alias=True) if self.value else None,
             "clips": [asdict(c) for c in self.clips],
             "selected": [asdict(c) for c in self.selected],
@@ -81,19 +89,28 @@ def evaluate(bundle: EvidenceBundle, provider: Provider, prompt: prompt_registry
     """``ranking`` defaults to the profile resolved for (game, channel, prompt id).
     The model stays loaded across repair attempts (``keep_alive_during``) and is unloaded
     afterwards when ``unload_after`` (the production default; benchmarks keep it warm)."""
+    if max_repairs < 0:
+        raise ValueError("max_repairs must be 0 or more")
     started = time.perf_counter()
+    if identity is None and hasattr(provider, "identity"):
+        try:
+            identity = provider.identity()
+        except ProviderError:
+            identity = None
     ranking = ranking or scoring.resolve(game=game or bundle.game, channel=channel,
                                          prompt=prompt.id)
     gen = prompt.meta.get("generation", {})
+    voice = prompt_registry.channel_voice(channel)
     system, user = prompt.render(evidence=prompt_registry.render_evidence(bundle),
-                                 target_count=str(target_count),
-                                 channel_voice=prompt_registry.channel_voice(channel),
+                                 target_count=str(target_count), channel_voice=voice,
                                  output_contract=output_contract())
     mins = int(prompt.meta.get("defaults", {}).get("min_clip_s", 8)) * 1000
     maxs = int(prompt.meta.get("defaults", {}).get("max_clip_s", 60)) * 1000
     out = Outcome(status="provider_error", identity=identity, prompt_id=prompt.id,
                   prompt_version=prompt.version, prompt_sha256=prompt.sha256,
                   evidence_fingerprint=bundle.fingerprint())
+    out.rendered_sha256 = hashlib.sha256((system + "\0" + user).encode()).hexdigest()
+    out.channel_voice_sha256 = hashlib.sha256((voice or "").encode()).hexdigest()
     schema = response_json_schema()
     message = user
     for n in range(1, max_repairs + 2):
@@ -106,6 +123,7 @@ def evaluate(bundle: EvidenceBundle, provider: Provider, prompt: prompt_registry
             resp = provider.generate(req)
         except ProviderError as e:
             out.status, out.error = "provider_error", f"{e.code}: {e}"
+            out.error_code, out.error_transient = e.code, e.transient
             return _finish(out, provider, unload_after, started)
         res = validate(resp.text, bundle, min_clip_ms=mins, max_clip_ms=maxs)
         out.raw_last = resp.text

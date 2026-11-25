@@ -68,12 +68,14 @@ export function AIHighlights({ recordingId, disabled, onSelect }: {
           </select>
         </label>
         <button type="button" className="btn btn-primary"
-          disabled={disabled || pending || Boolean(running) || Boolean(state.error)}
+          disabled={disabled || pending || state.loading || Boolean(running) || Boolean(state.error)}
           onClick={() => void start()}>
           {running ? "Finding highlights…" : "Find highlights"}
         </button>
         {req && <StatusBadge status={req.status === "COMPLETE" ? "COMPLETED" : req.status} />}
       </div>
+      {state.loading && <p role="status" className="muted">Loading AI highlights…</p>}
+      {data && !req && <p className="muted">No highlights requested for this recording yet.</p>}
       {running && job && <ProgressBar value={job.progress_percent} label="AI highlight progress" />}
       {running && job?.last_error && <p role="status">{job.last_error}</p>}
       {req?.status === "FAILED" && <p role="status" className="err-text">{req.error}</p>}

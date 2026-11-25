@@ -53,6 +53,16 @@ TRIGGERS = {
         CREATE TRIGGER trg_transcript_corrections_immutable
         BEFORE UPDATE OF transcript_id, version, method, params_json ON transcript_corrections
         BEGIN SELECT RAISE(ABORT, 'a timing correction is immutable; add a new version'); END""",
+    "trg_transcript_corrections_no_delete": """
+        CREATE TRIGGER trg_transcript_corrections_no_delete
+        BEFORE DELETE ON transcript_corrections
+        BEGIN SELECT RAISE(ABORT, 'a timing correction is immutable; add a new version'); END""",
+    "trg_transcript_corrections_validation_one_way": """
+        CREATE TRIGGER trg_transcript_corrections_validation_one_way
+        BEFORE UPDATE OF validated, validation_ref, id, created_at ON transcript_corrections
+        WHEN NOT (OLD.validated = 0 AND NEW.validated = 1 AND NEW.id = OLD.id
+                  AND NEW.created_at IS OLD.created_at)
+        BEGIN SELECT RAISE(ABORT, 'a correction can only be validated once (0 to 1)'); END""",
 }
 
 

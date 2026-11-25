@@ -259,6 +259,8 @@ export interface AIHighlight {
   reason: string | null;
   start_ms: number;
   end_ms: number;
+  start_id?: string;
+  end_id?: string;
   category: string;
   title: string;
   hook: string;

@@ -53,7 +53,6 @@ from app.models import (
     RecordingStatus,
     RequestStatus,
     RunStatus,
-    SignalKind,
     SignalRun,
     TranscriptSegment,
 )
@@ -96,9 +95,13 @@ def request(session: Session, settings: Settings, recording_id: str, *, game: st
         raise ValidationFailed("Ask for between 1 and 20 highlights.")
     if settings.ai_provider == "none":
         raise ConflictError("Local AI is turned off.", code="ai_disabled")
-    prompt = prompt_registry.load(prompt_id or settings.ai_default_prompt)
-    ranking = scoring.resolve(game=game or prompt.meta.get("game"), channel=channel,
-                              prompt=prompt.id)
+    try:                       # a bad prompt, voice or scoring choice is the caller's
+        prompt = prompt_registry.load(prompt_id or settings.ai_default_prompt)
+        ranking = scoring.resolve(game=game or prompt.meta.get("game"), channel=channel,
+                                  prompt=prompt.id)
+        prompt_registry.channel_voice(channel)
+    except (prompt_registry.PromptError, scoring.ScoringError) as e:
+        raise ValidationFailed(str(e), code="ai_configuration_invalid") from e
     session.execute(update(HighlightRequest).where(
         HighlightRequest.recording_id == recording_id,
         HighlightRequest.status.in_([RequestStatus.PENDING.value, RequestStatus.RUNNING.value]))
@@ -124,6 +127,18 @@ def request(session: Session, settings: Settings, recording_id: str, *, game: st
     req.job_id = job.id
     session.flush()
     return req
+
+
+def fail_active(session: Session, recording_id: str, error: str) -> int:
+    """Mark the recording's unfinished requests FAILED (the AI job failed for good)."""
+    n = 0
+    for r in session.scalars(select(HighlightRequest).where(
+            HighlightRequest.recording_id == recording_id,
+            HighlightRequest.status.in_([RequestStatus.PENDING.value,
+                                         RequestStatus.RUNNING.value]))):
+        r.status, r.error, r.completed_at = RequestStatus.FAILED.value, error[:2000], utcnow()
+        n += 1
+    return n
 
 
 def active_request(session: Session, recording_id: str) -> HighlightRequest | None:
@@ -153,6 +168,17 @@ def windows(session: Session, recording: Recording, *, transcript_id: str | None
                                      max_window_ms=TARGET_MAX_MS)
 
 
+def pinned_plan(req: HighlightRequest) -> list[PlannedWindow] | None:
+    """The windows planned for this request on its first run, if any."""
+    if not req.plan_json:
+        return None
+    return [PlannedWindow(**w) for w in json.loads(req.plan_json)]
+
+
+def pin_plan(req: HighlightRequest, planned: list[PlannedWindow]) -> None:
+    req.plan_json = json.dumps([asdict(w) for w in planned], sort_keys=True)
+
+
 def bundle_for(session: Session, settings: Settings, recording: Recording,
                planned: list[PlannedWindow], game: str | None) -> tuple[EvidenceBundle, dict]:
     """The ``evidence.v1`` bundle for some windows, built from the analysis-evidence layer.
@@ -169,6 +195,8 @@ def bundle_for(session: Session, settings: Settings, recording: Recording,
                                      max_words=MAX_WORDS_PER_WINDOW + 1,
                                      max_events=MAX_EVENTS_PER_WINDOW + 1)
         meta["bundles"].append({"window": w.id, "fingerprint": b["fingerprint"]})
+        if b.get("audio", {}).get("available"):      # the run the evidence came from
+            meta["audio_run_id"] = b["audio"]["run_id"]
         tr = b.get("transcript", {})
         if tr.get("available"):
             transcript_id = tr["id"]
@@ -270,12 +298,18 @@ def _editorial(session: Session, req: HighlightRequest, row: dict, min_score: in
         words = transcripts.words(session, row["transcript_id"],
                                   max(0, clip["start_ms"] - MAX_CLIP_MS),
                                   clip["end_ms"] + MAX_CLIP_MS)
-    assessed = evidence_reliability.for_recording(session, recording, words)
+    # The audio run the model's evidence came from (not whatever is current now).
+    audio_id = row.get("audio_run_id")
+    audio = session.get(SignalRun, audio_id) if audio_id else None
+    series = signals.series(audio) if audio else None
+    assessed = evidence_reliability.assess_words(
+        words, series, audio_state="measured" if audio else "pending")
     reliability = {f"w:{row['transcript_id']}:{w['idx']}": a
                    for w, a in zip(words, assessed, strict=True)}
+    # Every word except suspected hallucinations: a boundary never cuts into speech, and
+    # low-confidence speech is still speech (not dead air).
     usable = [w for w, a in zip(words, assessed, strict=True) if a["caption"] == "show"]
-    audio = signals.current(session, recording.id, SignalKind.AUDIO)
-    silences = signals.series(audio).get("silences_ms", []) if audio else []
+    silences = series.get("silences_ms", []) if series else []
     cited = []
     for ref_ in c.get("evidence", []):
         for item in ref_.get("ids", []):
@@ -292,9 +326,8 @@ def _editorial(session: Session, req: HighlightRequest, row: dict, min_score: in
                                       silences=silences if audio else None, cited=cited)
     row["clip"] = {"start_ms": ref["start_ms"], "end_ms": ref["end_ms"]}
     row["boundary_notes"] = ref["notes"]
-    reliable_words = [w for w, a in zip(words, assessed, strict=True) if a["can_trigger"]]
     row["penalties"] = highlight_candidates.penalties(
-        start_ms=ref["start_ms"], end_ms=ref["end_ms"], candidate=c, words=reliable_words,
+        start_ms=ref["start_ms"], end_ms=ref["end_ms"], candidate=c, words=usable,
         silences=silences, word_reliability=reliability)
     row["score"] = max(0, row["model_score"] - sum(p["points"] for p in row["penalties"]))
     row["below_cut"] = row["score"] < min_score
@@ -345,7 +378,8 @@ def finalize(session: Session, req: HighlightRequest) -> dict:
             score_row = kept.get(c["window_id"]) or rejected[c["window_id"]]
             row = {"run": r, "c": c, "model_clip": clip, "model_score":
                    score_row["editorial_score"], "fingerprint": fp, "transcript_id": tr,
-                   "window": windows_meta.get(c["window_id"], {})}
+                   "window": windows_meta.get(c["window_id"], {}),
+                   "audio_run_id": json.loads(r.evidence_json)["meta"].get("audio_run_id")}
             _editorial(session, req, row, min_score)
             rows.append(row)
     rows.sort(key=lambda x: (-x["score"], x["clip"]["start_ms"], x["c"]["window_id"]))
@@ -432,8 +466,9 @@ def describe(session: Session, recording_id: str) -> dict:
         if isinstance(ev, list):                      # M5 rows: the references only
             ev = {"refs": ev}
         return {"id": c.id, "rank": c.rank, "status": c.status, "reason": c.reject_reason,
-                "start_ms": c.start_ms, "end_ms": c.end_ms, "category": c.category,
-                "title": c.title, "hook": c.hook, "what_happens": c.what_happens,
+                "start_ms": c.start_ms, "end_ms": c.end_ms, "start_id": c.start_id,
+                "end_id": c.end_id, "category": c.category, "title": c.title,
+                "hook": c.hook, "what_happens": c.what_happens,
                 "why_entertaining": c.why_entertaining,
                 "editorial_score": c.editorial_score, "confidence": c.confidence,
                 "scores": json.loads(c.scores_json), "evidence": ev.get("refs", []),
