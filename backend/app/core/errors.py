@@ -94,6 +94,13 @@ class DependencyPendingJobError(TransientJobError):
     permanent = False
 
 
+class MemoryPressureJobError(DependencyPendingJobError):
+    """M5: not enough free memory to load a local model now. Deferred (no attempt spent)
+    for ``retry_seconds`` instead of risking swap or an out-of-memory kill."""
+
+    retry_seconds = 60.0
+
+
 # ---- Rights (M2) ----------------------------------------------------------
 
 class RightsRefused(AppError):

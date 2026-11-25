@@ -244,7 +244,7 @@ def test_downgrade_refuses_while_signal_runs_exist(db, settings, media_dir):
     with pytest.raises(Exception, match="signal runs"):
         command.downgrade(_alembic(settings), "0010")
     conn = sqlite3.connect(settings.db_path)
-    assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [("0011",)]
+    assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [("0012",)]
     assert conn.execute("SELECT count(*) FROM signal_runs").fetchone() == (1,)
     conn.close()
 

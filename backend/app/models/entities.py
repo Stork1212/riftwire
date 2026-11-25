@@ -46,6 +46,7 @@ class JobType(enum.StrEnum):
     TRANSCRIBE = "TRANSCRIBE"
     AUDIO_SIGNALS = "AUDIO_SIGNALS"
     VISUAL_SIGNALS = "VISUAL_SIGNALS"
+    AI_HIGHLIGHTS = "AI_HIGHLIGHTS"
 
 
 class JobStatus(enum.StrEnum):

@@ -355,7 +355,8 @@ def _triggers(settings) -> set[str]:
     # Triggers of the public-web/rights migrations (M4's transcript and signal triggers are
     # tested in test_transcripts.py and test_signals.py).
     return {r[0] for r in _sql(settings, "SELECT name FROM sqlite_master WHERE type='trigger'")
-            if not r[0].startswith(("trg_transcript", "trg_signal", "trg_keyframes"))}
+            if not r[0].startswith(("trg_transcript", "trg_signal", "trg_keyframes",
+                                    "trg_ai_runs", "trg_highlight_candidates"))}
 
 
 def _refusals(settings) -> int:
@@ -394,5 +395,5 @@ def test_downgrade_refuses_while_legacy_public_web_records_exist(w, db, settings
     db.dispose()
     with pytest.raises(Exception, match="public_web"):
         command.downgrade(_cfg(settings.database_url), "0008")
-    assert _sql(settings, "SELECT version_num FROM alembic_version") == [("0011",)]
+    assert _sql(settings, "SELECT version_num FROM alembic_version") == [("0012",)]
     assert len(_triggers(settings)) == 14

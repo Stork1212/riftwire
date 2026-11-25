@@ -19,6 +19,7 @@ from app.core.config import Settings
 from app.core.errors import (
     ConflictError,
     DependencyPendingJobError,
+    MemoryPressureJobError,
     NotFoundError,
     PayloadTooLarge,
     PermanentJobError,
@@ -27,6 +28,7 @@ from app.core.errors import (
     ServiceUnavailable,
     StorageOffline,
     StorageOfflineJobError,
+    TransientJobError,
     ValidationFailed,
 )
 from app.core.logging import get_logger
@@ -74,6 +76,8 @@ REQUIRED_KINDS: dict[JobType, tuple[str, ...]] = {
     # Signals read the recording; keyframes go to the internal thumbnails folder.
     JobType.AUDIO_SIGNALS: ("recordings",),
     JobType.VISUAL_SIGNALS: ("recordings",),
+    # Reads stored analysis only; writes database rows.
+    JobType.AI_HIGHLIGHTS: (),
 }
 
 THUMB_TMP_PREFIX = ".job-"           # thumbnails/.job-<job>-<token>.tmp.jpg
@@ -586,6 +590,97 @@ def handle_highlight_scan(ctx: JobContext) -> None:
     queue.complete(ctx.db, ctx.claimed, apply)
 
 
+# ------------------------------------------------------------------------ AI_HIGHLIGHTS
+PERMANENT_PROVIDER_CODES = {"non_loopback_endpoint", "provider_disabled", "model_missing",
+                            "structured_output_unavailable", "engine_not_implemented"}
+
+def handle_ai_highlights(ctx: JobContext) -> None:
+    """M5: evaluate candidate windows with the local model, batch by batch, from stored
+    analysis only. Each batch's run is stored in its own fenced transaction, so a retry
+    (provider down, worker restart, lost lease) resumes at the first unfinished batch.
+    One heavy workload at a time is the worker's single-job loop; the model is unloaded
+    after every batch."""
+    from app.ai import registry
+    from app.models import HighlightRequest, RequestStatus
+    from app.services import ai_highlights
+
+    recording = _load_recording(ctx)
+    if recording.status != RecordingStatus.READY.value or not recording.duration_ms:
+        raise PermanentJobError("Wait for the recording to finish processing.")
+    settings = ctx.settings
+    with ctx.db.session() as s:
+        req = ai_highlights.active_request(s, recording.id)
+        if req is None:                       # superseded or nothing to do
+            queue.complete(ctx.db, ctx.claimed)
+            return
+        req_id = req.id
+    transcript = _shared_transcript(ctx, recording)
+    visual = _shared_visual(ctx, recording)
+    audio = _shared_audio(ctx, recording) if transcript != (None, []) else None
+    pending = [n for n, v in (("transcript", transcript), ("visual signals", visual),
+                              ("audio signals", audio)) if v is _PENDING]
+    if pending:
+        raise DependencyPendingJobError(f"waiting for the shared {' and '.join(pending)}")
+    _transcript_id, words = transcript
+    assessed = evidence_reliability.assess_words(
+        words, audio[1] if audio else None, has_audio=recording.has_audio)
+    triggering = [w for w, a in zip(words, assessed, strict=True) if a["can_trigger"]]
+    planned = ai_highlights.windows(visual[1], triggering, recording.duration_ms,
+                                    settings.ai_max_windows)
+    per = settings.ai_windows_per_call
+    batches = [planned[i:i + per] for i in range(0, len(planned), per)]
+    with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
+        r = s.get(HighlightRequest, req_id)
+        if r.status == RequestStatus.PENDING.value:
+            r.status = RequestStatus.RUNNING.value
+        done = ai_highlights.finished_batches(s, req_id)
+    todo = [n for n in range(len(batches)) if n not in done]
+    if todo:
+        free = registry.available_memory_mb()
+        if free is not None and free < settings.ai_min_available_memory_mb:
+            raise MemoryPressureJobError(
+                f"memory_pressure: {free} MB available, {settings.ai_min_available_memory_mb}"
+                " MB needed before loading the local model")
+        try:
+            provider = registry.Cancellable(registry.build(settings), ctx.should_stop)
+        except registry.AIDisabled as e:
+            raise PermanentJobError(str(e)) from e
+    ctx.progress(5)
+    for k, n in enumerate(todo):
+        ctx.check()
+        with ctx.db.session() as s:
+            r = s.get(HighlightRequest, req_id)
+            if r.status == RequestStatus.SUPERSEDED.value:
+                queue.complete(ctx.db, ctx.claimed)
+                return
+            bundle, meta = ai_highlights.bundle_for(s, settings, recording, batches[n], r.game)
+            s.expunge(r)
+        outcome = ai_highlights.evaluate_batch(bundle, provider, r, settings)
+        if outcome.status == "provider_error" and "cancelled" in (outcome.error or ""):
+            ctx.check()                        # raises: cancellation or lost lease
+        with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
+            ai_highlights.store_run(s, s.get(HighlightRequest, req_id), n, outcome, bundle,
+                                    meta, settings)
+        if outcome.status == "provider_error":
+            if (outcome.error or "").split(":", 1)[0] in PERMANENT_PROVIDER_CODES:
+                raise PermanentJobError(f"local AI provider refused: {outcome.error}")
+            raise TransientJobError(f"local AI provider error on batch {n + 1}: "
+                                    f"{outcome.error}")
+        ctx.progress(5 + 90 * (k + 1) // max(1, len(todo)))
+    ctx.check()
+
+    def apply(session: Session) -> None:
+        r = session.get(HighlightRequest, req_id)
+        summary = ai_highlights.finalize(session, r)
+        record_event(session, Severity.INFO, "worker", "ai_highlights_completed",
+                     f"AI highlights: {summary['returned']} of {summary['requested']} "
+                     f"requested ({summary['candidates_validated']} validated candidates, "
+                     f"{summary['batches']} batches).",
+                     job_id=ctx.job_id, recording_id=recording.id)
+
+    queue.complete(ctx.db, ctx.claimed, apply)
+
+
 HANDLERS: dict[JobType, Callable[[JobContext], None]] = {
     JobType.INGEST: handle_ingest,
     JobType.METADATA: handle_metadata,
@@ -595,4 +690,5 @@ HANDLERS: dict[JobType, Callable[[JobContext], None]] = {
     JobType.TRANSCRIBE: handle_transcribe,
     JobType.AUDIO_SIGNALS: lambda ctx: handle_signals(ctx, SignalKind.AUDIO),
     JobType.VISUAL_SIGNALS: lambda ctx: handle_signals(ctx, SignalKind.VISUAL),
+    JobType.AI_HIGHLIGHTS: lambda ctx: handle_ai_highlights(ctx),
 }

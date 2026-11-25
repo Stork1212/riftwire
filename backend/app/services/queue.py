@@ -50,11 +50,12 @@ NEXT_STAGE = {JobType.INGEST: JobType.METADATA, JobType.METADATA: JobType.THUMBN
 # Analysis jobs read a finished recording; their failure never changes the recording's
 # own status, and they can be re-run.
 ANALYSIS_JOB_TYPES = frozenset({JobType.HIGHLIGHT_SCAN.value, JobType.TRANSCRIBE.value,
-                                JobType.AUDIO_SIGNALS.value, JobType.VISUAL_SIGNALS.value})
+                                JobType.AUDIO_SIGNALS.value, JobType.VISUAL_SIGNALS.value,
+                                JobType.AI_HIGHLIGHTS.value})
 # Analysis jobs whose output is versioned by configuration: re-armed (not duplicated) when
 # the configuration changes, the old output staying beside the new.
 REARMABLE_JOB_TYPES = frozenset({JobType.TRANSCRIBE.value, JobType.AUDIO_SIGNALS.value,
-                                 JobType.VISUAL_SIGNALS.value})
+                                 JobType.VISUAL_SIGNALS.value, JobType.AI_HIGHLIGHTS.value})
 
 
 class InvalidTransition(Exception):

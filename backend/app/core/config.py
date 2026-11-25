@@ -91,6 +91,17 @@ class Settings(BaseSettings):
     clip_whisper_model: Path | None = None
     # Chunking of the persistent TRANSCRIBE job. Part of the transcription configuration's
     # fingerprint: changing them yields a new transcript beside the old one.
+    # M5 local AI (owner-approved: Ollama + qwen3.5:4b, $0 budget, loopback only). "none"
+    # disables AI highlight jobs; paid/cloud providers do not exist in this release.
+    ai_provider: Literal["ollama", "none"] = "ollama"
+    ai_model: str = Field(default="qwen3.5:4b", min_length=1, max_length=128)
+    ai_base_url: str = "http://127.0.0.1:11434"
+    ai_timeout_seconds: float = Field(default=300.0, ge=10, le=3600)
+    ai_max_repairs: int = Field(default=2, ge=0, le=4)
+    ai_windows_per_call: int = Field(default=3, ge=1, le=8)
+    ai_max_windows: int = Field(default=12, ge=1, le=40)
+    ai_min_available_memory_mb: int = Field(default=3000, ge=0)
+    ai_default_prompt: str = "gaming.gta.v2"
     transcribe_chunk_seconds: int = Field(default=120, ge=10, le=1800)
     transcribe_overlap_seconds: int = Field(default=4, ge=0, le=30)
     transcribe_language: str = Field(default="en", min_length=2, max_length=8)

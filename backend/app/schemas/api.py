@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -101,3 +101,18 @@ class ImportResponse(BaseModel):
 
 class ClipListIn(BaseModel):
     text: str = Field(min_length=1, max_length=32_768)
+
+
+class HighlightRequestIn(BaseModel):
+    """M5/M6: find up to ``target_count`` highlights (fewer when fewer qualify)."""
+
+    model_config = ConfigDict(extra="forbid")
+    game: str | None = Field(default=None, max_length=64)
+    channel: str | None = Field(default=None, max_length=64)
+    target_count: int = Field(default=5, ge=1, le=20)
+    prompt_id: str | None = Field(default=None, max_length=64)
+
+
+class HighlightReviewIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    review_status: Literal["pending", "approved", "rejected"]

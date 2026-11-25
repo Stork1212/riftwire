@@ -79,6 +79,7 @@ JOB_USE: dict[JobType, str | None] = {
     JobType.TRANSCRIBE: "analyze",
     JobType.AUDIO_SIGNALS: "analyze",
     JobType.VISUAL_SIGNALS: "analyze",
+    JobType.AI_HIGHLIGHTS: "analyze",
 }
 
 # Reason codes (stable; API, UI, events).

@@ -309,7 +309,8 @@ class WorkerProcess:
         except DependencyPendingJobError as e:
             why = str(e)
             log.info(f"waiting for a dependency; deferring: {why}", extra=extra)
-            self._safe(lambda: queue.defer(self.db, claimed, why, DEPENDENCY_RETRY_SECONDS,
+            wait = getattr(e, "retry_seconds", DEPENDENCY_RETRY_SECONDS)
+            self._safe(lambda: queue.defer(self.db, claimed, why, wait,
                                            waiting_for="a dependency"))
         except StorageOfflineJobError as e:
             why = str(e)
