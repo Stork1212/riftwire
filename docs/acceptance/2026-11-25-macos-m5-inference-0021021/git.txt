@@ -1,0 +1,8 @@
+/Users/gregstork/Claude/riftwire-env/riftwire-m5prep-0021021.bundle is okay
+The bundle contains this ref:
+00210210b3ccd039f1ef05fec7f606b710815d73 refs/heads/phase2/m5-ai-prep
+The bundle requires this ref:
+258208780fa0595a9b799751b332cea1fff43ea8 
+The bundle uses this hash algorithm: sha1
+Already on 'phase2/m5-ai-prep'
+Already up to date.

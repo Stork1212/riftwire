@@ -228,6 +228,18 @@ def latency(runs: list[dict]) -> dict:
     }
 
 
+def _pipeline_recall(runs: list[dict]) -> float | None:
+    found = total = 0
+    for r in runs:
+        truth = TASKS_BY_NAME[r["task"]].highlights
+        if not truth:
+            continue
+        total += len(truth)
+        if r["status"] == "accepted":
+            found += round(r["score"]["ranked_recall"] * len(truth))
+    return round(found / total, 3) if total else None
+
+
 def summarize(runs: list[dict]) -> dict:
     ok = [r for r in runs if r["status"] == "accepted"]
     precisions = [r["score"]["precision"] for r in ok if r["score"]["precision"] is not None]
@@ -252,8 +264,15 @@ def summarize(runs: list[dict]) -> dict:
         "failed_validation": sum(r["status"] == "failed_validation" for r in runs),
         "provider_errors": sum(r["status"] == "provider_error" for r in runs),
         "mean_precision": round(statistics.mean(precisions), 3) if precisions else None,
+        # Conditional: averaged over ACCEPTED answers only. Not pipeline recall.
         "mean_recall": round(statistics.mean(r["score"]["recall"] for r in ok), 3)
         if ok else None,
+        # Pipeline-level: over every highlight-bearing evaluation, a failed or rejected
+        # evaluation counting as zero highlights found.
+        "pipeline_highlight_recall": _pipeline_recall(runs),
+        "highlight_evaluations_with_highlight_selected": sum(
+            1 for r in runs if TASKS_BY_NAME[r["task"]].highlights
+            and r["status"] == "accepted" and r["score"]["recall"] > 0),
         "trap_selected": sum(r["score"]["trap_selected"] for r in runs),
         "padded": sum(r["score"]["padded"] for r in ok),
         "ranked_padded": sum(r["score"]["ranked_padded"] for r in ok),

@@ -1,0 +1,151 @@
+{
+  "model": "qwen3.5:4b",
+  "required": [
+    "health",
+    "model_available",
+    "plain_text",
+    "provider_path"
+  ],
+  "passed": true,
+  "steps": [
+    {
+      "step": "health",
+      "status": "PASS",
+      "seconds": 0.0,
+      "detail": {
+        "version": "0.40.18"
+      }
+    },
+    {
+      "step": "model_available",
+      "status": "PASS",
+      "seconds": 0.01,
+      "detail": {
+        "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+        "details": {
+          "parent_model": "",
+          "format": "safetensors",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": "nvfp4",
+          "runner": "mlx",
+          "size_bytes": 3973305013
+        },
+        "capabilities": [
+          "completion",
+          "vision",
+          "thinking",
+          "tools"
+        ],
+        "parameters": "min_p                          0\npresence_penalty               1.5\nrepeat_penalty                 1\ntemperature                    1\ntop_k                          20\ntop_p                          0.95"
+      }
+    },
+    {
+      "step": "plain_text",
+      "status": "PASS",
+      "seconds": 2.1,
+      "detail": {
+        "content": "OK",
+        "thinking_chars": 0,
+        "output_tokens": 1,
+        "load_ms": 1912,
+        "total_ms": 2094,
+        "done_reason": "stop"
+      }
+    },
+    {
+      "step": "engine_residency",
+      "status": "PASS",
+      "seconds": 0.0,
+      "detail": {
+        "loaded": [
+          {
+            "name": "qwen3.5:4b",
+            "model": "qwen3.5:4b",
+            "size": 4065441280,
+            "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+            "details": {
+              "parent_model": "",
+              "format": "safetensors",
+              "family": "",
+              "families": null,
+              "parameter_size": "",
+              "quantization_level": "nvfp4"
+            },
+            "expires_at": "2026-11-25T09:05:27.345223-05:00",
+            "size_vram": 4065441280,
+            "context_length": 2048,
+            "runner": "mlx"
+          }
+        ]
+      }
+    },
+    {
+      "step": "json_mode",
+      "status": "UNAVAILABLE",
+      "seconds": 0.0,
+      "detail": {
+        "code": "structured_output_unavailable",
+        "message": "Ollama /api/chat returned HTTP 501: structured output is unavailable"
+      }
+    },
+    {
+      "step": "json_schema_mode",
+      "status": "UNAVAILABLE",
+      "seconds": 0.0,
+      "detail": {
+        "code": "structured_output_unavailable",
+        "message": "Ollama /api/chat returned HTTP 501: structured output is unavailable"
+      }
+    },
+    {
+      "step": "provider_path",
+      "status": "PASS",
+      "seconds": 131.43,
+      "detail": {
+        "outcome": "failed_validation",
+        "error": "invalid JSON: Extra data: line 2 column 1 (char 1567)",
+        "attempts": [
+          {
+            "ok": false,
+            "errors": [
+              "schema: candidates.0.evidence.1.basis: Input should be 'transcript', 'audio', 'motion', 'scene', 'observed_in_keyframe' or 'inference'"
+            ],
+            "metrics": {
+              "total_ms": 35136.1,
+              "load_ms": 0.3,
+              "prompt_tokens": 2633,
+              "prompt_ms": 5097.9,
+              "output_tokens": 1042,
+              "output_ms": 30024.1,
+              "done_reason": "stop",
+              "output_constraint": "none",
+              "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+              "thinking_chars": 0
+            }
+          },
+          {
+            "ok": false,
+            "errors": [
+              "invalid JSON: Extra data: line 2 column 1 (char 1567)"
+            ],
+            "metrics": {
+              "total_ms": 96268.0,
+              "load_ms": 0.7,
+              "prompt_tokens": 2708,
+              "prompt_ms": 5173.4,
+              "output_tokens": 3072,
+              "output_ms": 91081.9,
+              "done_reason": "length",
+              "output_constraint": "none",
+              "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+              "thinking_chars": 0
+            }
+          }
+        ],
+        "raw_head": "{\"schema\": \"highlight_eval.v1\", \"candidates\": [{\"window_id\": \"c:2\", \"start_id\": \"w:t1:36\", \"end_id\": \"w:t1:75\", \"category\": \"escape\", \"what_happens\": \"The player realizes police spotted them, attempts to flee through an alley, flies over train tracks, and finally escapes with the cops lost.\", \"why_entertaining\": \"This captures the full arc of a high-stakes GTA escape: the realization of danger, the desperate maneuvering through an alley, the adrenaline-fueled flight over train tracks, and the relief of finally getting away. It showcases the chaotic gameplay loop of police pursuit and evasion.\""
+      }
+    }
+  ]
+}

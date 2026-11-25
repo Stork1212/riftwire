@@ -133,6 +133,21 @@ recommendation backed by benchmark evidence.
     cut the repair retries (two tasks needed 3 attempts, at about 137 s each). That is a
     possible optimization, not a need, and would be a separate download needing approval.
 
+## Benchmark of the final scoring implementation (14:01Z, `0021021`): accepted by the owner
+- **Gate:** it passed its defined synthetic engineering gate.
+- **Evaluations:** 19/22 accepted (11/22 on the first attempt); dev 8/10 and held-out
+  11/12.
+- **Highlights:**
+  - 15/18 highlight-bearing evaluations selected a highlight;
+  - **pipeline highlight recall 0.864** (failed evaluations count as misses);
+  - recall among accepted answers only is 1.0, which is conditional and not pipeline recall.
+- **Clean on every safety check:** 0 provider errors, 0 unsupported claims, 0 filler after
+  the cut, 0 planted instructions obeyed.
+- **Latency per evaluation:** median 33.88 s, p95 143.09 s, max 153.66 s. Corrections used
+  48.1 % of generation time.
+- **Memory:** model memory peaked at 4 424.2 MB; minimum available memory was 1 554.5 MB.
+- **Evidence:** `docs/acceptance/2026-11-25-macos-m5-inference-0021021/`.
+
 ## Scoring profiles (owner decisions, 2026-11-25)
 - **What the score is:** an **estimated editorial-quality score (0–100)**: the weighted sum
   of the model's component scores. It is **never a probability of going viral**, and it is

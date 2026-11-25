@@ -564,3 +564,16 @@ def test_holdout_scenarios_are_separate_and_well_formed():
     for t in HOLDOUT:
         b, _ = build(t)
         assert len(b.windows) == len(t.segs) and t.highlights <= set(range(len(t.segs)))
+
+
+def test_pipeline_recall_counts_failed_evaluations_as_misses():
+    """Recall among accepted answers is conditional; pipeline recall is not (owner,
+    2026-11-25: do not present the first as the second)."""
+    import llm_bench
+    ok = {"task": "pursuit_escape", "status": "accepted",
+          "score": {"recall": 1.0, "ranked_recall": 1.0}}
+    failed = {"task": "pursuit_escape", "status": "failed_validation",
+              "score": {"recall": 0.0, "ranked_recall": 0.0}}
+    empty = {"task": "nothing_here", "status": "accepted",
+             "score": {"recall": 1.0, "ranked_recall": 1.0}}
+    assert llm_bench._pipeline_recall([ok, failed, empty]) == 0.5
