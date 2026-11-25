@@ -69,6 +69,34 @@ export function suggestClips(id: string): Promise<{ items: ClipSuggestion[] }> {
   return request(`/api/v1/recordings/${encodeURIComponent(id)}/clip-suggestions`, { method: "POST" });
 }
 
+export interface HighlightCandidate {
+  start_ms: number;
+  end_ms: number;
+  peak_ms: number;
+  score: number;
+  motion: number;
+  speech_cues: string[];
+  excerpt: string;
+}
+
+interface HighlightScan {
+  job: Job | null;
+  result: {
+    duration_ms: number;
+    coverage_ms: number;
+    speech_available: boolean;
+    items: HighlightCandidate[];
+  } | null;
+}
+
+export function getHighlightScan(id: string): Promise<HighlightScan> {
+  return request(`/api/v1/recordings/${encodeURIComponent(id)}/highlight-scan`);
+}
+
+export function queueHighlightScan(id: string): Promise<Job> {
+  return request(`/api/v1/recordings/${encodeURIComponent(id)}/highlight-scan`, { method: "POST" });
+}
+
 export interface ClipRange {
   line: number;
   label: string;

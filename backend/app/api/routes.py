@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -13,10 +14,19 @@ from starlette.requests import ClientDisconnect
 
 from app import __version__
 from app.core.config import Settings
-from app.core.errors import NotFoundError, ServiceUnavailable, ValidationFailed
+from app.core.errors import ConflictError, NotFoundError, ServiceUnavailable, ValidationFailed
 from app.core.logging import get_logger
 from app.db.session import Database
-from app.models import Job, JobStatus, Recording, Severity, Source, SystemEvent
+from app.models import (
+    Job,
+    JobStatus,
+    JobType,
+    Recording,
+    RecordingStatus,
+    Severity,
+    Source,
+    SystemEvent,
+)
 from app.schemas.api import (
     ClipListIn,
     EventOut,
@@ -26,7 +36,7 @@ from app.schemas.api import (
     RecordingDetail,
     RecordingOut,
 )
-from app.services import clip_lists, clips, media, queue, rights_import, system
+from app.services import clip_lists, clips, media, queue, rights, rights_import, system
 from app.services.events import record_event
 from app.services.ingest import UploadSession, complete_upload
 from app.services.storage import safe_join
@@ -205,6 +215,46 @@ async def import_recording(request: Request, db: DB, cfg: CFG,
             acquisition_method, filename)
     return ImportResponse(recording=rec_out(result.recording, source_id=linked),
                           job_id=result.job_id, source_id=linked, source_error=error)
+
+
+@api.post("/recordings/{recording_id}/highlight-scan", response_model=JobOut,
+          dependencies=[Depends(require_schema)])
+def enqueue_highlight_scan(recording_id: str, db: DB, cfg: CFG):
+    with db.session() as session:
+        recording = session.get(Recording, recording_id)
+        if recording is None:
+            raise NotFoundError("Recording not found")
+        if recording.status != RecordingStatus.READY.value or not recording.duration_ms:
+            raise ConflictError("Wait for the recording to finish processing.")
+        decision = rights.evaluate_recording(session, recording_id, "analyze")
+        if not decision.allowed:
+            raise decision.refuse()
+        job = queue.enqueue(session, recording_id, JobType.HIGHLIGHT_SCAN, cfg.job_max_attempts)
+        return job_out(job, recording.original_filename)
+
+
+@api.get("/recordings/{recording_id}/highlight-scan", dependencies=[Depends(require_schema)])
+def get_highlight_scan(recording_id: str, db: DB):
+    with db.session() as session:
+        recording = session.get(Recording, recording_id)
+        if recording is None:
+            raise NotFoundError("Recording not found")
+        decision = rights.evaluate_recording(session, recording_id, "analyze")
+        if not decision.allowed:
+            raise decision.refuse()
+        job = session.scalar(select(Job).where(Job.recording_id == recording_id,
+                                  Job.job_type == JobType.HIGHLIGHT_SCAN.value))
+        if job is None:
+            return {"job": None, "result": None}
+        result = json.loads(job.result_json) if job.result_json else None
+        return {"job": job_out(job), "result": result}
+
+
+@api.get("/recordings/{recording_id}/highlight-scan/frame/{index}",
+         dependencies=[Depends(require_schema)])
+def highlight_frame(recording_id: str, index: int, db: DB, cfg: CFG):
+    image = clips.highlight_frame(db, cfg, recording_id, index)
+    return Response(image, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @api.post("/recordings/{recording_id}/clip-list", dependencies=[Depends(require_schema)])

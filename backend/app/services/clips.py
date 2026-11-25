@@ -12,10 +12,12 @@ from threading import Lock
 from typing import Literal
 from uuid import uuid4
 
+from sqlalchemy import select
+
 from app.core.config import REPO_ROOT, Settings
 from app.core.errors import ConflictError, NotFoundError, ServiceUnavailable, ValidationFailed
 from app.db.session import Database
-from app.models import Recording, RecordingStatus
+from app.models import Job, JobType, Recording, RecordingStatus
 from app.services import media, reservations, rights, split_shorts
 from app.services.locations import get_layout, require_no_maintenance
 
@@ -164,6 +166,31 @@ def suggest(db: Database, settings: Settings, recording_id: str) -> list[dict]:
         with db.session() as session:
             rights.fence(session, decision)
         return picks
+
+
+def highlight_frame(db: Database, settings: Settings, recording_id: str, index: int) -> bytes:
+    """A sampled frame from the completed candidate, under current analyze rights."""
+    _, source, decision = _recording(db, settings, recording_id, "analyze")
+    with db.session() as session:
+        raw = session.scalar(select(Job.result_json).where(
+            Job.recording_id == recording_id, Job.job_type == JobType.HIGHLIGHT_SCAN.value))
+    items = json.loads(raw)["items"] if raw else []
+    if not 0 <= index < len(items):
+        raise NotFoundError("Highlight candidate not found.")
+    seek = items[index]["peak_ms"] / 1000
+    try:
+        result = media.run_command([
+            settings.ffmpeg_path, "-nostdin", "-v", "error", "-ss", f"{seek:.3f}",
+            "-i", str(source), "-frames:v", "1",
+            "-vf", "scale=480:-2", "-c:v", "mjpeg", "-f", "image2pipe", "-",
+        ], settings.ffprobe_timeout_seconds)
+    except media.MediaError as exc:
+        raise ServiceUnavailable("Could not extract the highlight preview.") from exc
+    if result.returncode or not result.stdout:
+        raise ServiceUnavailable("Could not extract the highlight preview.")
+    with db.session() as session:
+        rights.fence(session, decision)
+    return result.stdout
 
 
 ClipLayout = Literal["original", "split", "split_facecam"]

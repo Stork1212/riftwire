@@ -3,6 +3,7 @@ import { ProgressBar, StatusBadge } from "./ui";
 
 const ORDER: JobType[] = ["INGEST", "METADATA", "THUMBNAIL"];
 const LABEL: Record<JobType, string> = {
+  HIGHLIGHT_SCAN: "Find highlights",
   ACQUIRE: "Acquire from link", INGEST: "Store & verify", METADATA: "Metadata", THUMBNAIL: "Thumbnail",
 };
 

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { downloadClip, suggestClips, type ClipLayout, type ClipSuggestion } from "../services/api";
 import { formatDuration } from "../services/format";
 import type { Recording } from "../types/api";
+import { HighlightReview } from "./HighlightReview";
 import { ClipListReview, timecode } from "./ClipListReview";
 import { ActionableError } from "./ActionableError";
 import { Panel } from "./ui";
@@ -49,7 +50,7 @@ export function RecordingClips({ recording }: { recording: Recording }) {
   };
 
   return (
-    <Panel title="AI clip suggestions">
+    <Panel title="Highlights and Shorts">
       {!recording.source_id ? (
         <p>Link this recording to a <Link to="/sources">licensed source</Link> to analyze it.</p>
       ) : (
@@ -61,6 +62,11 @@ export function RecordingClips({ recording }: { recording: Recording }) {
             </button>
             <Link to={`/sources/${recording.source_id}`}>View source and rights</Link>
           </div>
+          <HighlightReview recordingId={recording.id} disabled={Boolean(busy)} onSelect={(candidate) => {
+            setStart(timecode(candidate.start_ms));
+            setEnd(timecode(candidate.end_ms));
+            setError(undefined);
+          }} />
           <ClipListReview recordingId={recording.id} disabled={Boolean(busy)} onSelect={(clip) => {
             setStart(timecode(clip.from_ms));
             setEnd(timecode(clip.to_ms));

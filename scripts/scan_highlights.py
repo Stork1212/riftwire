@@ -7,17 +7,16 @@ import json
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.services.highlight_scan import frame_activity, rank  # noqa: E402
+from app.services.highlight_scan import scan_video  # noqa: E402
+from app.services.media import run_command  # noqa: E402
 from app.services.source_urls import parse_source_url  # noqa: E402
 
-CHUNK_SECONDS = 300
 FLOOR = 60 * 1024**3
 
 
@@ -51,47 +50,24 @@ def main() -> None:
     ], text=True, timeout=30))
     duration_ms = int(duration * 1000)
     words = json.loads(args.words.read_text())["words"] if args.words else []
-    activity: list[float] = [0.0]
-    prior_frame = b""
-    with TemporaryDirectory(prefix=".scan-", dir=args.out) as temp:
-        work = Path(temp)
-        for begin in range(0, (duration_ms + 999)//1000, CHUNK_SECONDS):
-            length = min(CHUNK_SECONDS, duration - begin)
-            demux = ["ffmpeg", "-nostdin", "-v", "error", "-ss", str(begin),
-                     "-i", str(video), "-t", str(length)]
-            raw = subprocess.check_output(
-                demux + ["-an", "-vf", "fps=2,scale=96:54,format=gray",
-                         "-f", "rawvideo", "-"], timeout=240)
-            if raw:
-                activity.extend(frame_activity(prior_frame + raw, 96 * 54))
-                prior_frame = raw[-96 * 54:]
-            if args.whisper_python:
-                audio, transcript = work / "audio.wav", work / "words.json"
-                subprocess.run(demux + ["-y", "-vn", "-ac", "1", "-ar", "16000", str(audio)],
-                               check=True, timeout=120)
-                subprocess.run([
-                    str(args.whisper_python.resolve()),
-                    str(ROOT / "bench/riftbench/transcribe_child.py"),
-                    str(args.whisper_model.resolve()), str(audio), str(transcript),
-                ], check=True, timeout=180)
-                for word in json.loads(transcript.read_text())["words"]:
-                    word["start_ms"] += begin * 1000
-                    word["end_ms"] += begin * 1000
-                    words.append(word)
-            print(f"Scanned {clock(min((begin + CHUNK_SECONDS)*1000, duration_ms))} "
-                  f"of {clock(duration_ms)}", flush=True)
+    def progress(percent: int) -> None:
+        print(f"Scanned {percent / 0.98:.0f}% of {clock(duration_ms)}", flush=True)
 
-    ranked = rank(activity, words, duration_ms)
+    with TemporaryDirectory(prefix=".scan-", dir=args.out) as temp:
+        result = scan_video(
+            video, duration_ms, ffmpeg="ffmpeg", whisper_python=args.whisper_python,
+            whisper_model=args.whisper_model, work=Path(temp), run=run_command,
+            checkpoint=progress, existing_words=words)
     report = {
-        "source_url": source_url, "duration_ms": duration_ms,
-        "coverage_ms": min(duration_ms, len(activity) * 500),
-        "speech_available": bool(words),
+        "source_url": source_url, "duration_ms": result["duration_ms"],
+        "coverage_ms": result["coverage_ms"],
+        "speech_available": result["speech_available"],
         "scoring": "GTA signal shortlist. Visual activity plus speech cues. Human review needed.",
-        "candidates": [asdict(candidate) for candidate in ranked],
+        "candidates": result["items"],
     }
     lines = [f"URL={source_url}"] if source_url else []
-    lines.extend(f"{clock(c.start_ms)}-{clock(c.end_ms)} candidate_{index:02}"
-                 for index, c in enumerate(ranked, 1))
+    lines.extend(f"{clock(c['start_ms'])}-{clock(c['end_ms'])} candidate_{index:02}"
+                 for index, c in enumerate(result["items"], 1))
     (args.out / "clips.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (args.out / "candidates.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 

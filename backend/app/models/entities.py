@@ -41,6 +41,7 @@ class JobType(enum.StrEnum):
     # Fetch a saved source URL into a linked recording (url_download). Keyed to its source;
     # ``recording_id`` is set when the recording exists.
     ACQUIRE = "ACQUIRE"
+    HIGHLIGHT_SCAN = "HIGHLIGHT_SCAN"
 
 
 class JobStatus(enum.StrEnum):
@@ -171,6 +172,7 @@ class Job(Base):
     process_pid: Mapped[int | None] = mapped_column(Integer)
     process_started_at: Mapped[str | None] = mapped_column(String(64))
     last_error: Mapped[str | None] = mapped_column(Text)
+    result_json: Mapped[str | None] = mapped_column(Text)
 
     recording: Mapped[Recording | None] = relationship(back_populates="jobs")
 

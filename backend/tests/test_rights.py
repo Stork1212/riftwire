@@ -35,6 +35,7 @@ from app.services import (
     acquisition,
     clips,
     evidence,
+    highlight_scan,
     matching,
     media,
     queue,
@@ -44,7 +45,7 @@ from app.services import (
 from app.services.source_urls import parse_source_url
 from tests.conftest import requires_ffmpeg
 from tests.helpers import import_file
-from tests.test_ingest import drain
+from tests.test_ingest import drain, get_rec
 
 CLIP = "https://www.twitch.tv/somestreamer/clip/BigHeistMoment-AbC_123"
 VOD = "https://www.twitch.tv/videos/2201234567"
@@ -702,3 +703,41 @@ def test_clip_cut_checks_edit_rights_and_length(w, client, db, settings, media_d
         rights.revoke(session, licence, "rights withdrawn")
     assert client.post(path, params=params).status_code == 403
 
+
+@requires_ffmpeg
+def test_queued_highlight_scan_persists_evidence_and_respects_revocation(
+        w, client, db, settings, media_dir, monkeypatch):
+    licence = w.licence()
+    source_id = w.source(url=None, kind="local", creator_channel_id=w.local)
+    rec = import_file(db, settings, media_dir / "basic.mp4").recording
+    drain(db, settings)
+    url = f"/api/v1/recordings/{rec.id}/highlight-scan"
+    assert client.post(url).status_code == 403
+    with db.session() as s:
+        acquisition.attach_media(s, settings, source_id, rec.id)
+
+    def analyze(path, duration_ms, **kwargs):
+        kwargs["checkpoint"](60)
+        return {"duration_ms": duration_ms, "coverage_ms": duration_ms,
+                "speech_available": True, "items": [
+                    {"start_ms": 0, "end_ms": 1000, "peak_ms": 500, "score": 2,
+                     "motion": 4, "speech_cues": ["reaction"], "excerpt": "No way"},
+                ]}
+
+    monkeypatch.setattr(highlight_scan, "scan_video", analyze)
+    response = client.post(url)
+    assert response.status_code == 200, response.text
+    assert response.json()["job_type"] == "HIGHLIGHT_SCAN"
+    assert client.post(url).json()["id"] == response.json()["id"]
+    drain(db, settings)
+    result = client.get(url).json()
+    assert result["job"]["status"] == "COMPLETED"
+    assert result["result"]["items"][0]["excerpt"] == "No way"
+    frame = client.get(f"{url}/frame/0")
+    assert frame.status_code == 200, frame.text
+    assert frame.content.startswith(b"\xff\xd8")
+    with db.session() as s:
+        rights.revoke(s, licence, "rights withdrawn")
+    assert client.get(url).status_code == 403
+    assert client.get(f"{url}/frame/0").status_code == 403
+    assert get_rec(db, rec.id).status == "READY"
