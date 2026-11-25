@@ -2,7 +2,7 @@
 
 export type RecordingStatus = "STAGED" | "PROCESSING" | "READY" | "FAILED";
 export type ThumbnailStatus = "PENDING" | "READY" | "FAILED";
-export type JobType = "ACQUIRE" | "INGEST" | "METADATA" | "THUMBNAIL";
+export type JobType = "ACQUIRE" | "HIGHLIGHT_SCAN" | "INGEST" | "METADATA" | "THUMBNAIL";
 export type JobStatus =
   | "PENDING"
   | "RUNNING"

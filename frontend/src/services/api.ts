@@ -69,9 +69,61 @@ export function suggestClips(id: string): Promise<{ items: ClipSuggestion[] }> {
   return request(`/api/v1/recordings/${encodeURIComponent(id)}/clip-suggestions`, { method: "POST" });
 }
 
-export async function downloadClip(id: string, start: number, end: number, subtitles = false): Promise<void> {
-  const path = `/api/v1/recordings/${encodeURIComponent(id)}/clip${qs({ start_ms: start, end_ms: end, subtitles: subtitles ? "true" : undefined })}`;
-  return downloadMp4(path, `clip-${start}-${end}${subtitles ? "-captioned" : ""}.mp4`);
+export interface HighlightCandidate {
+  start_ms: number;
+  end_ms: number;
+  peak_ms: number;
+  score: number;
+  motion: number;
+  speech_cues: string[];
+  excerpt: string;
+}
+
+interface HighlightScan {
+  job: Job | null;
+  result: {
+    duration_ms: number;
+    coverage_ms: number;
+    speech_available: boolean;
+    items: HighlightCandidate[];
+  } | null;
+}
+
+export function getHighlightScan(id: string): Promise<HighlightScan> {
+  return request(`/api/v1/recordings/${encodeURIComponent(id)}/highlight-scan`);
+}
+
+export function queueHighlightScan(id: string): Promise<Job> {
+  return request(`/api/v1/recordings/${encodeURIComponent(id)}/highlight-scan`, { method: "POST" });
+}
+
+export interface ClipRange {
+  line: number;
+  label: string;
+  start_ms: number;
+  end_ms: number;
+  from_ms: number;
+  to_ms: number;
+}
+
+export function validateClipList(recordingId: string, text: string):
+  Promise<{ source_url: string | null; items: ClipRange[] }> {
+  return request(`/api/v1/recordings/${encodeURIComponent(recordingId)}/clip-list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+}
+
+export type ClipLayout = "original" | "split" | "split_facecam";
+
+export async function downloadClip(id: string, start: number, end: number, subtitles = false,
+  layout: ClipLayout = "original", title?: string): Promise<void> {
+  const query = qs({ start_ms: start, end_ms: end, subtitles: subtitles ? "true" : undefined,
+    layout: layout === "original" ? undefined : layout, title });
+  const path = `/api/v1/recordings/${encodeURIComponent(id)}/clip${query}`;
+  const suffix = layout !== "original" ? "-short" : subtitles ? "-captioned" : "";
+  return downloadMp4(path, `clip-${start}-${end}${suffix}.mp4`);
 }
 
 async function downloadMp4(path: string, filename: string): Promise<void> {

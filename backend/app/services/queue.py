@@ -258,7 +258,7 @@ def complete(db: Database, claimed: ClaimedJob,
 
 
 def _apply_terminal_failure(s: Session, job: Job, error: str) -> None:
-    if job.recording_id is None:          # ACQUIRE before its recording exists
+    if job.recording_id is None or job.job_type == JobType.HIGHLIGHT_SCAN.value:
         return
     rec = s.get(Recording, job.recording_id)
     if rec is None:
@@ -495,7 +495,7 @@ def retry_job(s: Session, job_id: str) -> Job:
     job.started_at = None
     job.updated_at = now
     rec = s.get(Recording, job.recording_id) if job.recording_id else None
-    if rec is not None:
+    if rec is not None and job.job_type != JobType.HIGHLIGHT_SCAN.value:
         if job.job_type == JobType.THUMBNAIL.value:
             rec.thumbnail_status = "PENDING"
         elif rec.status == RecordingStatus.FAILED.value:

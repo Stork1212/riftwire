@@ -9,13 +9,16 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Lock
+from typing import Literal
 from uuid import uuid4
+
+from sqlalchemy import select
 
 from app.core.config import REPO_ROOT, Settings
 from app.core.errors import ConflictError, NotFoundError, ServiceUnavailable, ValidationFailed
 from app.db.session import Database
-from app.models import Recording, RecordingStatus
-from app.services import media, reservations, rights
+from app.models import Job, JobType, Recording, RecordingStatus
+from app.services import media, reservations, rights, split_shorts
 from app.services.locations import get_layout, require_no_maintenance
 
 ANALYSIS_SECONDS = 300
@@ -165,40 +168,107 @@ def suggest(db: Database, settings: Settings, recording_id: str) -> list[dict]:
         return picks
 
 
+def highlight_frame(db: Database, settings: Settings, recording_id: str, index: int) -> bytes:
+    """A sampled frame from the completed candidate, under current analyze rights."""
+    _, source, decision = _recording(db, settings, recording_id, "analyze")
+    with db.session() as session:
+        raw = session.scalar(select(Job.result_json).where(
+            Job.recording_id == recording_id, Job.job_type == JobType.HIGHLIGHT_SCAN.value))
+    items = json.loads(raw)["items"] if raw else []
+    if not 0 <= index < len(items):
+        raise NotFoundError("Highlight candidate not found.")
+    seek = items[index]["peak_ms"] / 1000
+    try:
+        result = media.run_command([
+            settings.ffmpeg_path, "-nostdin", "-v", "error", "-ss", f"{seek:.3f}",
+            "-i", str(source), "-frames:v", "1",
+            "-vf", "scale=480:-2", "-c:v", "mjpeg", "-f", "image2pipe", "-",
+        ], settings.ffprobe_timeout_seconds)
+    except media.MediaError as exc:
+        raise ServiceUnavailable("Could not extract the highlight preview.") from exc
+    if result.returncode or not result.stdout:
+        raise ServiceUnavailable("Could not extract the highlight preview.")
+    with db.session() as session:
+        rights.fence(session, decision)
+    return result.stdout
+
+
+ClipLayout = Literal["original", "split", "split_facecam"]
+
+
+def _render_split(settings: Settings, source: Path, folder: Path, output: Path,
+                  start_ms: int, length: int, recording: Recording, facecam: bool,
+                  title: str) -> None:
+    outro = settings.clip_outro_path
+    if outro is None or not outro.is_file():
+        raise ServiceUnavailable("Set RIFTWIRE_CLIP_OUTRO_PATH to the vertical outro MP4.")
+    has_audio = recording.has_audio is not False
+    words = _transcribe(settings, source, folder, start_ms, length) if has_audio else []
+    header, captions = split_shorts.overlays(folder, words, title, length)
+    duration = f"{length / 1000:.3f}"
+    audio = "[0:a]" if has_audio else f"anullsrc=r=48000:cl=stereo,atrim=duration={duration},"
+    audio += "aresample=48000,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS[gamea];"
+    layout = split_shorts.video_filters(
+        facecam, (recording.width or 0) >= (recording.height or 0))
+    filters = (
+        layout + audio +
+        "[3:v]trim=duration=2,fps=30,scale=1080:1920,setsar=1,format=yuv420p,"
+        "setpts=PTS-STARTPTS[outro];"
+        "[3:a]atrim=duration=2,aresample=48000,aformat=channel_layouts=stereo,"
+        "asetpts=PTS-STARTPTS[outroa];"
+        "[game][gamea][outro][outroa]concat=n=2:v=1:a=1[v][a]"
+    )
+    _run([settings.ffmpeg_path, "-nostdin", "-v", "error", "-ss", f"{start_ms / 1000:.3f}",
+          "-t", duration, "-i", str(source), "-loop", "1", "-framerate", "30", "-i",
+          str(header), "-f", "concat", "-safe", "0", "-i", str(captions), "-i", str(outro),
+          "-filter_complex_threads", "2", "-filter_complex", filters, "-map", "[v]",
+          "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
+          "-maxrate", "4M", "-bufsize", "8M", "-c:a", "aac", "-b:a", "160k",
+          "-movflags", "+faststart", str(output)],
+         settings.ffmpeg_timeout_seconds, "Could not render the 35/65 Short.")
+
+
 def cut(db: Database, settings: Settings, recording_id: str, start_ms: int, end_ms: int,
-        *, subtitles: bool = False) -> bytes:
+        *, subtitles: bool = False, layout: ClipLayout = "original", title: str = "") -> bytes:
     length = end_ms - start_ms
-    if start_ms < 0 or not 0 < length <= MAX_CLIP_MS:
-        raise ValidationFailed("Choose a clip between 0 and 30 seconds long.")
+    split = layout != "original"
+    maximum = 45_000 if split else MAX_CLIP_MS
+    if start_ms < 0 or not 0 < length <= maximum:
+        raise ValidationFailed(f"Choose a clip up to {maximum // 1000} seconds long.")
     recording, source, decision = _recording(db, settings, recording_id, "edit", length)
     if end_ms > recording.duration_ms:
         raise ValidationFailed("The clip ends past the recording.")
     analyze = None
-    if subtitles:
+    if subtitles or (split and recording.has_audio is not False):
         if recording.has_audio is False:
             raise ValidationFailed("This recording has no audio to transcribe.")
         _, _, analyze = _recording(db, settings, recording_id, "analyze")
     with _workspace(db, settings) as folder:
-        subtitle_input: list[str] = []
-        subtitle_output: list[str] = []
-        if subtitles:
-            words = _transcribe(settings, source, folder, start_ms, length)
-            captions = _captions(words, length)
-            if not captions:
-                raise ValidationFailed("No speech was detected in this clip.")
-            srt = folder / "clip.srt"
-            srt.write_text(captions, encoding="utf-8")
-            subtitle_input = ["-i", str(srt)]
-            subtitle_output = ["-map", "1:0", "-c:s", "mov_text", "-disposition:s:0", "default"]
         output = folder / "clip.mp4"
-        _run([settings.ffmpeg_path, "-nostdin", "-v", "error", "-ss", f"{start_ms / 1000:.3f}",
-              "-i", str(source), *subtitle_input, "-t", f"{length / 1000:.3f}",
-              "-map", "0:v:0", "-map", "0:a:0?", *subtitle_output,
-              "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2",
-              "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-maxrate", "4M",
-              "-bufsize", "8M", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-              str(output)],
-             settings.ffmpeg_timeout_seconds, "Could not cut the requested MP4.")
+        if split:
+            _render_split(settings, source, folder, output, start_ms, length, recording,
+                          layout == "split_facecam", title)
+        else:
+            subtitle_input: list[str] = []
+            subtitle_output: list[str] = []
+            if subtitles:
+                words = _transcribe(settings, source, folder, start_ms, length)
+                captions = _captions(words, length)
+                if not captions:
+                    raise ValidationFailed("No speech was detected in this clip.")
+                srt = folder / "clip.srt"
+                srt.write_text(captions, encoding="utf-8")
+                subtitle_input = ["-i", str(srt)]
+                subtitle_output = ["-map", "1:0", "-c:s", "mov_text", "-disposition:s:0", "default"]
+            _run([settings.ffmpeg_path, "-nostdin", "-v", "error", "-ss", f"{start_ms / 1000:.3f}",
+                  "-i", str(source), *subtitle_input, "-t", f"{length / 1000:.3f}",
+                  "-map", "0:v:0", "-map", "0:a:0?", *subtitle_output,
+                  "-vf",
+                  "scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2",
+                  "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-maxrate", "4M",
+                  "-bufsize", "8M", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+                  str(output)],
+                 settings.ffmpeg_timeout_seconds, "Could not cut the requested MP4.")
         data = output.read_bytes()
         with db.session() as session:
             rights.fence(session, decision)

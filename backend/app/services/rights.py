@@ -75,6 +75,7 @@ JOB_USE: dict[JobType, str | None] = {
     # ``url_download.acquire`` check ``acquire`` by ``url_fetch`` before queueing, before
     # the download, after it, and again in the transaction that links the recording.
     JobType.ACQUIRE: None,
+    JobType.HIGHLIGHT_SCAN: "analyze",
 }
 
 # Reason codes (stable; API, UI, events).

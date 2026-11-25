@@ -3,11 +3,13 @@ transactions (via the JobContext / queue.complete)."""
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from sqlalchemy.orm import Session
 
@@ -27,7 +29,7 @@ from app.core.errors import (
 from app.core.logging import get_logger
 from app.db.session import Database
 from app.models import Job, JobType, Recording, RecordingStatus, Severity
-from app.services import media, queue, reservations, url_download
+from app.services import highlight_scan, media, queue, reservations, url_download
 from app.services.acquisition import AcquisitionUnavailable
 from app.services.events import record_event
 from app.services.ingest import FinalizeError, finalize_recording
@@ -46,6 +48,7 @@ REQUIRED_KINDS: dict[JobType, tuple[str, ...]] = {
     JobType.THUMBNAIL: ("recordings",),
     # The download and the import's .part file are both on temp; INGEST then moves it.
     JobType.ACQUIRE: ("temp",),
+    JobType.HIGHLIGHT_SCAN: ("recordings", "temp"),
 }
 
 THUMB_TMP_PREFIX = ".job-"           # thumbnails/.job-<job>-<token>.tmp.jpg
@@ -295,9 +298,58 @@ def handle_acquire(ctx: JobContext) -> None:
     queue.complete(ctx.db, ctx.claimed, link_job)
 
 
+def handle_highlight_scan(ctx: JobContext) -> None:
+    require_storage(ctx)
+    recording = _load_recording(ctx)
+    if recording.status != RecordingStatus.READY.value or not recording.duration_ms:
+        raise PermanentJobError("Wait for the recording to finish processing.")
+    settings = ctx.settings
+    source = settings.managed_path(recording.file_path)
+    if not source.is_file():
+        raise PermanentJobError("Recording file is missing.")
+    layout = get_layout(settings)
+    temp = layout.path("temp")
+    volume = layout.location("temp").volume_uuid
+    budget = 16 * 1024 * 1024
+    lease = max(600, settings.reservation_lease_seconds)
+    reservation = reservations.reserve_on_volume(
+        ctx.db, volume, temp, layout.floor_for_volume(volume), "highlight-scan",
+        f"job:{ctx.job_id}:{ctx.claimed.token}", budget, lease_seconds=lease)
+
+    def checkpoint(percent: int) -> None:
+        ctx.check()
+        require_storage(ctx)
+        reservations.renew(ctx.db, layout, reservation, budget, lease_seconds=lease)
+        ctx.progress(percent)
+
+    try:
+        with TemporaryDirectory(prefix="highlight-work-", dir=temp) as folder:
+            result = highlight_scan.scan_video(
+                source, recording.duration_ms, ffmpeg=settings.ffmpeg_path,
+                whisper_python=(settings.clip_whisper_python if recording.has_audio else None),
+                whisper_model=settings.clip_whisper_model, work=Path(folder),
+                run=ctx.run, checkpoint=checkpoint)
+        ctx.check()
+        require_storage(ctx)
+
+        def apply(session: Session) -> None:
+            session.get(Job, ctx.job_id).result_json = json.dumps(result, ensure_ascii=False)
+            record_event(session, Severity.INFO, "worker", "highlights_scanned",
+                         f"Found {len(result['items'])} candidates for review.",
+                         job_id=ctx.job_id, recording_id=recording.id)
+
+        queue.complete(ctx.db, ctx.claimed, apply)
+    except (media.MediaError, OSError):
+        require_storage(ctx)  # A drive that disappeared during the scan defers the job.
+        raise
+    finally:
+        reservations.release(ctx.db, reservation)
+
+
 HANDLERS: dict[JobType, Callable[[JobContext], None]] = {
     JobType.INGEST: handle_ingest,
     JobType.METADATA: handle_metadata,
     JobType.THUMBNAIL: handle_thumbnail,
     JobType.ACQUIRE: handle_acquire,
+    JobType.HIGHLIGHT_SCAN: handle_highlight_scan,
 }

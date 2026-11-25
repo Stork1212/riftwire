@@ -262,7 +262,7 @@ def test_migration_keeps_every_trigger_and_existing_records(w, db, settings):
     db.dispose()
     before = _triggers(settings)
     assert len(before) == 14
-    command.downgrade(cfg, "0007")
+    command.downgrade(cfg, "0008")
     assert _triggers(settings) == before
     assert _sql(settings, "SELECT id, basis FROM rights_records") == [(rid, "licence")]
     command.upgrade(cfg, "head")
@@ -276,8 +276,8 @@ def test_downgrade_refuses_while_public_web_records_exist(w, db, client, setting
     _save_link(client, w)
     db.dispose()
     with pytest.raises(Exception, match="public_web"):
-        command.downgrade(_cfg(settings.database_url), "0007")
-    assert _sql(settings, "SELECT version_num FROM alembic_version") == [("0008",)]
+        command.downgrade(_cfg(settings.database_url), "0008")
+    assert _sql(settings, "SELECT version_num FROM alembic_version") == [("0009",)]
     assert len(_triggers(settings)) == 14
 
 

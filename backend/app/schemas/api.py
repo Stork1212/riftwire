@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")
 
@@ -97,3 +97,7 @@ class ImportResponse(BaseModel):
     # that happened after the bytes were received (the recording is kept, unlinked).
     source_id: str | None = None
     source_error: str | None = None
+
+
+class ClipListIn(BaseModel):
+    text: str = Field(min_length=1, max_length=32_768)
