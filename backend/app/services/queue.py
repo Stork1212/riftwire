@@ -121,7 +121,6 @@ def enqueue_acquire(session: Session, settings, source_id: str, max_attempts: in
     src = sources.get_source(session, source_id)
     if not src.url_canonical:
         raise ValidationFailed("Save a YouTube or Twitch video link before acquiring.")
-    rights.record_public_web(session, src)       # links saved before public_web existed
     acquisition.check_acquire(session, settings, source_id,
                               acquisition.AcquisitionMethod.URL_FETCH.value, fetched=True)
     now = utcnow()

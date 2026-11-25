@@ -1,18 +1,25 @@
-"""The public_web basis: a saved link is public footage that may be fetched and analysed,
-recorded automatically and honestly, and never authorizes editing or publishing.
+"""Public availability is a classification, never permission (owner decision 2026-11-25,
+superseding the download-by-default policy of 2026-11-24; docs/URL_ACQUISITION.md §7).
 
-Owner acquisition policy (2026-11-24), points 1 and 2; docs/URL_ACQUISITION.md §7."""
+* Saving a link grants nothing and queues nothing on its own.
+* URL fetching is off by default; switched on, it still needs a user-confirmed record that
+  allows ``acquire`` by ``url_fetch`` with written platform permission attached.
+* ``public_web`` rows written by ``b13b91f`` stay as immutable history and authorize
+  nothing: not acquisition, analysis, editing or publishing.
+* Standing permission is used without asking again for every link.
+"""
 
 from __future__ import annotations
 
-import json
 import sqlite3
+from datetime import timedelta
 
 import pytest
 from alembic import command
 from fastapi.testclient import TestClient
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
+from app.core.config import Settings
 from app.core.errors import RightsRefused
 from app.main import create_app
 from app.models import (
@@ -20,19 +27,21 @@ from app.models import (
     ProvenanceEvent,
     Recording,
     RightsRecord,
-    RightsSourceLink,
     Source,
     SystemEvent,
 )
-from app.services import queue, rights, sources
+from app.services import evidence, rights, url_download
 from tests.conftest import requires_ffmpeg
-from tests.helpers import import_file
+from tests.helpers import import_file, legacy_public_web
 from tests.test_ingest import drain
 from tests.test_m2_audit import _cfg, _sql
 from tests.test_rights import ATTEST, CLIP, FULL_SCOPE, World
 from tests.test_url_acquisition import FakeDownloader
 
 PUBLISH = {"platform": "youtube_shorts", "clip_ms": 30_000}
+URL_SCOPE = {**FULL_SCOPE, "acquisition_methods": ["url_fetch"]}
+OTHER = "https://www.twitch.tv/videos/24242424"
+THIRD = "https://www.twitch.tv/videos/31313131"
 
 
 @pytest.fixture
@@ -52,69 +61,101 @@ def _save_link(client, w, url=CLIP) -> dict:
     return r.json()
 
 
-def _public(db, sid: str) -> RightsRecord:
+def _legacy(db, sid: str) -> RightsRecord:
     with db.session() as s:
-        return s.scalars(select(RightsRecord).join(
-            RightsSourceLink, RightsSourceLink.rights_record_id == RightsRecord.id).where(
-            RightsSourceLink.source_id == sid, RightsRecord.basis == "public_web")).one()
+        return legacy_public_web(s, sid)
 
 
-# ------------------------------------------------------------------------- the record
-
-def test_saving_a_link_records_public_footage_honestly(w, db, client):
-    src = _save_link(client, w)
-    r = _public(db, src["id"])
-    assert r.coverage == "sources" and r.creator_id == w.creator
-    assert r.attested_by == "system" and r.attested_at is not None
-    assert "Not creator-confirmed" in r.attestation_text
-    scope = json.loads(r.scope_json)
-    assert scope["uses"] == ["acquire", "analyze"]
-    assert scope["acquisition_methods"] == ["url_fetch"]
-    assert scope["publish_platforms"] == [] and scope["monetization"] is False
+def _permission(w, db, settings, *, scope=URL_SCOPE, platform: bool = True,
+                **kw) -> str:
+    """The creator's standing permission, confirmed by the owner (creator coverage)."""
     with db.session() as s:
-        ev = s.scalars(select(ProvenanceEvent).where(
-            ProvenanceEvent.entity_id == r.id,
-            ProvenanceEvent.action == "recorded_public_web")).one()
-        assert ev.actor == "system" and json.loads(ev.details_json)["source_id"] == src["id"]
-        # idempotent: never a second record for the same link
-        again = rights.record_public_web(s, s.get(Source, src["id"]))
-        assert again.id == r.id
-    assert src["rights_status"] == "public_web"
+        kw.setdefault("coverage", "creator")
+        rid = rights.create_record(s, creator_id=w.creator, basis="creator_permission",
+                                   scope=scope, attestation_text=ATTEST, **kw).id
+    if platform:
+        evidence.add_evidence(db, settings, rid, kind="platform_permission",
+                              reference="Synthetic test permission")
+    return rid
 
 
-def test_local_sources_get_no_public_web_record(w, db):
-    sid = w.source(kind="local", url=None, creator_channel_id=w.local, public_web=True)
+def _acquire_jobs(db) -> list[Job]:
     with db.session() as s:
-        assert s.scalar(select(RightsRecord.id)) is None
-        assert rights.record_public_web(s, s.get(Source, sid)) is None
+        return list(s.scalars(select(Job).where(Job.job_type == "ACQUIRE")
+                              .order_by(Job.created_at)))
 
 
-def test_public_web_authorizes_fetch_and_analysis_only(w, db, client, settings):
+# ------------------------------------------------------------------ defaults and saving
+
+def test_url_acquisition_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("RIFTWIRE_URL_ACQUISITION_ENABLED", raising=False)
+    assert Settings.model_fields["url_acquisition_enabled"].default is False
+    assert Settings(_env_file=None).url_acquisition_enabled is False
+
+
+def test_saving_a_public_link_grants_nothing_and_queues_nothing(w, db, client, settings):
+    for enabled, url in ((False, CLIP), (True, OTHER)):
+        settings.url_acquisition_enabled = enabled
+        src = _save_link(client, w, url)
+        assert src["rights_status"] == "public_web"         # classification only
+        assert src["authorized_uses"] == []
+        detail = client.get(f"/api/v1/sources/{src['id']}").json()
+        assert detail["records"] == []                      # no record is written
+        acq = detail["acquire"]
+        assert not acq["allowed"] and acq["reason"] == rights.NO_RIGHTS_RECORD
+        assert "platform permission" in acq["action"]       # an actionable next step
+    assert _acquire_jobs(db) == []
+    with db.session() as s:
+        assert s.scalar(select(func.count()).select_from(RightsRecord)) == 0
+        ev = s.scalars(select(SystemEvent).where(
+            SystemEvent.event_type == "acquire_not_queued")).one()   # only when switched on
+        assert "no rights record" in ev.message
+
+
+def test_enabling_fetching_does_not_bypass_rights(w, db, client, settings, monkeypatch,
+                                                  media_dir):
     settings.url_acquisition_enabled = True
-    src = _save_link(client, w)
-    sid = src["id"]
-    with db.session() as s:
-        assert rights.authorized_uses(s, s.get(Source, sid),
-                                      url_acquisition_enabled=True) == ["acquire", "analyze"]
-    assert w.decide(sid, "acquire", method="url_fetch", url_acquisition_enabled=True).allowed
-    assert w.decide(sid, "analyze").allowed
-    for use, kw in (("edit", {"clip_ms": 30_000}), ("publish", PUBLISH)):
+    fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
+    sid = _save_link(client, w)["id"]
+    r = client.post(f"/api/v1/sources/{sid}/acquire")
+    assert r.status_code == 403
+    assert r.json()["error"]["details"]["reason"] == rights.NO_RIGHTS_RECORD
+    with pytest.raises(RightsRefused):
+        url_download.acquire(db, settings, sid)
+    assert fake.calls == [] and _acquire_jobs(db) == []
+
+
+def test_local_sources_are_not_classified_as_public(w):
+    sid = w.source(kind="local", url=None, creator_channel_id=w.local)
+    with w.db.session() as s:
+        assert rights.status_summary(s, s.get(Source, sid)) == "none"
+
+
+# ------------------------------------------------------- legacy public_web rows (b13b91f)
+
+def test_existing_public_web_records_authorize_nothing(w, db, client, settings):
+    settings.url_acquisition_enabled = True
+    sid = w.source()
+    _legacy(db, sid)
+    for use, kw in (("acquire", {"method": "url_fetch", "url_acquisition_enabled": True}),
+                    ("analyze", {}), ("edit", {"clip_ms": 30_000}), ("publish", PUBLISH)):
         d = w.decide(sid, use, **kw)
-        assert not d.allowed and d.reason == rights.CREATOR_PERMISSION_NEEDED
-        assert "creator" in rights.REASON_ACTION[d.reason].lower()
-    chk = client.get(f"/api/v1/sources/{sid}/rights-check",
-                     params={"use": "edit", "clip_ms": 30000}).json()
+        assert not d.allowed and d.reason == rights.CREATOR_PERMISSION_NEEDED, use
+        assert "not permission" in d.message and "creator" in d.action.lower()
+    with db.session() as s:
+        src = s.get(Source, sid)
+        assert rights.authorized_uses(s, src, url_acquisition_enabled=True) == []
+        assert rights.status_summary(s, src) == "public_web"
+    chk = client.get(f"/api/v1/sources/{sid}/rights-check", params={"use": "analyze"}).json()
     assert not chk["allowed"] and chk["reason"] == "creator_permission_needed"
-    assert chk["action"]
 
 
-def test_public_web_never_authorizes_editing_whatever_its_scope_says(w, db):
-    """Defence in depth: even a public_web row whose scope lists every use (which the
-    application never writes) cannot authorize edit or publish."""
+def test_public_web_authorizes_nothing_whatever_its_scope_says(w, db):
+    """Even a public_web row whose scope lists every use and method authorizes nothing."""
     sid = w.source()
     with db.session() as s:
         sc = rights.Scope(v=1, uses=["acquire", "analyze", "edit", "publish"],
-                          acquisition_methods=["url_fetch"],
+                          acquisition_methods=["url_fetch", "platform_export"],
                           publish_platforms=["youtube_shorts"], brand_channels="*",
                           monetization=True)
         text = rights.canonical_scope(sc)
@@ -123,110 +164,183 @@ def test_public_web_never_authorizes_editing_whatever_its_scope_says(w, db):
                          valid_from=rights.utcnow(), created_at=rights.utcnow(), version=1)
         s.add(r)
         s.flush()
+        from app.models import RightsSourceLink
         s.add(RightsSourceLink(rights_record_id=r.id, source_id=sid))
         s.flush()
         r.attestation_text, r.attested_by, r.attested_at = "x" * 20, "system", rights.utcnow()
-    d = w.decide(sid, "edit", clip_ms=1000)
-    assert not d.allowed and d.reason == rights.CREATOR_PERMISSION_NEEDED
+    for use in rights.USES:
+        assert not w.decide(sid, use, clip_ms=1000, platform="youtube_shorts",
+                            method="url_fetch", url_acquisition_enabled=True).allowed
 
 
-def test_public_web_cannot_be_created_or_widened_by_hand(w, db, client):
+def test_previously_queued_acquisition_cannot_bypass_the_policy(
+        w, db, settings, monkeypatch, media_dir):
+    """An ACQUIRE job queued under the 2026-11-24 policy (legacy public_web row, fetching
+    on) is refused by the worker before any download, permanently, with provenance."""
+    settings.url_acquisition_enabled = True
+    fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
+    sid = w.source()
+    _legacy(db, sid)
+    with db.session() as s:                                # the row b13b91f's queue wrote
+        now = rights.utcnow()
+        s.add(Job(source_id=sid, job_type="ACQUIRE", status="PENDING", max_attempts=3,
+                  created_at=now, updated_at=now, next_attempt_at=now))
+    drain(db, settings)
+    (job,) = _acquire_jobs(db)
+    assert job.status == "FAILED" and job.attempt_count == 1 and job.recording_id is None
+    assert "RightsRefused" in job.last_error
+    with db.session() as s:
+        assert s.scalars(select(ProvenanceEvent).where(
+            ProvenanceEvent.entity_id == job.id,
+            ProvenanceEvent.action == "rights_refused")).one()
+        assert s.scalar(select(func.count()).select_from(Recording)) == 0
+    assert fake.downloads == []
+
+
+def test_public_web_is_never_upgraded_into_a_permission(w, db, client, settings):
+    sid = w.source()
+    legacy = _legacy(db, sid)
+    before = (legacy.basis, legacy.scope_sha256, legacy.attested_by)
+    perm = _permission(w, db, settings)
+    with db.session() as s:
+        again = s.get(RightsRecord, legacy.id)
+        assert (again.basis, again.scope_sha256, again.attested_by) == before
+        assert s.get(RightsRecord, perm).basis == "creator_permission"
+        assert s.scalar(select(func.count()).select_from(RightsRecord)) == 2
+    assert w.decide(sid, "analyze").record_id == perm          # the permission, never legacy
+    r = client.post(f"/api/v1/rights/{legacy.id}/supersede",
+                    json={"scope": FULL_SCOPE, "attestation_text": ATTEST})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "public_web_automatic"
+    with db.session() as s, pytest.raises(Exception, match="immutable"):
+        s.execute(update(RightsRecord).where(RightsRecord.id == legacy.id)
+                  .values(basis="creator_permission"))
+        s.flush()
+
+
+def test_public_web_cannot_be_recorded_by_hand(w, client):
     r = client.post("/api/v1/rights", json={
         "creator_id": w.creator, "basis": "public_web", "coverage": "creator",
         "scope": FULL_SCOPE, "attestation_text": ATTEST})
     assert r.status_code == 422 and r.json()["error"]["code"] == "public_web_automatic"
-    src = _save_link(client, w)
-    pub = _public(db, src["id"])
-    r = client.post(f"/api/v1/rights/{pub.id}/supersede", json={
-        "scope": FULL_SCOPE, "attestation_text": ATTEST})
-    assert r.status_code == 422 and r.json()["error"]["code"] == "public_web_automatic"
-    # immutable like any attested record
-    with db.session() as s, pytest.raises(Exception, match="immutable"):
-        s.execute(update(RightsRecord).where(RightsRecord.id == pub.id)
-                  .values(scope_json="{}"))
-        s.flush()
 
 
-def test_creator_permission_unlocks_editing_and_publishing(w, db, client):
-    src = _save_link(client, w)
-    sid = src["id"]
-    assert not w.decide(sid, "edit", clip_ms=30_000).allowed
-    with db.session() as s:                          # the creator said yes
-        rights.create_record(s, creator_id=w.creator, basis="creator_permission",
-                             coverage="creator", scope=FULL_SCOPE, attestation_text=ATTEST)
-    assert w.decide(sid, "edit", clip_ms=30_000).allowed
-    detail = client.get(f"/api/v1/sources/{sid}").json()
-    assert detail["rights_status"] == "active"
-    assert {r["basis"] for r in detail["records"]} == {"public_web", "creator_permission"}
-    perm = next(r for r in detail["records"] if r["basis"] == "creator_permission")
-    client.post(f"/api/v1/rights/{perm['id']}/revoke", json={"reason": "creator withdrew"})
-    d = w.decide(sid, "edit", clip_ms=30_000)        # the more useful reason is reported
-    assert not d.allowed and d.reason == rights.REVOKED
-    assert w.decide(sid, "analyze").allowed          # public footage stays analysable
+# ------------------------------------------------------------- what does authorize it
+
+def test_creator_permission_without_platform_permission_cannot_fetch(w, db, settings):
+    sid = w.source()
+    _permission(w, db, settings, platform=False)
+    d = w.decide(sid, "acquire", method="url_fetch", url_acquisition_enabled=True)
+    assert not d.allowed and d.reason == rights.PLATFORM_PERMISSION_MISSING
+    assert w.decide(sid, "acquire", method="url_fetch").reason == \
+        rights.URL_ACQUISITION_DISABLED
 
 
-# ------------------------------------------------------------------ saved → acquired
-
-def test_saving_a_link_queues_its_acquisition(w, db, client, settings):
-    settings.url_acquisition_enabled = False
-    off = _save_link(client, w)
-    assert not _acquire_jobs(db)
-    settings.url_acquisition_enabled = True
-    on = _save_link(client, w, url="https://www.twitch.tv/videos/24242424")
-    (job,) = _acquire_jobs(db)
-    assert job.source_id == on["id"] and job.status == "PENDING" and off["id"] != on["id"]
-
-
-def test_a_refused_acquisition_never_blocks_saving_the_link(w, db, client, settings,
-                                                          monkeypatch):
-    settings.url_acquisition_enabled = True
-
-    def refuse(*_a, **_k):
-        raise RightsRefused(rights.Decision(False, rights.REVOKED, "acquire", None))
-    monkeypatch.setattr(queue, "enqueue_acquire", refuse)
-    src = _save_link(client, w)
-    assert src["id"] and not _acquire_jobs(db)
+def test_both_content_and_method_must_be_authorized(w, db, settings):
+    sid = w.source()
+    # platform permission attached, but the method is not url_fetch
+    _permission(w, db, settings, scope=FULL_SCOPE)
+    d = w.decide(sid, "acquire", method="url_fetch", url_acquisition_enabled=True)
+    assert not d.allowed and d.reason == rights.METHOD_NOT_PERMITTED
+    other = w.source(OTHER, creator_channel_id=w.twitch)
+    # the method, but not the use
     with db.session() as s:
-        ev = s.scalars(select(SystemEvent).where(
-            SystemEvent.event_type == "acquire_not_queued")).one()
-        assert src["id"] in ev.message
+        rid = rights.create_record(s, creator_id=w.creator, basis="creator_permission",
+                                   coverage="sources", source_ids=[other],
+                                   scope={**URL_SCOPE, "uses": ["analyze"]},
+                                   attestation_text=ATTEST).id
+    evidence.add_evidence(db, settings, rid, kind="platform_permission", reference="x")
+    d = w.decide(other, "acquire", method="url_fetch", url_acquisition_enabled=True)
+    assert not d.allowed
+
+
+def test_standing_permission_acquires_without_asking_again(w, db, client, settings):
+    settings.url_acquisition_enabled = True
+    perm = _permission(w, db, settings)
+    first, second = _save_link(client, w), _save_link(client, w, OTHER)
+    jobs = _acquire_jobs(db)
+    assert [j.source_id for j in jobs] == [first["id"], second["id"]]
+    with db.session() as s:                    # no per-link records were needed
+        assert s.scalar(select(func.count()).select_from(RightsRecord)) == 1
+    assert first["rights_status"] == "active"
+    assert w.decide(first["id"], "acquire", method="url_fetch",
+                    url_acquisition_enabled=True).record_id == perm
+
+
+@pytest.mark.parametrize("lapse", ["revoked", "expired", "superseded"])
+def test_lapsed_permission_refuses_acquisition(w, db, client, settings, lapse):
+    settings.url_acquisition_enabled = True
+    now = rights.utcnow()
+    if lapse == "expired":
+        _permission(w, db, settings, valid_from=now - timedelta(days=30),
+                    valid_until=now - timedelta(days=1))
+    else:
+        rid = _permission(w, db, settings)
+        with db.session() as s:
+            if lapse == "revoked":
+                rights.revoke(s, rid, "creator withdrew")
+            else:                                    # new version drops URL fetching
+                rights.supersede(s, rid, scope=FULL_SCOPE, attestation_text=ATTEST)
+    sid = _save_link(client, w)["id"]
+    assert _acquire_jobs(db) == []
+    d = w.decide(sid, "acquire", method="url_fetch", url_acquisition_enabled=True)
+    expected = {"revoked": rights.REVOKED, "expired": rights.EXPIRED,
+                "superseded": rights.METHOD_NOT_PERMITTED}[lapse]
+    assert not d.allowed and d.reason == expected
+    r = client.post(f"/api/v1/sources/{sid}/acquire")
+    assert r.status_code == 403
 
 
 @requires_ffmpeg
-def test_public_footage_is_fetched_and_analysable_but_not_editable(
+def test_superseded_during_download_leaves_no_output(w, db, settings, monkeypatch,
+                                                     media_dir):
+    settings.url_acquisition_enabled = True
+    rid = _permission(w, db, settings)
+    sid = w.source()
+
+    def supersede():
+        with db.session() as s:
+            rights.supersede(s, rid, scope=URL_SCOPE, attestation_text=ATTEST)
+    FakeDownloader(monkeypatch, media_dir / "basic.mp4", after=supersede)
+    with pytest.raises(RightsRefused) as e:
+        url_download.acquire(db, settings, sid)
+    assert e.value.details["reason"] == rights.RIGHTS_CHANGED
+    with db.session() as s:
+        assert s.scalar(select(func.count()).select_from(Recording)) == 0
+    assert list(settings.temp_dir.glob("source-download-*")) == []
+
+
+@requires_ffmpeg
+def test_permitted_fetch_records_the_actual_method_and_gates_editing(
         w, db, client, settings, monkeypatch, media_dir):
     settings.url_acquisition_enabled = True
+    _permission(w, db, settings, scope={**URL_SCOPE, "uses": ["acquire", "analyze"]})
     fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
-    src = _save_link(client, w)                       # no licence, no form, no evidence
-    drain(db, settings)                                # ACQUIRE → INGEST → METADATA → THUMBNAIL
+    src = _save_link(client, w)                 # queued by the standing permission
+    drain(db, settings)
     (job,) = _acquire_jobs(db)
     assert job.status == "COMPLETED" and len(fake.downloads) == 1
     with db.session() as s:
         rec = s.get(Recording, job.recording_id)
-        assert rec.status == "READY" and rec.source_id == src["id"]
-        assert rec.acquisition_method == "url_fetch"
+        assert rec.source_id == src["id"] and rec.acquisition_method == "url_fetch"
         assert rights.evaluate_recording(s, rec.id, "analyze").allowed
         d = rights.evaluate_recording(s, rec.id, "edit", clip_ms=10_000)
-        assert not d.allowed and d.reason == rights.CREATOR_PERMISSION_NEEDED
+        assert not d.allowed and d.reason == rights.USE_NOT_IN_SCOPE
 
 
 @requires_ffmpeg
-def test_public_web_covers_fetched_media_only(w, db, client, settings, media_dir):
-    """A copy imported by hand is not footage RIFTWIRE fetched: public_web does not
-    cover it."""
-    src = _save_link(client, w)
+def test_analysis_needs_media_obtained_by_a_permitted_method(w, db, settings, media_dir):
+    """A hand-imported copy is judged by its own method: a URL-only permission does not
+    cover it, and a legacy public_web row never does."""
+    sid = w.source()
+    _legacy(db, sid)
+    _permission(w, db, settings)
     rec = import_file(db, settings, media_dir / "basic.mp4").recording
     with db.session() as s:
-        sources_rec = s.get(Recording, rec.id)
-        sources_rec.source_id, sources_rec.acquisition_method = src["id"], "creator_file"
+        r = s.get(Recording, rec.id)
+        r.source_id, r.acquisition_method = sid, "creator_file"
     with db.session() as s:
         d = rights.evaluate_recording(s, rec.id, "analyze")
         assert not d.allowed and d.reason == rights.METHOD_NOT_PERMITTED
-
-
-def _acquire_jobs(db) -> list[Job]:
-    with db.session() as s:
-        return list(s.scalars(select(Job).where(Job.job_type == "ACQUIRE")))
 
 
 # --------------------------------------------------------------------------- migration
@@ -272,17 +386,10 @@ def test_migration_keeps_every_trigger_and_existing_records(w, db, settings):
     assert _sql(settings, "PRAGMA foreign_key_check") == []
 
 
-def test_downgrade_refuses_while_public_web_records_exist(w, db, client, settings):
-    _save_link(client, w)
+def test_downgrade_refuses_while_legacy_public_web_records_exist(w, db, settings):
+    _legacy(db, w.source())
     db.dispose()
     with pytest.raises(Exception, match="public_web"):
         command.downgrade(_cfg(settings.database_url), "0008")
     assert _sql(settings, "SELECT version_num FROM alembic_version") == [("0009",)]
     assert len(_triggers(settings)) == 14
-
-
-def test_sources_module_still_records_by_default(w, db):
-    with db.session() as s:
-        src = sources.create_source(s, url="https://www.twitch.tv/videos/31337",
-                                    creator_channel_id=w.twitch)
-        assert rights.record_public_web(s, src) is not None

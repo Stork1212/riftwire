@@ -75,7 +75,7 @@ class CreatorRelationship(enum.StrEnum):
     PARTNER = "partner"
     LICENSOR = "licensor"
     # No relationship: a creator whose public footage was saved by link. Says nothing
-    # about permission (their sources carry only the automatic public_web record).
+    # about permission.
     UNAFFILIATED = "unaffiliated"
 
 
@@ -83,10 +83,9 @@ class RightsBasis(enum.StrEnum):
     OWNERSHIP = "ownership"
     CREATOR_PERMISSION = "creator_permission"
     LICENCE = "licence"
-    # Publicly accessible footage, recorded automatically when a URL source is saved. It
-    # claims only that the footage is public and may be fetched; never that anyone agreed.
-    # Authorizes ``acquire`` and ``analyze`` only (rights.PUBLIC_WEB_USES): editing and
-    # publishing need a creator's permission or a licence.
+    # Legacy classification written automatically by b13b91f for saved links. Kept so that
+    # immutable history stays valid; it authorizes nothing (rights.PUBLIC_WEB_USES is
+    # empty) and no new records use it (owner decision 2026-11-25).
     PUBLIC_WEB = "public_web"
 
 

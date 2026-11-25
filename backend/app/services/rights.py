@@ -58,11 +58,11 @@ from app.models import (
 
 Use = Literal["acquire", "analyze", "edit", "publish"]
 USES: tuple[str, ...] = ("acquire", "analyze", "edit", "publish")
-# The only uses a public_web record can authorize, whatever its scope says.
-PUBLIC_WEB_USES: frozenset[str] = frozenset({"acquire", "analyze"})
-PUBLIC_WEB_ATTESTATION = ("Publicly accessible footage, recorded automatically when the link "
-                          "was saved. Not creator-confirmed: covers fetching and analysis "
-                          "only, never editing or publishing.")
+# ``public_web`` is a classification of footage, never permission (owner decision
+# 2026-11-25, superseding the download-by-default policy of 2026-11-24). Records with this
+# basis were written automatically by ``b13b91f``; they stay as immutable history and
+# authorize nothing, whatever their stored scope says. No new ones are written.
+PUBLIC_WEB_USES: frozenset[str] = frozenset()
 
 # Which use each job type needs. ``None`` = technical housekeeping, not rights-gated (R2).
 # A test fails if a job type is missing here, so a new gated job type cannot be added
@@ -125,8 +125,9 @@ REASON_TEXT = {
     METHOD_NOT_PERMITTED: "this acquisition method is not permitted by the rights",
     METHOD_UNKNOWN: "how this recording's footage was obtained is not on record",
     PLATFORM_PERMISSION_MISSING: "URL fetching needs written platform permission on record",
-    CREATOR_PERMISSION_NEEDED: "this footage is only on record as public web footage; "
-                               "nobody has given permission to edit or publish it",
+    CREATOR_PERMISSION_NEEDED: "this footage is only classified as public web footage; "
+                               "public availability is not permission to download, "
+                               "analyse, edit or publish it",
     URL_ACQUISITION_DISABLED: "URL fetching is switched off",
     PLATFORM_NOT_IN_SCOPE: "publishing to this platform is not covered",
     BRAND_CHANNEL_REQUIRED: "a brand channel must be specified",
@@ -146,7 +147,9 @@ REASON_ACTION = {
     SOURCE_BLOCKED: "Reactivate the source on its page if it was blocked by mistake.",
     NOT_ATTESTED_MEDIA: "Link the recording to a source (Import with a rights link, or "
                         "attach it on the source's page).",
-    NO_RIGHTS_RECORD: "Add a licence for this creator on Creators & Rights.",
+    NO_RIGHTS_RECORD: "Record the creator's permission or a licence on Creators & Rights. "
+                      "To fetch from the link, it must allow URL fetching and have written "
+                      "platform permission attached.",
     NOT_ATTESTED: "Attest the draft licence on Creators & Rights.",
     SUPERSEDED: "A newer version exists; it is used automatically if it covers this.",
     REVOKED: "Attest a new licence on Creators & Rights if permission was granted again.",
@@ -160,8 +163,11 @@ REASON_ACTION = {
     METHOD_UNKNOWN: "On the source's page, record how this recording's footage was obtained.",
     PLATFORM_PERMISSION_MISSING: "Attach written platform permission as evidence first.",
     CREATOR_PERMISSION_NEEDED: "Ask the creator; when they agree, record their permission "
-                               "on Creators & Rights.",
-    URL_ACQUISITION_DISABLED: "URL fetching is not available in this version.",
+                               "on Creators & Rights (with written platform permission "
+                               "attached, to fetch from the link).",
+    URL_ACQUISITION_DISABLED: "URL fetching is switched off "
+                              "(RIFTWIRE_URL_ACQUISITION_ENABLED). Import the file you were "
+                              "given instead (Import → Local file).",
     PLATFORM_NOT_IN_SCOPE: "Edit the licence to allow this platform.",
     BRAND_CHANNEL_REQUIRED: "Choose the brand channel.",
     BRAND_CHANNEL_NOT_ASSIGNED: "Assign the source to this brand channel on its page.",
@@ -314,10 +320,7 @@ def _check_record(s: Session, r: RightsRecord, scope: Scope, source: Source, use
                   url_acquisition_enabled: bool) -> str:
     if use not in scope.uses:
         return USE_NOT_IN_SCOPE
-    # A public_web record covers only footage RIFTWIRE fetched itself, so its source-level
-    # answers are about fetched media; a recording is always judged by its own method.
-    declared = (AcquisitionMethod.URL_FETCH.value if r.basis == RightsBasis.PUBLIC_WEB.value
-                else source.acquisition_method)
+    declared = source.acquisition_method
     if use == "acquire":
         m = method or declared
         if m not in scope.acquisition_methods:
@@ -325,10 +328,8 @@ def _check_record(s: Session, r: RightsRecord, scope: Scope, source: Source, use
         if m == AcquisitionMethod.URL_FETCH.value:
             if not url_acquisition_enabled:
                 return URL_ACQUISITION_DISABLED
-            # Public footage may be fetched (owner acquisition policy, 2026-11-24); other
-            # bases keep the written-platform-permission requirement (R1).
-            if (r.basis != RightsBasis.PUBLIC_WEB.value
-                    and not _has_platform_permission(s, r.id)):
+            # Written platform permission is required for every basis (R1).
+            if not _has_platform_permission(s, r.id):
                 return PLATFORM_PERMISSION_MISSING
         return OK
     # Media must have been obtained by a method these rights permit (R1). For a recording
@@ -410,7 +411,7 @@ def evaluate(s: Session, source_id: str | None, use: str, *, platform: str | Non
         scope: Scope | None = None
         creator = s.get(Creator, r.creator_id)
         if r.basis == RightsBasis.PUBLIC_WEB.value and use not in PUBLIC_WEB_USES:
-            reason = CREATOR_PERMISSION_NEEDED        # whatever the scope says
+            reason = CREATOR_PERMISSION_NEEDED        # a classification, never permission
         elif creator is None or creator.archived_at is not None:
             reason = CREATOR_ARCHIVED
         else:
@@ -569,8 +570,9 @@ def create_record(s: Session, *, creator_id: str, basis: str, coverage: str,
                   attest: bool = True, lineage_id: str | None = None,
                   version: int = 1) -> RightsRecord:
     if basis == RightsBasis.PUBLIC_WEB.value:
-        raise ValidationFailed("public_web records are written automatically when a link is "
-                               "saved; record a creator's permission or a licence instead",
+        raise ValidationFailed("public_web is a classification, not permission, and cannot be "
+                               "recorded by hand; record a creator's permission or a licence "
+                               "instead",
                                code="public_web_automatic")
     creator = s.get(Creator, creator_id)
     if creator is None:
@@ -601,47 +603,6 @@ def create_record(s: Session, *, creator_id: str, basis: str, coverage: str,
                basis=basis, coverage=coverage, scope_sha256=r.scope_sha256)
     if attest:
         attest_record(s, r, attestation_text)
-    return r
-
-
-def record_public_web(s: Session, source: Source) -> RightsRecord | None:
-    """The automatic, honest record for a saved link: public footage that may be fetched
-    and analysed. Written by ``system`` in the caller's transaction; covers this one source
-    and names its creator, claiming nothing from them. Idempotent: returns
-    the source's existing public_web record (any state, so a revoked one is never silently
-    replaced). Sources without a URL get none."""
-    if source.url_canonical is None:
-        return None
-    existing = s.scalar(
-        select(RightsRecord).join(RightsSourceLink,
-                                  RightsSourceLink.rights_record_id == RightsRecord.id)
-        .where(RightsSourceLink.source_id == source.id,
-               RightsRecord.basis == RightsBasis.PUBLIC_WEB.value))
-    if existing is not None:
-        return existing
-    ch = s.get(CreatorChannel, source.creator_channel_id)
-    if ch is None:
-        return None
-    sc = Scope(v=1, uses=["acquire", "analyze"],
-               acquisition_methods=[AcquisitionMethod.URL_FETCH.value],
-               notes="Recorded automatically for a saved link. Not creator-confirmed.")
-    text = canonical_scope(sc)
-    now = utcnow()
-    r = RightsRecord(creator_id=ch.creator_id,
-                     basis=RightsBasis.PUBLIC_WEB.value,
-                     coverage=RightsCoverage.SOURCES.value, scope_json=text,
-                     scope_sha256=hashlib.sha256(text.encode()).hexdigest(), valid_from=now,
-                     created_at=now, version=1)
-    s.add(r)
-    s.flush()
-    s.add(RightsSourceLink(rights_record_id=r.id, source_id=source.id))
-    s.flush()
-    r.attestation_text = PUBLIC_WEB_ATTESTATION
-    r.attested_by = "system"
-    r.attested_at = now
-    s.flush()
-    provenance(s, "rights", r.id, "recorded_public_web", actor="system", source_id=source.id,
-               basis=r.basis, coverage=r.coverage, scope_sha256=r.scope_sha256)
     return r
 
 
@@ -715,8 +676,11 @@ def revoke(s: Session, record_id: str, reason: str) -> RightsRecord:
 def status_summary(s: Session, source: Source, at: datetime | None = None,
                    soon: timedelta = timedelta(days=14)) -> str:
     """Licence state for badges: active | expires_soon | public_web | unusable | expired |
-    revoked | not_attested | not_yet_valid | none | blocked. ``public_web``: only the
-    automatic record for a saved link is in force (fetch and analyse only).
+    revoked | not_attested | not_yet_valid | none | blocked.
+
+    ``public_web`` is a **classification**, not a permission: a saved platform link with no
+    creator permission or licence on record (legacy ``public_web`` rows are ignored here,
+    as everywhere). It authorizes nothing.
 
     "active" only says a usable licence is in force; which uses it authorizes is
     reported separately (``authorized_uses``), because a licence may allow acquiring but
@@ -724,18 +688,13 @@ def status_summary(s: Session, source: Source, at: datetime | None = None,
     at = at or utcnow()
     if source.status != SourceStatus.ACTIVE.value:
         return "blocked"
-    recs = covering_records(s, source)
+    recs = [r for r in covering_records(s, source) if r.basis != RightsBasis.PUBLIC_WEB.value]
     if not recs:
-        return "none"
+        return "public_web" if source.url_canonical else "none"
     states = [(r, record_state(r, at)) for r in recs]
     active = [r for r, st in states if st == OK]
-    public = [r for r in active if r.basis == RightsBasis.PUBLIC_WEB.value
-              and parse_scope(r.scope_json) is not None]
-    usable = [r for r in active if r.basis != RightsBasis.PUBLIC_WEB.value
-              and parse_scope(r.scope_json) is not None
+    usable = [r for r in active if parse_scope(r.scope_json) is not None
               and (c := s.get(Creator, r.creator_id)) is not None and c.archived_at is None]
-    if not usable and public:
-        return "public_web"          # fetching and analysis only; nobody agreed to more
     if usable:
         if all(r.valid_until is not None and r.valid_until - at <= soon for r in usable):
             return "expires_soon"

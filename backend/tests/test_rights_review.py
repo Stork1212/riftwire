@@ -53,7 +53,7 @@ def test_source_specific_rights_only_for_the_creators_own_sources(w, db):
         other = sources.create_creator(s, "Someone Else", "partner")
         ch = sources.add_channel(s, other.id, "twitch", handle="someoneelse")
         their = sources.create_source(s, url="https://www.twitch.tv/videos/555",
-                                      creator_channel_id=ch.id, record_public_web=False).id
+                                      creator_channel_id=ch.id).id
     with pytest.raises(Exception, match="belong"), db.session() as s:
         rights.create_record(s, creator_id=w.creator, basis="licence", coverage="sources",
                              source_ids=[their], scope=FULL_SCOPE, attestation_text=ATTEST)

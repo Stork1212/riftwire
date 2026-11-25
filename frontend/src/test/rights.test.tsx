@@ -243,20 +243,27 @@ describe("Source detail", () => {
     expect(await screen.findByText(/— withdrawn/)).toBeInTheDocument();
   });
 
-  it("shows public footage as analysable only and points to the creator's permission", async () => {
+  it("shows public footage as no permission and blocks fetching with the reason", async () => {
     const pub = record({ id: "pub-1", basis: "public_web", coverage: "sources", attested_by: "system",
       scope: { v: 1, uses: ["acquire", "analyze"], acquisition_methods: ["url_fetch"], publish_platforms: [],
         brand_channels: [], monetization: false, attribution_required: null, max_clip_seconds: null,
         territories: null, notes: "" } });
+    const refused = decision({ use: "acquire", allowed: false, reason: "creator_permission_needed",
+      message: "this footage is only classified as public web footage; public availability is not permission to download, analyse, edit or publish it",
+      action: "Ask the creator; when they agree, record their permission on Creators & Rights." });
     r.getSource.mockResolvedValue({
-      ...source({ rights_status: "public_web", authorized_uses: ["acquire", "analyze"] }),
-      analyze: decision(), acquire: decision({ use: "acquire" }), records: [pub], recordings: [],
+      ...source({ rights_status: "public_web", authorized_uses: [], url_canonical: "https://www.twitch.tv/videos/1" }),
+      analyze: decision({ allowed: false, reason: "creator_permission_needed" }), acquire: refused,
+      records: [pub], recordings: [], acquire_job: null,
     } as SourceDetail);
     r.provenance.mockResolvedValue([]);
     renderAt("/sources/src-1");
-    expect(await screen.findByText("Public footage · analysis only")).toBeInTheDocument();
-    expect(screen.getByText(/Public footage \(not creator-confirmed\), recorded automatically/)).toBeInTheDocument();
-    expect(screen.getByText(/To edit or\s+publish it, ask the creator/)).toBeInTheDocument();
+    expect(await screen.findByText("Public footage · no permission on record")).toBeInTheDocument();
+    expect(screen.getByText(/Public footage classification \(not permission\), recorded automatically/)).toBeInTheDocument();
+    expect(screen.getByText(/Public footage is not permission/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Acquire footage" })).toBeDisabled();
+    expect(screen.getByTestId("acquire-blocked")).toHaveTextContent(/public availability is not permission/);
+    expect(screen.getByText(/the creator agrees/)).toBeInTheDocument();
   });
 
   it("asks once how footage was obtained when the method is not on record", async () => {

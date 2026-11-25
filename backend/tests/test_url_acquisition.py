@@ -17,10 +17,10 @@ from sqlalchemy import func, select
 
 from app.core.errors import RightsRefused
 from app.main import create_app
-from app.models import DiskReservation, Job, ProvenanceEvent, Recording, Source, SystemEvent
+from app.models import DiskReservation, Job, ProvenanceEvent, Recording, SystemEvent
 from app.services import evidence, media, rights, url_download
 from tests.conftest import requires_ffmpeg
-from tests.helpers import import_file
+from tests.helpers import import_file, legacy_public_web
 from tests.test_ingest import drain
 from tests.test_rights import ATTEST, FULL_SCOPE, World
 
@@ -101,12 +101,6 @@ def _jobs(db) -> list[Job]:
 
 # ------------------------------------------------------------------ refusals at the door
 
-def _public_record(db, sid: str) -> str:
-    with db.session() as s:
-        src = s.get(Source, sid)
-        return rights.record_public_web(s, src).id
-
-
 def test_refused_before_any_download_or_job(w, db, settings, client, monkeypatch,
                                             media_dir):
     fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
@@ -116,15 +110,15 @@ def test_refused_before_any_download_or_job(w, db, settings, client, monkeypatch
     settings.url_acquisition_enabled = False               # switched off
     r = client.post(url)
     assert r.status_code == 501 and r.json()["error"]["code"] == "acquisition_unavailable"
-    settings.url_acquisition_enabled = True
-    pub = _public_record(db, sid)                          # the owner stops this one link
-    with db.session() as s:
-        rights.revoke(s, pub, "owner: do not fetch this video")
+    settings.url_acquisition_enabled = True                # on, but nothing permits it
     r = client.post(url)
     assert r.status_code == 403
-    assert r.json()["error"]["details"]["reason"] == rights.REVOKED
-    with db.session() as s:                                # revocation sticks
-        assert rights.record_public_web(s, s.get(Source, sid)).id == pub
+    assert r.json()["error"]["details"]["reason"] == rights.NO_RIGHTS_RECORD
+    with db.session() as s:                                # a legacy public_web row
+        legacy_public_web(s, sid)
+    r = client.post(url)
+    assert r.status_code == 403
+    assert r.json()["error"]["details"]["reason"] == rights.CREATOR_PERMISSION_NEEDED
     local = w.source(kind="local", url=None, creator_channel_id=w.local)
     r = client.post(f"/api/v1/sources/{local}/acquire")    # nothing to fetch
     assert r.status_code == 422
@@ -280,9 +274,8 @@ def test_rights_revoked_while_queued_fails_permanently_with_provenance(
     sid = w.source()
     fake = FakeDownloader(monkeypatch, media_dir / "basic.mp4")
     job_id = client.post(f"/api/v1/sources/{sid}/acquire").json()["job"]["id"]
-    with db.session() as s:                                # every record that covers it
+    with db.session() as s:
         rights.revoke(s, rid, "withdrawn while queued")
-        rights.revoke(s, _public_id(s, sid), "withdrawn while queued")
     drain(db, settings)
     with db.session() as s:
         j = s.get(Job, job_id)
@@ -363,10 +356,6 @@ def test_attach_endpoint_cannot_label_an_upload_as_fetched(w, db, settings, clie
     assert r.status_code == 422 and r.json()["error"]["code"] == "url_fetch_reserved"
     with db.session() as s:
         assert s.get(Recording, rec.id).source_id is None
-
-
-def _public_id(s, sid: str) -> str:
-    return rights.record_public_web(s, s.get(Source, sid)).id
 
 
 def _sha(path: Path) -> str:

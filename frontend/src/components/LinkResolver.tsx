@@ -228,7 +228,7 @@ function CreatorSetup({ platform, suggestedHandle, onDone, onCancel }: {
             <option value="self">Me (own footage)</option>
             <option value="partner">Partner creator</option>
             <option value="licensor">Licensor</option>
-            <option value="unaffiliated">No relationship (public footage only)</option>
+            <option value="unaffiliated">No relationship yet (no permission on record)</option>
           </select>
         </label>
         <label>{platform === "youtube" ? "YouTube @handle or UC… channel id" : "Twitch login"}

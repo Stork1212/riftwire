@@ -18,7 +18,7 @@ from app.core.config import REPO_ROOT, Settings
 from app.core.errors import ConflictError, NotFoundError, ServiceUnavailable, ValidationFailed
 from app.db.session import Database
 from app.models import Job, JobType, Recording, RecordingStatus
-from app.services import media, reservations, rights, split_shorts
+from app.services import media, outro, reservations, rights, split_shorts
 from app.services.locations import get_layout, require_no_maintenance
 
 ANALYSIS_SECONDS = 300
@@ -199,31 +199,37 @@ ClipLayout = Literal["original", "split", "split_facecam"]
 def _render_split(settings: Settings, source: Path, folder: Path, output: Path,
                   start_ms: int, length: int, recording: Recording, facecam: bool,
                   title: str) -> None:
-    outro = settings.clip_outro_path
-    if outro is None or not outro.is_file():
-        raise ServiceUnavailable("Set RIFTWIRE_CLIP_OUTRO_PATH to the vertical outro MP4.")
+    """One FFmpeg pass: the 35/65 gameplay segment with its original audio untouched, then
+    the whole outro (``services/outro.py``): ``length`` + the outro's own duration."""
+    asset = outro.load(settings)
     has_audio = recording.has_audio is not False
     words = _transcribe(settings, source, folder, start_ms, length) if has_audio else []
     header, captions = split_shorts.overlays(folder, words, title, length)
     duration = f"{length / 1000:.3f}"
-    audio = "[0:a]" if has_audio else f"anullsrc=r=48000:cl=stereo,atrim=duration={duration},"
-    audio += "aresample=48000,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS[gamea];"
+    end_ms = start_ms + length
+    tail = (outro.tail_ms(settings, asset, (recording.duration_ms or end_ms) - end_ms)
+            if has_audio else 0)
+    audio = ("[0:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+             if has_audio else "anullsrc=r=48000:cl=stereo,")
+    audio += (f"apad=whole_dur={duration},atrim=duration={duration},"
+              "asetpts=PTS-STARTPTS[gamea];")
     layout = split_shorts.video_filters(
         facecam, (recording.width or 0) >= (recording.height or 0))
     filters = (
         layout + audio +
-        "[3:v]trim=duration=2,fps=30,scale=1080:1920,setsar=1,format=yuv420p,"
-        "setpts=PTS-STARTPTS[outro];"
-        "[3:a]atrim=duration=2,aresample=48000,aformat=channel_layouts=stereo,"
-        "asetpts=PTS-STARTPTS[outroa];"
+        outro.filters(settings, asset, outro_input=3, tail_input=4 if tail else None,
+                      tail_length_ms=tail) +
         "[game][gamea][outro][outroa]concat=n=2:v=1:a=1[v][a]"
     )
+    tail_args = (["-ss", f"{end_ms / 1000:.3f}", "-t", f"{tail / 1000:.3f}", "-i", str(source)]
+                 if tail else [])
     _run([settings.ffmpeg_path, "-nostdin", "-v", "error", "-ss", f"{start_ms / 1000:.3f}",
           "-t", duration, "-i", str(source), "-loop", "1", "-framerate", "30", "-i",
-          str(header), "-f", "concat", "-safe", "0", "-i", str(captions), "-i", str(outro),
+          str(header), "-f", "concat", "-safe", "0", "-i", str(captions), "-i", str(asset.path),
+          *tail_args,
           "-filter_complex_threads", "2", "-filter_complex", filters, "-map", "[v]",
-          "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
-          "-maxrate", "4M", "-bufsize", "8M", "-c:a", "aac", "-b:a", "160k",
+          "-map", "[a]", "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
+          "-maxrate", "4M", "-bufsize", "8M", "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
           "-movflags", "+faststart", str(output)],
          settings.ffmpeg_timeout_seconds, "Could not render the 35/65 Short.")
 

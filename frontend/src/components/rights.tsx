@@ -16,7 +16,7 @@ export const BASIS: Record<string, string> = {
   ownership: "Ownership",
   creator_permission: "Creator permission",
   licence: "Licence",
-  public_web: "Public footage (not creator-confirmed)",
+  public_web: "Public footage classification (not permission)",
 };
 /** One line naming a rights record's basis and, for the automatic one, who wrote it. */
 export function basisLabel(r: Pick<RightsRecord, "basis" | "attested_by">): string {
@@ -33,12 +33,12 @@ export const PLATFORMS: Record<string, string> = {
 // Licence state only. Which uses are authorized is shown separately (UseChips): an active
 // licence may, for example, allow acquiring but not publishing.
 const RIGHTS_TONE: Record<string, string> = {
-  active: "ok", ok: "ok", expires_soon: "warn", public_web: "info", unusable: "bad", expired: "bad", revoked: "bad",
+  active: "ok", ok: "ok", expires_soon: "warn", public_web: "warn", unusable: "bad", expired: "bad", revoked: "bad",
   superseded: "muted", not_attested: "warn", not_yet_valid: "warn", none: "muted", blocked: "bad",
 };
 const RIGHTS_LABEL: Record<string, string> = {
   active: "Licence active", ok: "Active", expires_soon: "Licence expires soon",
-  public_web: "Public footage · analysis only",
+  public_web: "Public footage · no permission on record",
   unusable: "Licence unusable", expired: "Expired", revoked: "Revoked", superseded: "Superseded",
   not_attested: "Not attested", not_yet_valid: "Not yet valid", none: "No licence", blocked: "Blocked",
 };

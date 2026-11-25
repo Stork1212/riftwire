@@ -241,9 +241,12 @@ def acquire(db: Database, settings: Settings, source_id: str, *, actor: str = "o
 
 
 def queue_for_new_source(s, settings: Settings, source) -> None:
-    """A newly saved link is acquired without a prompt when URL fetching is on (owner
-    acquisition policy, 2026-11-24). A refusal never blocks saving the source: it is
-    recorded as a system event and shown on the source's page."""
+    """A newly saved link is queued without a further prompt only when URL fetching is
+    switched on **and** standing permission already covers it: a user-confirmed creator
+    permission, ownership record or licence that allows ``acquire`` by ``url_fetch``, with
+    written platform permission attached (owner decision 2026-11-25). Public availability
+    alone never queues a download. A refusal never blocks saving the source: it is
+    recorded as a system event, and the source's page shows the reason and the next step."""
     if not settings.url_acquisition_enabled or source.url_canonical is None:
         return
     try:

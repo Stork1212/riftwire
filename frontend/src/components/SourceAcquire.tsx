@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { rightsApi } from "../services/rightsApi";
 import type { Job } from "../types/api";
+import type { Decision } from "../types/rights";
 import { ActionableError } from "./ActionableError";
 import { ProgressBar, StatusBadge } from "./ui";
 
@@ -9,11 +10,14 @@ const ACTIVE = new Set(["PENDING", "RUNNING", "RETRY_WAIT"]);
 const POLL_MS = 2000;
 
 /** Fetching a saved video link into a recording linked to its source (one ACQUIRE job per
- * source; queued automatically when the link is saved). The server checks the rights
- * before queueing, before and after the download, and records how the footage was
- * obtained. Shows the job's live state; the button queues it when it was not. */
-export function SourceAcquire({ sourceId, job: initial, onChange }: {
-  sourceId?: string; job?: Job | null; onChange?: () => void;
+ * source). Public availability is not permission: a link is fetched only under a
+ * user-confirmed permission that allows URL fetching, with written platform permission
+ * attached, and only while URL fetching is switched on. With standing permission, saving
+ * the link queues it. The server checks the rights before queueing, before and after the
+ * download, and records how the footage was obtained. ``decision``, when known, disables
+ * the button and shows why. */
+export function SourceAcquire({ sourceId, job: initial, onChange, decision }: {
+  sourceId?: string; job?: Job | null; onChange?: () => void; decision?: Decision;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
@@ -52,10 +56,13 @@ export function SourceAcquire({ sourceId, job: initial, onChange }: {
     <div className="stack">
       <div className="toolbar">
         <button type="button" className="btn" onClick={acquire}
-          disabled={!sourceId || busy || (status !== undefined && status !== "FAILED")}>
+          disabled={!sourceId || busy || (status !== undefined && status !== "FAILED")
+            || (decision !== undefined && !decision.allowed)}>
           {busy ? "Queueing…" : "Acquire footage"}
         </button>
-        {!sourceId && <span className="muted">Save the link first; it is then fetched automatically.</span>}
+        {!sourceId && <span className="muted">Save the link first. It is fetched only when a creator's permission allows URL fetching.</span>}
+        {sourceId && !job && decision && !decision.allowed && (
+          <span className="muted" data-testid="acquire-blocked">Not fetched: {decision.message}.</span>)}
         {job && <StatusBadge status={job.status} />}
         {job && ACTIVE.has(job.status) && (
           <span className="muted" role="status">

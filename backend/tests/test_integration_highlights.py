@@ -1,7 +1,7 @@
-"""Integration of URL acquisition (public_web) with highlight scans and Short export.
+"""Integration of URL acquisition with highlight scans and Short export.
 
-- Public footage may be scanned for highlights (``analyze``); exporting a Short (``edit``)
-  needs the creator's permission.
+- Fetched footage may be scanned (``analyze``) and exported (``edit``) only as far as a
+  user-confirmed permission allows; public availability allows neither (2026-11-25).
 - The highlight-scan migration (``0008``) and the public_web migration (``0009``) chain
   correctly over a populated database, keeping finished scan results."""
 
@@ -15,9 +15,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.main import create_app
-from app.models import Job, JobType
-from app.services import rights
+from app.models import Job, JobType, Recording
+from app.services import evidence, rights
 from tests.conftest import requires_ffmpeg
+from tests.helpers import import_file, legacy_public_web
 from tests.test_ingest import drain
 from tests.test_m2_audit import JOB, REC, T, _cfg, _populate, _sql
 from tests.test_rights import ATTEST, CLIP, FULL_SCOPE, World
@@ -36,33 +37,59 @@ def client(db, settings):
 
 
 @requires_ffmpeg
-def test_public_footage_can_be_scanned_but_not_exported(w, db, client, settings, monkeypatch,
-                                                        media_dir):
+def test_scan_and_export_follow_the_creators_permission(w, db, client, settings, monkeypatch,
+                                                         media_dir):
     settings.url_acquisition_enabled = True
     FakeDownloader(monkeypatch, media_dir / "basic.mp4")
+    with db.session() as s:          # the creator allows fetching and analysis, not editing
+        rid = rights.create_record(
+            s, creator_id=w.creator, basis="creator_permission", coverage="creator",
+            attestation_text=ATTEST,
+            scope={**FULL_SCOPE, "uses": ["acquire", "analyze"],
+                   "acquisition_methods": ["url_fetch"]}).id
+    evidence.add_evidence(db, settings, rid, kind="platform_permission",
+                          reference="Synthetic test permission")
     src = client.post("/api/v1/sources", json={"url": CLIP, "creator_channel_id": w.twitch})
     assert src.status_code == 201, src.text
     drain(db, settings)
     with db.session() as s:
         acq = s.scalars(select(Job).where(Job.job_type == JobType.ACQUIRE.value)).one()
         rec_id = acq.recording_id
-        # analysis (the highlight scan's use) is allowed for public footage
         assert rights.evaluate_recording(s, rec_id, "analyze").allowed
     r = client.post(f"/api/v1/recordings/{rec_id}/highlight-scan")
     assert r.status_code == 200, r.text                    # queued, not refused
-    # exporting a Short is an edit: refused until the creator agrees
-    r = client.post(f"/api/v1/recordings/{rec_id}/clip",
-                    params={"start_ms": 0, "end_ms": 1000, "layout": "split"})
-    assert r.status_code == 403, r.text
-    assert r.json()["error"]["details"]["reason"] == "creator_permission_needed"
-    r = client.post(f"/api/v1/recordings/{rec_id}/clip", params={"start_ms": 0, "end_ms": 1000})
-    assert r.status_code == 403
-    with db.session() as s:          # the creator says yes, covering the fetched footage
-        rights.create_record(s, creator_id=w.creator, basis="creator_permission",
-                             coverage="creator", attestation_text=ATTEST,
-                             scope={**FULL_SCOPE, "acquisition_methods": ["url_fetch"]})
+    for params in ({"start_ms": 0, "end_ms": 1000, "layout": "split"},
+                   {"start_ms": 0, "end_ms": 1000}):
+        r = client.post(f"/api/v1/recordings/{rec_id}/clip", params=params)
+        assert r.status_code == 403, r.text
+        assert r.json()["error"]["details"]["reason"] == "use_not_in_scope"
+    with db.session() as s:          # the creator later agrees to editing too
+        rights.supersede(s, rid, attestation_text=ATTEST,
+                         scope={**FULL_SCOPE, "acquisition_methods": ["url_fetch"]})
     with db.session() as s:
         assert rights.evaluate_recording(s, rec_id, "edit", clip_ms=1000).allowed
+
+
+@requires_ffmpeg
+def test_public_footage_without_permission_cannot_be_scanned(w, db, client, settings,
+                                                             media_dir):
+    """A copy of public footage linked to a saved link, with only the legacy public_web
+    row: no analysis, so no highlight scan is queued."""
+    src = client.post("/api/v1/sources", json={"url": CLIP, "creator_channel_id": w.twitch})
+    sid = src.json()["id"]
+    with db.session() as s:
+        legacy_public_web(s, sid)
+    rec = import_file(db, settings, media_dir / "basic.mp4").recording
+    drain(db, settings)
+    with db.session() as s:
+        r = s.get(Recording, rec.id)
+        r.source_id, r.acquisition_method = sid, "url_fetch"
+    r = client.post(f"/api/v1/recordings/{rec.id}/highlight-scan")
+    assert r.status_code == 403
+    assert r.json()["error"]["details"]["reason"] == "creator_permission_needed"
+    with db.session() as s:
+        assert s.scalar(select(Job.id).where(
+            Job.job_type == JobType.HIGHLIGHT_SCAN.value)) is None
 
 
 def test_highlight_scan_results_survive_the_public_web_migration(settings):

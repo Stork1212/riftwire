@@ -35,7 +35,7 @@ function NewCreator({ onCreated }: { onCreated: (c: Creator) => void }) {
         <option value="self">Me (own footage)</option>
         <option value="partner">Partner creator</option>
         <option value="licensor">Licensor</option>
-            <option value="unaffiliated">No relationship (public footage only)</option>
+            <option value="unaffiliated">No relationship yet (no permission on record)</option>
       </select>
       <button className="btn btn-primary" type="submit" disabled={!name.trim()}>Add creator</button>
       {err && <ErrorBanner error={err} />}
