@@ -1,0 +1,22 @@
+RIFTWIRE M1 physical-SSD acceptance  started 2026-11-25T01:47:50Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m1-ssd-d9c878e-20261125T014750Z
+code: main d9c878ea86add7ce54eabf14579c79798cdd5108 (separate worktree; your checkout is untouched)
+
+Running the checks. Follow the prompts; the SSD test folder will be:
+  /Volumes/SANDISK SSD/RIFTWIRE-M1-acceptance-20261125T014750Z
+
+
+== results
+PASS     check  0  Preflight: APFS SSD, free space, synthetic media — SSD SANDISK SSD apfs 727641EE-8044-4FDD-BECC-AE2220870904; internal 111 GiB free, SSD 924 GiB free
+PASS     check  6  Migration to the SSD: dry run, crash, resume, re-hash, switch — dry run clean; --execute killed after 1 promoted file(s); resumed (1 verified earlier), final re-hash all match; 5.48 GiB in 19 s overall incl. crash and resume; originals kept (3); switched; a new import landed on the SSD
+PASS     check  5  Throughput: multi-GB cross-volume finalize incl. SHA-256 — 4.78 GiB: upload to internal temp 5 s; cross-volume finalize to the SSD incl. SHA-256 verification 13 s (376 MiB/s)
+PASS     check  7  Per-volume floor and reservations on the SSD — SSD volume floor 60 GiB, free 913 GiB; recordings location apfs; imports above were admitted against it
+PASS     check  1  Real identity (APFS, OS VolumeUUID == marker) — before unplugging: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online
+PASS     check  2  Physical unplug while idle, then re-plug — offline as volume_not_mounted; no folder at the mount path; readiness 503 (the dashboard banner's source); upload refused with nothing written; job waited with 0 attempts; storage_offline then storage_online; job completed on attempt 1; after physical re-plug: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online
+PASS     check  3  Physical unplug mid-copy, then re-plug — unplugged at 35% of the cross-volume copy → job RETRY_WAIT, attempts 0, error: waiting for storage: recordings: the drive is not mounted; after re-plug the copy was redone and SHA-256-verified, recording READY; no partial or staging file left on the SSD
+PASS     check  4  Swapped drive at the same path — a different APFS volume (CD6108E4-DC29-4163-A437-76F002FB5FB3) at the same path with the RIFTWIRE folder and marker copied onto it: refused as wrong_volume, readiness 503, upload refused, nothing written to it; the real SSD came back online (disk image used as the second drive)
+PASS     check  8  Sleep/wake — after wake: location online, readiness 200, after sleep/wake: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online; an import landed on the SSD. Storage events during sleep: ['storage_online']
+
+ALL PASSED
+The synthetic test folder stays on the SSD for you to inspect; delete it yourself:
+  /Volumes/SANDISK SSD/RIFTWIRE-M1-acceptance-20261125T014750Z

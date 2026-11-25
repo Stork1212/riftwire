@@ -1,0 +1,7 @@
+resuming migration 29c72a5d-8ffd-4491-af7b-2bc2a10807fa
+verified 43be2d93-d256-42ee-841d-19877655dd0c.mkv (promoted)
+verified ee01f058-40a6-4ad3-b2be-df751bb887f0.mkv (promoted)
+final verification: 3 file(s) re-hashed, all match
+✓ 'recordings' now lives at /Volumes/SANDISK SSD/RIFTWIRE-M1-acceptance-20261125T015258Z (2 copied, 1 verified earlier, 5.48 GiB).
+Original files were NOT deleted (3 in /var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/riftwire-m1-ssd-_adeg_ye/data/recordings). Check RIFTWIRE works, then remove them yourself if you want the space.
+Start RIFTWIRE again with scripts/start.sh.

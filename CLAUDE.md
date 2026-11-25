@@ -30,9 +30,9 @@ approved): M0–M4 belong to Phase 2, M5–M7 to Phase 3. Phase numbering is unc
 - **M0 (benchmark spike):** complete (v0.2.0-m0); results in
   [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 - **M1 (Storage Architecture):** merged (PR #9) after independent review and Mac
-  verification. Its **physical-SSD acceptance gate stays open** until the SanDisk SSD
-  arrives ([`docs/M1_STORAGE_CHECKLIST.md`](docs/M1_STORAGE_CHECKLIST.md) §11); no
-  `v0.3.0-m1` tag until then.
+  verification. **Physical-SSD acceptance passed** on the SanDisk 1 TB (2026-11-24,
+  [`docs/M1_STORAGE_CHECKLIST.md`](docs/M1_STORAGE_CHECKLIST.md) §11); declaring M1 complete
+  and the `v0.3.0-m1` tag await the owner.
 - **M2 (Rights & Source Management):** approved (decisions R1–R6, `docs/M2_RIGHTS_SOURCES_PLAN.md`
   §12); in progress.
 - Each milestone needs owner approval before it starts. **Do not implement work from a later

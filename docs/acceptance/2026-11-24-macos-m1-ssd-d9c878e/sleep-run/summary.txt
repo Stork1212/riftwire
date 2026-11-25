@@ -1,0 +1,16 @@
+RIFTWIRE M1 physical-SSD acceptance (sleep/wake only)  started 2026-11-25T01:52:58Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m1-ssd-sleep-d9c878e-20261125T015258Z
+code: main d9c878ea86add7ce54eabf14579c79798cdd5108 (separate worktree; your checkout is untouched)
+
+Running the checks. Follow the prompts; the SSD test folder will be:
+  /Volumes/SANDISK SSD/RIFTWIRE-M1-acceptance-20261125T015258Z
+
+
+== results
+PASS     check  0  Preflight: APFS SSD, free space, synthetic media — SSD SANDISK SSD apfs 727641EE-8044-4FDD-BECC-AE2220870904; internal 111 GiB free, SSD 913 GiB free
+PASS     check  6  Migration to the SSD: dry run, crash, resume, re-hash, switch — dry run clean; --execute killed after 1 promoted file(s); resumed (1 verified earlier), final re-hash all match; 5.48 GiB in 19 s overall incl. crash and resume; originals kept (3); switched; a new import landed on the SSD
+PASS     check  8  Sleep/wake (verified in macOS's power log) — slept 209 s (pmset: 7 Sleep/Wake entries); after wake: location online, readiness 200, after sleep/wake: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online; an import landed on the SSD. Storage events during sleep: none (stayed mounted)
+
+ALL PASSED
+The synthetic test folder stays on the SSD for you to inspect; delete it yourself:
+  /Volumes/SANDISK SSD/RIFTWIRE-M1-acceptance-20261125T015258Z

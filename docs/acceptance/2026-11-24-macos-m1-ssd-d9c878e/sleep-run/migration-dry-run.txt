@@ -1,0 +1,10 @@
+DRY RUN — nothing will be written.
+  location:    recordings
+  from:        /var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/riftwire-m1-ssd-_adeg_ye/data/recordings
+  to:          /Volumes/SANDISK SSD/RIFTWIRE-M1-acceptance-20261125T015258Z
+  files:       3 (5.48 GiB)
+  destination free: 913.32 GiB; floor 60.00 GiB
+    01782811-9a6d-4f61-959c-a4e741526ea8.mkv  (1961441473 bytes)
+    43be2d93-d256-42ee-841d-19877655dd0c.mkv  (1868039532 bytes)
+    ee01f058-40a6-4ad3-b2be-df751bb887f0.mkv  (2054843414 bytes)
+✓ all checks pass. Stop RIFTWIRE (scripts/stop.sh), then re-run with --execute.

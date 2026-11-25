@@ -1,0 +1,12 @@
+2026-11-25T01:47:57.708657+00:00  api  storage_location_registered  Registered internal default location for recordings
+2026-11-25T01:47:57.709555+00:00  api  storage_location_registered  Registered internal default location for temp
+2026-11-25T01:47:57.710264+00:00  api  storage_location_registered  Registered internal default location for models
+2026-11-25T01:47:57.710895+00:00  api  storage_location_registered  Registered internal default location for exports
+2026-11-25T01:47:57.711487+00:00  api  storage_location_registered  Registered internal default location for assets
+2026-11-25T01:48:59.672021+00:00  worker  storage_offline  Storage location 'recordings' is offline: the drive is not mounted
+2026-11-25T01:48:59.721745+00:00  worker  storage_offline  Storage location 'recordings' went offline (the drive is not mounted); jobs that need it are waiting
+2026-11-25T01:49:16.222497+00:00  worker  storage_online  Storage location 'recordings' is back online; resuming
+2026-11-25T01:49:45.587982+00:00  worker  storage_offline  Storage location 'recordings' went offline (the drive is not mounted); jobs that need it are waiting
+2026-11-25T01:49:58.042055+00:00  worker  storage_online  Storage location 'recordings' is back online; resuming
+2026-11-25T01:50:42.329973+00:00  worker  storage_offline  Storage location 'recordings' went offline (the drive is not mounted); jobs that need it are waiting
+2026-11-25T01:51:07.292907+00:00  worker  storage_online  Storage location 'recordings' is back online; resuming

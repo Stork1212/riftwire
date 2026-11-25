@@ -1,0 +1,116 @@
+{
+  "results": [
+    {
+      "check": "0",
+      "title": "Preflight: APFS SSD, free space, synthetic media",
+      "result": "PASS",
+      "note": "SSD SANDISK SSD apfs 727641EE-8044-4FDD-BECC-AE2220870904; internal 111 GiB free, SSD 924 GiB free",
+      "seconds": 6.2
+    },
+    {
+      "check": "6",
+      "title": "Migration to the SSD: dry run, crash, resume, re-hash, switch",
+      "result": "PASS",
+      "note": "dry run clean; --execute killed after 1 promoted file(s); resumed (1 verified earlier), final re-hash all match; 5.48 GiB in 19 s overall incl. crash and resume; originals kept (3); switched; a new import landed on the SSD",
+      "seconds": 35.5
+    },
+    {
+      "check": "5",
+      "title": "Throughput: multi-GB cross-volume finalize incl. SHA-256",
+      "result": "PASS",
+      "note": "4.78 GiB: upload to internal temp 5 s; cross-volume finalize to the SSD incl. SHA-256 verification 13 s (376 MiB/s)",
+      "seconds": 19.0
+    },
+    {
+      "check": "7",
+      "title": "Per-volume floor and reservations on the SSD",
+      "result": "PASS",
+      "note": "SSD volume floor 60 GiB, free 913 GiB; recordings location apfs; imports above were admitted against it",
+      "seconds": 0.3
+    },
+    {
+      "check": "1",
+      "title": "Real identity (APFS, OS VolumeUUID == marker)",
+      "result": "PASS",
+      "note": "before unplugging: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online",
+      "seconds": 0.1
+    },
+    {
+      "check": "2",
+      "title": "Physical unplug while idle, then re-plug",
+      "result": "PASS",
+      "note": "offline as volume_not_mounted; no folder at the mount path; readiness 503 (the dashboard banner's source); upload refused with nothing written; job waited with 0 attempts; storage_offline then storage_online; job completed on attempt 1; after physical re-plug: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online",
+      "seconds": 32.6
+    },
+    {
+      "check": "3",
+      "title": "Physical unplug mid-copy, then re-plug",
+      "result": "PASS",
+      "note": "unplugged at 35% of the cross-volume copy \u2192 job RETRY_WAIT, attempts 0, error: waiting for storage: recordings: the drive is not mounted; after re-plug the copy was redone and SHA-256-verified, recording READY; no partial or staging file left on the SSD",
+      "seconds": 73.9
+    },
+    {
+      "check": "4",
+      "title": "Swapped drive at the same path",
+      "result": "PASS",
+      "note": "a different APFS volume (CD6108E4-DC29-4163-A437-76F002FB5FB3) at the same path with the RIFTWIRE folder and marker copied onto it: refused as wrong_volume, readiness 503, upload refused, nothing written to it; the real SSD came back online (disk image used as the second drive)",
+      "seconds": 28.0
+    },
+    {
+      "check": "8",
+      "title": "Sleep/wake",
+      "result": "PASS",
+      "note": "after wake: location online, readiness 200, after sleep/wake: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online; an import landed on the SSD. Storage events during sleep: ['storage_online']",
+      "seconds": 2.5
+    }
+  ],
+  "facts": {
+    "ssd": {
+      "VolumeName": "SANDISK SSD",
+      "FilesystemType": "apfs",
+      "VolumeUUID": "727641EE-8044-4FDD-BECC-AE2220870904",
+      "MountPoint": "/Volumes/SANDISK SSD",
+      "DeviceNode": "/dev/disk5s1",
+      "BusProtocol": "USB"
+    },
+    "media": {
+      "base-a.mkv": 1868039532,
+      "base-b.mkv": 1961441473,
+      "base-c.mkv": 2054843414,
+      "throughput.mkv": 5137107752,
+      "midcopy.mkv": 7472157907
+    },
+    "base_ids": [
+      "4525ae74-b40e-48a6-8283-ee187da037d1",
+      "1d406f17-3d8b-4f23-b9f4-9e7682918dfe",
+      "3fceac32-3443-4597-8596-0c1f4808895b"
+    ],
+    "migration_mib_s": 292.4,
+    "throughput": {
+      "bytes": 5137107752,
+      "upload_s": 4.8,
+      "ingest_cross_volume_s": 13.0,
+      "ingest_mib_s": 376.2
+    },
+    "ssd_volume": {
+      "volume_uuid": "874c5d9d-c5ae-4359-8405-27ea0ff600c5",
+      "kinds": [
+        "recordings"
+      ],
+      "online": true,
+      "label": "SANDISK SSD",
+      "mount_point": "/Volumes/SANDISK SSD",
+      "floor_bytes": 64424509440,
+      "total_bytes": 999995129856,
+      "free_bytes": 980665856000,
+      "reserved_bytes": 3922882946,
+      "headroom_bytes": 912318463614,
+      "below_floor": false
+    },
+    "identity_after_replug": "after physical re-plug: diskutil 727641EE-8044-4FDD-BECC-AE2220870904 == marker; online",
+    "swap_volume_uuid": "CD6108E4-DC29-4163-A437-76F002FB5FB3",
+    "sleep_events": [
+      "storage_online"
+    ]
+  }
+}

@@ -104,7 +104,12 @@ hardware they are covered by the SSD gate (§5).
 the test HTTP client would be a new dependency, which needs approval. No warnings in acceptance
 or smoke.
 
-## 5. Open gate: physical-SSD acceptance (unchanged)
+## 5. Physical-SSD acceptance gate
+
+**Run 2026-11-24 on `main` at `d9c878e`: all eight checks passed**
+([evidence and stated limits](acceptance/2026-11-24-macos-m1-ssd-d9c878e/README.md)).
+Declaring M1 complete and tagging `v0.3.0-m1` awaits the owner. The original gate
+definition follows.
 
 Requires the SanDisk 1 TB SSD, formatted APFS by the owner. No real recordings are moved.
 1. Real APFS identity (`diskutil` UUID) on the external drive, stable across re-plugging.

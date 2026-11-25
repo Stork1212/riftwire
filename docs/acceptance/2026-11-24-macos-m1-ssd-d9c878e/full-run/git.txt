@@ -1,0 +1,4 @@
+From https://github.com/Stork1212/riftwire
+ * branch            main       -> FETCH_HEAD
+Preparing worktree (detached HEAD d9c878e)
+HEAD is now at d9c878e M2: Rights & Source Management (#12)
