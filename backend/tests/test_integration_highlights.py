@@ -116,7 +116,7 @@ def test_highlight_scan_results_survive_the_public_web_migration(settings):
     names = [r[0] for r in _sql(settings, "SELECT name FROM sqlite_master WHERE type='trigger'")]
     m4 = ("trg_transcript", "trg_signal", "trg_keyframes")
     assert len([n for n in names if not n.startswith(m4)]) == 14
-    assert len([n for n in names if n.startswith("trg_transcript")]) == 8
+    assert len([n for n in names if n.startswith("trg_transcript")]) == 10
     assert len([n for n in names if n.startswith(("trg_signal", "trg_keyframes"))]) == 4
     assert _sql(settings, "PRAGMA foreign_key_check") == []
 

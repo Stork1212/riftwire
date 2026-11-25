@@ -264,3 +264,44 @@ def test_signal_migration_round_trips_on_an_empty_database(db, settings):
     assert {"signal_runs", "keyframes"} <= {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master")}
     conn.close()
+
+
+# ------------------------------------------- independent review of PR #19 (2026-11-25)
+def test_review_metadata_without_timestamps_is_skipped_and_offset_applied():
+    text = ("frame:0 pts:NOPTS pts_time:NOPTS\nlavfi.scd.mafd=99\n"
+            "frame:1 pts:1500 pts_time:1.5\nlavfi.scd.mafd=2.0\n"
+            "frame:2 pts:1533 pts_time:1.533\nlavfi.scd.mafd=3.0\n")
+    assert signals.parse_metadata(text, offset_s=1.5) == [
+        (0.0, {"scd.mafd": "2.0"}), (pytest.approx(0.033), {"scd.mafd": "3.0"})]
+
+
+def test_review_keyframe_temp_names_match_the_reconciler():
+    from app.services.ingest import _THUMB_TMP_RE
+
+    job, token = "0" * 8 + "-0000-0000-0000-" + "0" * 12, "abc123-def"
+    m = _THUMB_TMP_RE.match(f".job-{job}-{token}.kf3.tmp.jpg")
+    assert m and m["token"] == token
+    assert _THUMB_TMP_RE.match(f".job-{job}-{token}.tmp.jpg")["token"] == token
+
+
+@requires_ffmpeg
+def test_review_signal_metadata_streams_through_a_file(tmp_path):
+    from app.services.media import run_command
+
+    clip = marker_clip(tmp_path / "m.mp4", MARKERS, 10.0, vfr=True)
+    work = tmp_path / "work"
+    work.mkdir()
+    series, _, scenes = signals.measure(SignalKind.VISUAL, "ffmpeg", clip, 10_000,
+                                        run_command, 120, work=work)
+    assert series["frames"] > 100 and scenes and series["start_offset_s"] >= 0
+    assert list(work.iterdir()) == []                      # the metadata file is removed
+
+
+@requires_ffmpeg
+def test_review_evidence_windows_are_bounded(db, settings, tmp_path, monkeypatch):
+    from app.core.errors import ValidationFailed
+
+    rec = _cleared(db, settings, marker_clip(tmp_path / "m.mp4", MARKERS, 10.0))
+    monkeypatch.setattr(analysis_evidence, "MAX_WINDOW_MS", 5_000)   # 10 min in production
+    with db.session() as s, pytest.raises(ValidationFailed):
+        analysis_evidence.window(s, settings, rec.id, 0, 8_000)

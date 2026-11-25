@@ -161,10 +161,17 @@ def _words(db: Database, settings: Settings, recording: Recording, start_ms: int
             return [{**w, "start_ms": max(0, w["start_ms"] - start_ms),
                      "end_ms": min(length_ms, w["end_ms"] - start_ms)} for w in chosen], tr.id
     try:
-        with db.session() as session:            # committed before we answer 409
-            transcripts.request(session, settings, recording.id)
+        transcripts.require_engine(settings)
     except PermanentJobError as e:
         raise ServiceUnavailable(str(e), code="whisper_unavailable") from e
+    with db.session() as session:                # committed before we answer 409
+        failure = transcripts.failed_for_current_config(session, settings, recording.id)
+        if failure is not None:
+            # Retrying is an explicit choice (POST .../transcript or the job's retry),
+            # never a side effect of asking for captions.
+            raise ServiceUnavailable(f"The transcript could not be produced: {failure}",
+                                     code="transcript_failed")
+        transcripts.request(session, settings, recording.id)
     raise ConflictError("The recording's transcript is being produced. Try again shortly.",
                         code="transcript_pending")
 

@@ -129,6 +129,15 @@ class Settings(BaseSettings):
                 "may lower it)")
         return self
 
+    @model_validator(mode="after")
+    def _chunk_overlap(self) -> Settings:
+        # Each chunk's overlap zones must not meet: merge v2 cuts inside them, and crossing
+        # zones would let two chunks own the same span.
+        if 2 * self.transcribe_overlap_seconds >= self.transcribe_chunk_seconds:
+            raise ValueError("RIFTWIRE_TRANSCRIBE_OVERLAP_SECONDS must be less than half of "
+                             "RIFTWIRE_TRANSCRIBE_CHUNK_SECONDS")
+        return self
+
     @field_validator("allowed_extensions")
     @classmethod
     def _normalise_ext(cls, v: list[str]) -> list[str]:

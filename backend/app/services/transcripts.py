@@ -16,7 +16,8 @@ subtitles) reads the stored words through :func:`words`.
   degenerate zero-length or near-zero-probability words counting as 0); otherwise the
   core edge stands (version 1 behaviour). A word belongs to the chunk owning its midpoint.
   Two words of different chunks that overlap by at least half of the shorter and have the
-  same normalised text are one word (higher probability kept, earlier chunk on a tie).
+  same normalised text are one word (higher probability kept; on a tie, the one that
+  sorts first by start time, then chunk index).
   The result never depends on the order chunks finished in. Version 2 exists because on
   real speech Whisper repeated an earlier phrase at the end of a chunk, and the fixed core
   edge kept that copy over the next chunk's correct words.
@@ -66,6 +67,7 @@ from app.models import (
 from app.services.events import record_event
 
 MERGE_VERSION = 2
+CHILD_PERMANENT_EXITS = {64, 66}     # whisper_child: unsupported options, model missing
 # Decoding options passed to the child (part of the configuration fingerprint).
 # condition_on_previous_text=False: without it, Whisper repeated an earlier phrase over new
 # speech at the end of a chunk on the Mac (M4 native run, 2026-11-25).
@@ -76,7 +78,7 @@ DEGENERATE_MS = 20           # a word shorter than this carries no timing inform
 DEGENERATE_PROB = 0.05
 CHILD = Path(__file__).resolve().parents[1] / "workers" / "whisper_child.py"
 _NORM = re.compile(r"[^\w']+", re.UNICODE)
-_checksums: dict[tuple[str, int, int], str] = {}
+_checksums: dict[tuple, str] = {}
 
 
 # ------------------------------------------------------------------------ configuration
@@ -88,8 +90,8 @@ def model_sha256(model_dir: Path) -> str:
     if missing:
         raise PermanentJobError(f"The Whisper model at {model_dir.name} is incomplete "
                                 f"(missing {', '.join(missing)}). Nothing is downloaded.")
-    st = files[1].stat()
-    key = (str(model_dir.resolve()), st.st_mtime_ns, st.st_size)
+    key = (str(model_dir.resolve()),
+           *((f.stat().st_mtime_ns, f.stat().st_size) for f in files))
     cached = _checksums.get(key)
     if cached:
         return cached
@@ -451,6 +453,21 @@ def request_checked(session: Session, settings: Settings, recording_id: str) -> 
     return {"queued": job is not None, "job": _job_dict(job)}
 
 
+def failed_for_current_config(session: Session, settings: Settings,
+                              recording_id: str) -> str | None:
+    """The error of a TRANSCRIBE job that failed for the **current** configuration, or
+    ``None``. A job that failed for an older configuration is not a reason to stop: the
+    next request re-arms it for the new one."""
+    job = session.scalar(select(Job).where(Job.recording_id == recording_id,
+                                           Job.job_type == JobType.TRANSCRIBE.value))
+    if job is None or job.status != JobStatus.FAILED.value:
+        return None
+    ran = json.loads(job.result_json or "{}").get("config_fingerprint")
+    if ran is not None and ran != fingerprint(current_config(settings)):
+        return None
+    return job.last_error or "transcription failed"
+
+
 # ---------------------------------------------------------------- the TRANSCRIBE job
 def prepare(session: Session, settings: Settings, recording: Recording, job_id: str
             ) -> tuple[Transcript, list[TranscriptChunk]]:
@@ -458,6 +475,9 @@ def prepare(session: Session, settings: Settings, recording: Recording, job_id: 
     plan. Idempotent: a re-run finds the same rows."""
     config = current_config(settings)
     cfg = ensure_config(session, config)
+    job = session.get(Job, job_id)
+    if job is not None:                     # which configuration this attempt works on
+        job.result_json = json.dumps({"config_fingerprint": cfg.fingerprint})
     tr = session.scalar(select(Transcript).where(Transcript.recording_id == recording.id,
                                                  Transcript.config_id == cfg.id))
     if tr is None:
@@ -569,12 +589,21 @@ def transcribe_chunk(settings: Settings, source: Path, work: Path, chunk: Transc
     r = run([str(py), str(CHILD), str(model), str(audio), str(out),
              settings.transcribe_language, json.dumps(DECODE_OPTIONS, sort_keys=True)],
             settings.transcribe_child_timeout_seconds)
-    if getattr(r, "returncode", 1) or not out.is_file():
+    code = getattr(r, "returncode", 1)
+    if code or not out.is_file():
         tail = (getattr(r, "stderr", b"") or b"")[-400:]
         if isinstance(tail, bytes):
             tail = tail.decode(errors="replace")
+        if code in CHILD_PERMANENT_EXITS:     # bad options / model missing: retrying won't help
+            raise PermanentJobError(f"Whisper refused chunk {chunk.idx} (exit {code}): {tail}")
         raise TransientJobError(f"Whisper failed on chunk {chunk.idx}: {tail}")
-    raw = json.loads(out.read_text(encoding="utf-8"))
+    try:
+        raw = json.loads(out.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict) or not isinstance(raw.get("words"), list):
+            raise ValueError("no word list")
+    except ValueError as e:                    # truncated or malformed output
+        raise TransientJobError(f"Whisper wrote unreadable output for chunk {chunk.idx}: "
+                                f"{e}") from e
     audio.unlink(missing_ok=True)
     out.unlink(missing_ok=True)
     return raw, h.hexdigest(), int((time.monotonic() - t0) * 1000)

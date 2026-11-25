@@ -519,3 +519,137 @@ def test_only_the_transcribe_job_launches_whisper():
             if needle in text:
                 offenders.append(f"{rel}: {needle}")
     assert offenders == []
+
+
+# ------------------------------------------- independent review of PR #19 (2026-11-25)
+@requires_ffmpeg
+def test_review_captions_without_whisper_say_so_and_queue_nothing(db, settings, spoken,
+                                                                   monkeypatch):
+    from app.core.errors import ServiceUnavailable
+
+    rec, _ = spoken
+    monkeypatch.setattr(settings, "clip_whisper_model", None)
+    with pytest.raises(ServiceUnavailable) as e:
+        clips._words(db, settings, rec, 0, 5_000)
+    assert e.value.code == "whisper_unavailable"
+    with db.session() as s:
+        assert s.scalar(select(func.count()).select_from(Job).where(
+            Job.job_type == JobType.TRANSCRIBE.value)) == 0
+
+
+@requires_ffmpeg
+def test_review_a_failed_transcript_is_reported_not_silently_rearmed(db, settings, engine,
+                                                                     spoken, monkeypatch):
+    from app.core.errors import ServiceUnavailable
+
+    rec, _ = spoken
+    with db.session() as s:
+        transcripts.request(s, settings, rec.id)
+    monkeypatch.setattr(settings, "job_max_attempts", 1)
+    monkeypatch.setenv("RIFTWIRE_STUB_WHISPER_FAIL_AFTER", "0")
+    with db.session() as s:
+        s.scalar(select(Job).where(Job.job_type == "TRANSCRIBE")).max_attempts = 1
+    drain(db, settings)
+    with db.session() as s:
+        job = s.scalar(select(Job).where(Job.job_type == "TRANSCRIBE"))
+        assert job.status == "FAILED"
+        attempts = job.attempt_count
+    with pytest.raises(ServiceUnavailable) as e:
+        clips._words(db, settings, rec, 0, 5_000)
+    assert e.value.code == "transcript_failed"
+    with db.session() as s:                               # not re-armed by a caption request
+        job = s.scalar(select(Job).where(Job.job_type == "TRANSCRIBE"))
+        assert job.status == "FAILED" and job.attempt_count == attempts
+    settings.transcribe_chunk_seconds = 15                # a new configuration: re-armed
+    with pytest.raises(ConflictError):
+        clips._words(db, settings, rec, 0, 5_000)
+    with db.session() as s:
+        assert s.scalar(select(Job).where(Job.job_type == "TRANSCRIBE")).status == "PENDING"
+
+
+@requires_ffmpeg
+def test_review_truncated_child_output_is_a_retryable_failure(db, settings, engine, spoken,
+                                                              monkeypatch):
+    rec, truth = spoken
+    with db.session() as s:
+        transcripts.request(s, settings, rec.id)
+    monkeypatch.setenv("RIFTWIRE_STUB_WHISPER_FAIL_AFTER", "0")
+    monkeypatch.setenv("RIFTWIRE_STUB_WHISPER_TRUNCATE", "1")
+    drain(db, settings)                                  # one truncated chunk, then retries
+    _, got = _stored_words(db, settings, rec.id)
+    assert [w["w"] for w in got] == [t.text for t in truth]
+
+
+def test_review_overlap_must_be_less_than_half_a_chunk(settings):
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError, match="less than half"):
+        Settings(data_dir=settings.data_dir, env="test", min_free_disk_bytes=0,
+                 transcribe_chunk_seconds=10, transcribe_overlap_seconds=5)
+
+
+def test_review_corrections_cannot_be_deleted_or_unvalidated(db, settings, engine):
+    with db.session() as s:
+        cfg = transcripts.ensure_config(s, transcripts.current_config(settings))
+        cfg_id = cfg.id
+    conn = sqlite3.connect(settings.db_path)
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("INSERT INTO transcripts (id, recording_id, config_id, recording_sha256, "
+                 "status, duration_ms, word_count, coverage_ms, created_at) VALUES "
+                 "('t1', 'r1', ?, 'x', 'COMPLETE', 1000, 0, 0, '2026-11-25 00:00:00')",
+                 (cfg_id,))
+    conn.execute("INSERT INTO transcript_corrections (id, transcript_id, version, method, "
+                 "params_json, validated, created_at) VALUES ('c1', 't1', 1, "
+                 "'constant_offset', '{\"offset_ms\": -40}', 0, '2026-11-25 00:00:00')")
+    conn.execute("UPDATE transcript_corrections SET validated = 1, validation_ref = 'v'")
+    conn.commit()
+    for sql in ("UPDATE transcript_corrections SET validated = 0",
+                "UPDATE transcript_corrections SET validation_ref = 'other'",
+                "DELETE FROM transcript_corrections"):
+        with pytest.raises(sqlite3.DatabaseError):
+            conn.execute(sql)
+    conn.close()
+
+
+def test_review_model_checksum_follows_config_json(settings, engine):
+    first = transcripts.current_config(settings)["model_sha256"]
+    (engine.model_dir / "config.json").write_text('{"n_mels": 128, "changed": true}')
+    assert transcripts.current_config(settings)["model_sha256"] != first
+
+
+@requires_ffmpeg
+def test_review_child_refusals_are_permanent(db, settings, engine, spoken, monkeypatch):
+    rec, _ = spoken
+    monkeypatch.setenv("RIFTWIRE_STUB_WHISPER_FAIL_AFTER", "0")
+    monkeypatch.delenv("RIFTWIRE_STUB_WHISPER_LOG")           # stub refuses: exit 64
+    with db.session() as s:
+        transcripts.request(s, settings, rec.id)
+    drain(db, settings)
+    with db.session() as s:
+        job = s.scalar(select(Job).where(Job.job_type == "TRANSCRIBE"))
+        assert job.status == "FAILED" and job.attempt_count == 1
+        assert "exit 64" in job.last_error
+
+
+@requires_ffmpeg
+def test_review_one_wait_event_per_dependency_wait(db, settings, engine, spoken):
+    from app.models import SystemEvent
+
+    rec, _ = spoken
+    with db.session() as s:
+        queue.enqueue(s, rec.id, JobType.HIGHLIGHT_SCAN, 3)
+    worker = WorkerProcess(settings, db)
+    claimed = queue.claim_next(db, worker.id, settings.job_lease_seconds)
+    for _ in range(3):                                   # the same wait, re-checked
+        worker._execute(claimed)
+        with db.session() as s:
+            s.get(Job, claimed.id).next_attempt_at = s.get(Job, claimed.id).created_at
+        claimed = queue.claim_next(db, worker.id, settings.job_lease_seconds)
+        if claimed is None or claimed.job_type != JobType.HIGHLIGHT_SCAN.value:
+            break
+    with db.session() as s:
+        n = s.scalar(select(func.count()).select_from(SystemEvent).where(
+            SystemEvent.event_type == "job_waiting_for_dependency"))
+    assert n == 1

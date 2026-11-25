@@ -33,6 +33,8 @@ from app.models import Recording, SignalKind, TranscriptSegment
 from app.services import evidence_reliability, rights, signals, transcripts
 
 SCHEMA = "analysis_evidence.v1"
+MAX_WINDOW_MS = 10 * 60 * 1000      # one bundle covers at most 10 minutes
+MAX_LIST_ITEMS = 200                 # segments, scenes and keyframes per bundle
 PACE_WINDOW_MS = 5000
 
 
@@ -85,6 +87,9 @@ def window(session: Session, settings: Settings, recording_id: str, start_ms: in
         raise decision.refuse()
     duration = recording.duration_ms or 0
     start_ms, end_ms = max(0, int(start_ms)), min(duration, int(end_ms))
+    if end_ms - start_ms > MAX_WINDOW_MS:
+        raise ValidationFailed(f"An evidence window covers at most {MAX_WINDOW_MS // 60000} "
+                               "minutes; ask for several windows.")
     if end_ms <= start_ms:
         raise ValidationFailed("The window must lie inside the recording and not be empty.")
     offset = recording.source_offset_ms or 0
@@ -131,7 +136,9 @@ def window(session: Session, settings: Settings, recording_id: str, start_ms: in
                       for w, a in zip(ws[:max_words], assessed[:max_words], strict=True)],
             "reliability": evidence_reliability.summary(assessed),
             "segments": [{"id": f"seg:{tr.id}:{s.idx}", "start_ms": s.start_ms,
-                          "end_ms": s.end_ms, "text": s.text} for s in segs],
+                          "end_ms": s.end_ms, "text": s.text}
+                         for s in segs[:MAX_LIST_ITEMS]],
+            "segments_truncated": len(segs) > MAX_LIST_ITEMS,
             "speech": _speech(ws, start_ms, end_ms),
         }
 
@@ -157,13 +164,16 @@ def window(session: Session, settings: Settings, recording_id: str, start_ms: in
         else:
             entry["motion_mafd"] = _pool(ser.get("motion_mafd", []), ser["bin_ms"], 0,
                                          start_ms, end_ms, max_points)
-            entry["scenes"] = [{"id": f"sc:{run.id}:{s['idx']}", **{k: s[k] for k in (
+            scenes = [{"id": f"sc:{run.id}:{s['idx']}", **{k: s[k] for k in (
                 "start_ms", "end_ms", "duration_ms")}} for s in ser.get("scenes", [])
                 if s["end_ms"] > start_ms and s["start_ms"] < end_ms]
-            entry["keyframes"] = [{"id": f"kf:{k.id}", "pts_ms": k.pts_ms,
-                                   "scene_id": f"sc:{run.id}:{k.scene_idx}"}
-                                  for k in signals.run_keyframes(session, run.id)
-                                  if start_ms <= k.pts_ms < end_ms]
+            kfs = [{"id": f"kf:{k.id}", "pts_ms": k.pts_ms,
+                    "scene_id": f"sc:{run.id}:{k.scene_idx}"}
+                   for k in signals.run_keyframes(session, run.id)
+                   if start_ms <= k.pts_ms < end_ms]
+            entry["scenes"], entry["keyframes"] = (scenes[:MAX_LIST_ITEMS],
+                                                   kfs[:MAX_LIST_ITEMS])
+            entry["truncated"] = len(scenes) > MAX_LIST_ITEMS or len(kfs) > MAX_LIST_ITEMS
             entry["variable_frame_rate_detected"] = ser.get("vfr_detected")
         bundle[kind.value] = entry
         for i, e in enumerate(signals.events(run)):

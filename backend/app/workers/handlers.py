@@ -12,7 +12,6 @@ from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -33,7 +32,6 @@ from app.core.logging import get_logger
 from app.db.session import Database
 from app.models import (
     Job,
-    JobStatus,
     JobType,
     Recording,
     RecordingStatus,
@@ -71,9 +69,10 @@ REQUIRED_KINDS: dict[JobType, tuple[str, ...]] = {
     JobType.ACQUIRE: ("temp",),
     JobType.HIGHLIGHT_SCAN: ("recordings", "temp"),
     JobType.TRANSCRIBE: ("recordings", "temp"),
-    # Signals read the recording; keyframes go to the internal thumbnails folder.
-    JobType.AUDIO_SIGNALS: ("recordings",),
-    JobType.VISUAL_SIGNALS: ("recordings",),
+    # Signals read the recording and stream FFmpeg's metadata through temp; keyframes go
+    # to the internal thumbnails folder.
+    JobType.AUDIO_SIGNALS: ("recordings", "temp"),
+    JobType.VISUAL_SIGNALS: ("recordings", "temp"),
 }
 
 THUMB_TMP_PREFIX = ".job-"           # thumbnails/.job-<job>-<token>.tmp.jpg
@@ -345,7 +344,8 @@ def _shared_transcript(ctx: JobContext, recording: Recording):
             ws = transcripts.words(s, tr.id)
             return tr.id, [{"w": w["w"], "start_ms": w["start_ms"], "end_ms": w["end_ms"],
                             "prob": w["prob"] or 0.0} for w in ws]
-        _fail_if_failed(s, recording.id, JobType.TRANSCRIBE, "shared transcript")
+        _fail_if(transcripts.failed_for_current_config(s, ctx.settings, recording.id),
+                 "shared transcript")
         transcripts.request(s, ctx.settings, recording.id)
     return _PENDING
 
@@ -371,17 +371,18 @@ def _shared_visual(ctx: JobContext, recording: Recording):
         run = signals.current(s, recording.id, SignalKind.VISUAL)
         if run is not None:
             return run.id, signals.series(run)
-        _fail_if_failed(s, recording.id, JobType.VISUAL_SIGNALS, "visual signals")
+        _fail_if(signals.failed_for_current_config(s, recording.id, SignalKind.VISUAL),
+                 "visual signals")
         signals.request(s, ctx.settings, recording.id, SignalKind.VISUAL)
     return _PENDING
 
 
-def _fail_if_failed(s: Session, recording_id: str, job_type: JobType, what: str) -> None:
-    job = s.scalar(select(Job).where(Job.recording_id == recording_id,
-                                     Job.job_type == job_type.value))
-    if job is not None and job.status == JobStatus.FAILED.value:
-        raise PermanentJobError(f"The {what} could not be produced: "
-                                f"{job.last_error or 'the job failed'}")
+def _fail_if(error: str | None, what: str) -> None:
+    """A dependency that failed for the current configuration fails this job too (with its
+    reason) instead of being waited for forever. One that failed for an older
+    configuration is re-armed by the caller's request."""
+    if error is not None:
+        raise PermanentJobError(f"The {what} could not be produced: {error}")
 
 
 # ------------------------------------------------------------------------- TRANSCRIBE
@@ -416,7 +417,9 @@ def handle_transcribe(ctx: JobContext) -> None:
     volume = layout.location("temp").volume_uuid
     chunk_s = settings.transcribe_chunk_seconds + 2 * settings.transcribe_overlap_seconds
     budget = 32_000 * chunk_s + 16 * 1024 * 1024      # one chunk's 16 kHz PCM + output
-    lease = max(600, settings.reservation_lease_seconds)
+    # Renewed between chunks: it must outlive one chunk's extraction and transcription.
+    lease = max(600, settings.reservation_lease_seconds, settings.ffmpeg_timeout_seconds
+                + settings.transcribe_child_timeout_seconds + 120)
     reservation = reservations.reserve_on_volume(
         ctx.db, volume, temp, layout.floor_for_volume(volume), "transcribe",
         f"job:{ctx.job_id}:{ctx.claimed.token}", budget, lease_seconds=lease)
@@ -458,9 +461,10 @@ KEYFRAME_PREFIX = "kf-"
 
 
 def _analysis_timeout(settings: Settings, duration_ms: int) -> float:
-    """A whole-recording FFmpeg pass: the base timeout plus real time (decoding a proxy is
-    far faster than real time; this is a hang guard, not a budget)."""
-    return settings.ffmpeg_timeout_seconds + duration_ms / 1000
+    """A whole-recording FFmpeg pass: the base timeout plus four times real time. It is a
+    hang guard, not a budget: software decoding of 4K60 HEVC can run slower than real
+    time, so one times real time would fail such sources every attempt."""
+    return settings.ffmpeg_timeout_seconds + 4 * duration_ms / 1000
 
 
 def handle_signals(ctx: JobContext, kind: SignalKind) -> None:
@@ -483,9 +487,11 @@ def handle_signals(ctx: JobContext, kind: SignalKind) -> None:
     if not source.is_file():
         raise PermanentJobError("Recording file is missing.")
     ctx.progress(5)
-    series, events, scenes = signals.measure(
-        kind, s.ffmpeg_path, source, recording.duration_ms, ctx.run,
-        _analysis_timeout(s, recording.duration_ms))
+    with TemporaryDirectory(prefix="signals-work-", dir=get_layout(s).path("temp")) as wd:
+        series, events, scenes = signals.measure(
+            kind, s.ffmpeg_path, source, recording.duration_ms, ctx.run,
+            _analysis_timeout(s, recording.duration_ms), work=Path(wd),
+            ffprobe=s.ffprobe_path)
     ctx.progress(60)
     ctx.check()
     plan = signals.keyframe_plan(scenes, recording.duration_ms) if kind == SignalKind.VISUAL \
@@ -507,7 +513,7 @@ def handle_signals(ctx: JobContext, kind: SignalKind) -> None:
             ctx.check()
             name = f"{KEYFRAME_PREFIX}{uuid.uuid4()}.jpg"
             tmp = safe_join(s.thumbnails_dir,
-                            f"{THUMB_TMP_PREFIX}{ctx.job_id}-{ctx.claimed.token}-{n}.tmp.jpg")
+                            f"{THUMB_TMP_PREFIX}{ctx.job_id}-{ctx.claimed.token}.kf{n}.tmp.jpg")
             staged.append((tmp, safe_join(s.thumbnails_dir, name)))
             media.render_thumbnail(s.ffmpeg_path, source, tmp, seek=k["pts_ms"] / 1000,
                                    width=cfg["keyframe_width"], height=cfg["keyframe_height"],
