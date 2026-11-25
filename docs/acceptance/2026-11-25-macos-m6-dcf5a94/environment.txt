@@ -1,0 +1,15 @@
+== machine
+ProductName:		macOS
+ProductVersion:		26.5.2
+BuildVersion:		25F84
+arm64
+Apple M3 Pro
+19327352832
+== tools
+Python 3.13.2
+ffmpeg version 9.1 Copyright (c) 2000-2026 the FFmpeg developers
+v24.17.0
+git version 2.39.3 (Apple Git-146)
+Warning: could not connect to a running Ollama instance
+Warning: client version is 0.40.18
+mlx-whisper 0.4.3

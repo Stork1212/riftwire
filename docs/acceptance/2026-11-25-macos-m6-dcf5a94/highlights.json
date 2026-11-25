@@ -1,0 +1,146 @@
+{
+ "request": {
+  "id": "ba4419e0-eb1c-45c4-bd72-11613dd11aa8",
+  "status": "COMPLETE",
+  "game": "gta",
+  "channel": "rumbleframe",
+  "prompt_id": "gaming.gta.v2",
+  "target_count": 5,
+  "error": null,
+  "summary": {
+   "batch_status": [
+    "failed_validation",
+    "accepted"
+   ],
+   "batches": 2,
+   "candidates_validated": 1,
+   "editorial_score_meaning": "estimated editorial quality 0-100; not a probability of going viral",
+   "fewer_than_requested": true,
+   "reason": "only these candidates passed validation, the editorial cut and duplicate suppression",
+   "requested": 5,
+   "returned": 1
+  },
+  "created_at": "2026-11-25T23:06:33.425070+00:00"
+ },
+ "job": {
+  "id": "c9f448b5-5f54-4171-8db7-1b093a1dc0ef",
+  "status": "COMPLETED",
+  "progress_percent": 100,
+  "last_error": null
+ },
+ "highlights": [
+  {
+   "id": "9bbfb92a-ee19-47c5-a3eb-ad5f778eed26",
+   "rank": 1,
+   "status": "selected",
+   "reason": null,
+   "start_ms": 121320,
+   "end_ms": 133520,
+   "start_id": "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:41",
+   "end_id": "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:62",
+   "category": "unexpected",
+   "title": "Game is Broken! We Escaped Police",
+   "hook": "Wait, the car is flying? The game is broken!",
+   "what_happens": "The player reacts to a car flying in the sky, claiming the game is broken, then celebrates escaping the police.",
+   "why_entertaining": "The combination of a glitchy event (flying car) and the relief of escaping police creates a chaotic, funny moment typical of GTA gameplay.",
+   "editorial_score": 83,
+   "confidence": 0.95,
+   "scores": {
+    "entertainment": 80,
+    "hook": 85,
+    "intensity": 75,
+    "pacing": 80,
+    "payoff": 85,
+    "standalone": 85,
+    "surprise": 90
+   },
+   "evidence": [
+    {
+     "basis": "transcript",
+     "claim": "Player expresses shock at a flying car and escaping police.",
+     "ids": [
+      "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:41",
+      "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:47",
+      "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:50",
+      "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:61"
+     ],
+     "quote": null
+    }
+   ],
+   "model_clip": [
+    121620,
+    132920
+   ],
+   "boundary_notes": [
+    "pre-roll 300 ms and post-roll 600 ms with no transcribed speech"
+   ],
+   "penalties": [],
+   "model_editorial_score": 83,
+   "text_checks": [],
+   "window": {
+    "end_ms": 150500,
+    "id": "c:4",
+    "reason": "seeds: audio_loud_burst, audio_onset, baseline_scan; support 17.08; ids a:619b0a2f-70d8-44d6-8856-e469b729263b:24, w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:41, w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:42, w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:43, cue:reaction, cue:pursuit",
+    "sources": [
+     "audio_loud_burst",
+     "audio_onset",
+     "baseline_scan"
+    ],
+    "start_ms": 110000,
+    "trigger_ids": [
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:24",
+     "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:41",
+     "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:42",
+     "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:43",
+     "cue:reaction",
+     "cue:pursuit",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:25",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:26",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:27",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:28",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:29",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:30",
+     "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:44",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:31",
+     "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:53",
+     "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:54",
+     "w:af2d86da-ccf6-4315-95b6-8ceb33bedac0:55",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:32",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:33",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:34",
+     "a:619b0a2f-70d8-44d6-8856-e469b729263b:35"
+    ],
+    "weight": 17.08
+   },
+   "uncertainty": "The audio evidence shows multiple loud bursts, but the transcript confirms the player's reaction to the flying car and escape.",
+   "review_status": "pending",
+   "transcript_id": "af2d86da-ccf6-4315-95b6-8ceb33bedac0",
+   "ai_run_id": "79d7ae92-a8a6-44d0-909d-391c68c57cc9"
+  }
+ ],
+ "rejected": [],
+ "runs": [
+  {
+   "id": "206bbef9-b59d-4363-9ae5-d450af9ad94e",
+   "batch": 0,
+   "status": "failed_validation",
+   "model": "qwen3.5:4b",
+   "prompt": "gaming.gta.v2 v2",
+   "attempts": 3,
+   "wall_s": 141.828,
+   "error": "candidates[1]: clip length 3940 ms is outside 8000-60000 ms; candidates[2]: clip length 2700 ms is outside 8000-60000 ms; candidates[2].evidence[1]: basis 'scene' must cite only sc: ids",
+   "cost_usd": 0.0
+  },
+  {
+   "id": "79d7ae92-a8a6-44d0-909d-391c68c57cc9",
+   "batch": 1,
+   "status": "accepted",
+   "model": "qwen3.5:4b",
+   "prompt": "gaming.gta.v2 v2",
+   "attempts": 1,
+   "wall_s": 22.81,
+   "error": null,
+   "cost_usd": 0.0
+  }
+ ]
+}

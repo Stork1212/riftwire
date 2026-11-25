@@ -1,0 +1,12 @@
+/Users/gregstork/Claude/riftwire/backend/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+PASS  floor: min free 60 GiB per volume
+PASS  request completes: request COMPLETE; job {'status': 'COMPLETED', 'attempts': 1, 'last_error': None}; 171 s end to end
+PASS  genuine local inference: 2 runs (failed_validation, accepted); model qwen3.5:4b 7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13
+PASS  cost zero: every run records $0
+INFO  latency (recorded): per batch wall s [22.81, 141.828]; attempts [3, 1]
+PASS  highlights grounded: 1 of 5 returned; all bounds and ids valid
+      #1 121.3-133.5s score 83 conf 0.95 unexpected: 'Game is Broken! We Escaped Police' / 'Wait, the car is flying? The game is broken!'
+INFO  scripted reaction moments: 1 of 1 selected highlights overlap the scripted reactions (informative only; not a quality measurement)
+PASS  rendered Short: 1080x1920, 14.70 s (clip + 2.5 s outro = 14.70 s), 22 caption words from transcript af2d86da-ccf6-4315-95b6-8ceb33bedac0
+RESULT PASS (6/6 gate checks)
