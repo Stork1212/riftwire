@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "brand": "RumbleFrame",
+  "canvas": {"width":1080,"height":1920,"fps":30},
+  "palette":{"background":"#101014","foreground":"#F8F8F8","accent":"#FF5635","muted":"#808088"},
+  "safe_zone":{"x":90,"y":180,"width":810,"height":1320},
+  "outro":{"path":"outro.mp4","frames":75,"duration_seconds":2.5,"audio":"silence"},
+  "captions":{"max_lines":2,"active_color":"#FF5635","outline_color":"#101014","require_transcript":true},
+  "hook":{"max_words":8,"require_evidence":true},
+  "presets":[
+    {"id":"creator_highlights","facecam_fraction":0.35,"gameplay_fraction":0.65,"missing_facecam":"pure_gameplay","crop":"review_required"},
+    {"id":"pure_gameplay","facecam_fraction":0,"gameplay_fraction":1,"crop":"subject_aware_or_letterbox"},
+    {"id":"breaking_news","require_primary_source":true,"original_commentary":true,"label":"NEWS"},
+    {"id":"trailer_breakdown","require_primary_source":true,"original_commentary":true,"annotations":"evidence_linked"}
+  ],
+  "publishing":{"platform":"youtube_shorts","human_approval":true,"rights_required":true}
+}
