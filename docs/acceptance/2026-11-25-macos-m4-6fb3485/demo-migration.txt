@@ -1,0 +1,13 @@
+before: 0008 triggers 14 fk violations 0
+{'alembic_version': 1, 'brand_channels': 0, 'creator_channels': 1, 'creators': 1, 'disk_reservations': 0, 'games': 0, 'jobs': 7, 'provenance_events': 9, 'recordings': 2, 'rights_evidence': 0, 'rights_record_channels': 0, 'rights_records': 1, 'rights_source_links': 0, 'source_assignments': 0, 'sources': 1, 'storage_locations': 5, 'storage_migration_items': 0, 'storage_migrations': 0, 'system_events': 31, 'workers': 4}
+ INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 0008 -> 0009, public_web rights basis (a classification; authorizes nothing since 2026-11-25)
+INFO  [alembic.runtime.migration] Running upgrade 0009 -> 0010, M4: shared, versioned transcripts (docs/M4_TRANSCRIPTION_SIGNALS_PLAN.md §3).
+INFO  [alembic.runtime.migration] Running upgrade 0010 -> 0011, M4: audio and visual signal runs and keyframes (docs/M4_TRANSCRIPTION_SIGNALS_PLAN.md
+§3, §5, §6).
+
+after: 0011 triggers 26 fk violations 0
+{'alembic_version': 1, 'brand_channels': 0, 'creator_channels': 1, 'creators': 1, 'disk_reservations': 0, 'games': 0, 'jobs': 7, 'keyframes': 0, 'provenance_events': 9, 'recordings': 2, 'rights_evidence': 0, 'rights_record_channels': 0, 'rights_records': 1, 'rights_source_links': 0, 'signal_runs': 0, 'source_assignments': 0, 'sources': 1, 'storage_locations': 5, 'storage_migration_items': 0, 'storage_migrations': 0, 'system_events': 31, 'transcript_chunks': 0, 'transcript_corrections': 0, 'transcript_segments': 0, 'transcript_words': 0, 'transcription_configs': 0, 'transcripts': 0, 'workers': 4}
+lost rows: {}
+RESULT PASS

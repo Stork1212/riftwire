@@ -1,0 +1,46 @@
+RIFTWIRE M4 native verification  started 2026-11-25T17:12:07Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m4-native-6fb3485-20261125T171207Z
+HEAD: 6fb34858202f77847dddf48061492cd85b9fb89f (branch phase2/m4-transcription, PR #19)
+free space before: 120.31 GiB (floor 60 GiB)
+
+== test: scripts/test.sh
+   exit code 0  (180 s)  free now 120.30 GiB
+
+== acceptance: /Users/gregstork/Claude/riftwire/backend/.venv/bin/python scripts/acceptance.py --port 18931 --min-free-gib 60 --report /Users/gregstork/Claude/riftwire-env/m4-native-6fb3485-20261125T171207Z/acceptance.json
+   exit code 0  (29 s)  free now 120.30 GiB
+   29/29 steps passed
+
+== smoke: scripts/smoke_test.sh /Users/gregstork/Claude/riftwire-env/m4-native-6fb3485-20261125T171207Z/smoke-report.txt
+   exit code 0  (10 s)  free now 120.29 GiB
+   smoke instance stopped (port 18930 closed)
+
+== alembic checks (empty disposable database)
+   alembic exit 0 (heads=['0011 (head)'] version=0011 triggers=26 (transcript 12) fk_violations=0)
+
+== demo database migration (disposable copy)
+   demo copy migration exit 0 (details in demo-migration.txt)
+
+== M4 native: real MLX Whisper through the TRANSCRIBE job
+   PASS  floor: min free 60 GiB per volume
+   PASS  transcript: 30 words, 2 chunks, 4.2 s, engine mlx-whisper 0.4.3
+   PASS  model checksum: fingerprinted facddc0e339e8842…
+   PASS  phrase@5s: 12/12 words recognised near 5 s: the police helicopter is right above us take the next exit now
+   PASS  phrase@117.5s: 9/10 words recognised near 117.5 s: orange taxis crashed into the fountain at the harbor
+   PASS  phrase@138s: 6/6 words recognised near 138 s: mission complete that was absolutely incredible
+   PASS  boundary words once, in order: boundary region: orange taxis crashed into the fountain at the harbor; duplicates none
+   PASS  raw words immutable: direct UPDATE refused by trigger
+   PASS  scan reuses transcript: scan COMPLETED, transcript 16462669-6a8e-4355-9ed1-d490ca50e90f, 5 candidates, transcripts=1
+   PASS  captions reuse transcript: Mission complete. That was absolutely incredible.
+   PASS  no second run: request() is a no-op once complete
+   PASS  audio onset@5s: onsets near 5 s: [5100]
+   PASS  audio onset@117.5s: onsets near 117.5 s: [117600, 118100]
+   PASS  audio onset@138s: onsets near 138 s: [138100]
+   PASS  visual signals: 4500 frames (ffprobe 4500), 1 scenes, 1 keyframes
+   PASS  evidence window: 10 words, 8 events, unresolved none; fingerprint 0f050668b703785e
+   RESULT PASS (16/16)
+   m4_native exit 0
+
+working tree after: clean
+free space after: 120.29 GiB
+ALL PASSED at 6fb34858202f77847dddf48061492cd85b9fb89f
+Evidence: /Users/gregstork/Claude/riftwire-env/m4-native-6fb3485-20261125T171207Z

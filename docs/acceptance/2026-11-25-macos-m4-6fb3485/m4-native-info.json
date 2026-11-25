@@ -1,0 +1,72 @@
+{
+ "transcript_id": "16462669-6a8e-4355-9ed1-d490ca50e90f",
+ "engine_version": "mlx-whisper 0.4.3",
+ "word_count": 30,
+ "coverage_ms": 150000,
+ "duration_ms": 150000,
+ "chunks": 2,
+ "chunk_elapsed_ms": [
+  2429,
+  1622
+ ],
+ "wall_seconds": 4.2,
+ "config": {
+  "audio": "pcm_s16le/16000/mono",
+  "chunk_ms": 120000,
+  "decode": {
+   "condition_on_previous_text": false
+  },
+  "engine": "mlx-whisper",
+  "language": "en",
+  "merge_version": 2,
+  "model_id": "mlx-community--whisper-base-mlx",
+  "model_sha256": "facddc0e339e8842145a65b4c2147bdb182524736661dd7eba9e6fe7deb2cf9f",
+  "overlap_ms": 4000,
+  "word_timestamps": true
+ },
+ "job_attempts": 1,
+ "caption_words_137s": [
+  {
+   "idx": 24,
+   "w": "Mission",
+   "start_ms": 300,
+   "end_ms": 1400,
+   "prob": 0.7363
+  },
+  {
+   "idx": 25,
+   "w": "complete.",
+   "start_ms": 1400,
+   "end_ms": 1860,
+   "prob": 0.9121
+  },
+  {
+   "idx": 26,
+   "w": "That",
+   "start_ms": 2180,
+   "end_ms": 2320,
+   "prob": 0.9829
+  },
+  {
+   "idx": 27,
+   "w": "was",
+   "start_ms": 2320,
+   "end_ms": 2480,
+   "prob": 0.998
+  },
+  {
+   "idx": 28,
+   "w": "absolutely",
+   "start_ms": 2480,
+   "end_ms": 3200,
+   "prob": 0.9858
+  },
+  {
+   "idx": 29,
+   "w": "incredible.",
+   "start_ms": 3200,
+   "end_ms": 3840,
+   "prob": 0.9951
+  }
+ ]
+}

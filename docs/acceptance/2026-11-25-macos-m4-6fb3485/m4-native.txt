@@ -1,0 +1,19 @@
+/Users/gregstork/Claude/riftwire/backend/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+PASS  floor: min free 60 GiB per volume
+PASS  transcript: 30 words, 2 chunks, 4.2 s, engine mlx-whisper 0.4.3
+PASS  model checksum: fingerprinted facddc0e339e8842…
+PASS  phrase@5s: 12/12 words recognised near 5 s: the police helicopter is right above us take the next exit now
+PASS  phrase@117.5s: 9/10 words recognised near 117.5 s: orange taxis crashed into the fountain at the harbor
+PASS  phrase@138s: 6/6 words recognised near 138 s: mission complete that was absolutely incredible
+PASS  boundary words once, in order: boundary region: orange taxis crashed into the fountain at the harbor; duplicates none
+PASS  raw words immutable: direct UPDATE refused by trigger
+PASS  scan reuses transcript: scan COMPLETED, transcript 16462669-6a8e-4355-9ed1-d490ca50e90f, 5 candidates, transcripts=1
+PASS  captions reuse transcript: Mission complete. That was absolutely incredible.
+PASS  no second run: request() is a no-op once complete
+PASS  audio onset@5s: onsets near 5 s: [5100]
+PASS  audio onset@117.5s: onsets near 117.5 s: [117600, 118100]
+PASS  audio onset@138s: onsets near 138 s: [138100]
+PASS  visual signals: 4500 frames (ffprobe 4500), 1 scenes, 1 keyframes
+PASS  evidence window: 10 words, 8 events, unresolved none; fingerprint 0f050668b703785e
+RESULT PASS (16/16)
