@@ -40,6 +40,38 @@ implemented here (§8).
 - **`51c8fa4` (this correction)**;
 - the docs commit.
 
+
+## Independent-review follow-up: rights scope of the outro's audio tail (2026-11-25)
+**Finding** (ChatGPT, PR #14 @ `5ceb2e2`): `clips.cut` checked `edit` rights for
+`end_ms - start_ms` only. In `continue` mode, and in `outro` mode with a fade, the render
+also plays source audio from **after** `end_ms` during the 2.5 s bumper. Under a licence
+with `max_clip_seconds`, that tail could take the footage actually used past the
+rights-checked length.
+
+**Fix:**
+- **New check:** `clips.outro_tail` evaluates `edit` again for **clip length + tail**.
+  - If that is allowed, the tail is used, and its decision is fenced again before the
+    export is returned.
+  - If it is refused (for example `clip_too_long`), the tail is **dropped**: the gameplay
+    audio ends at the cut.
+  - A recording that ends at the cut never has a tail.
+- **Unchanged:** the outro always plays whole (75 frames, 2.5 s), and the clip's own audio
+  is untouched. Each export logs the tail length and the reason (`clip_outro_tail`).
+
+**Regression tests** (`backend/tests/test_outro.py`):
+- the tail is checked against the scope across 7 cases: no limit, a limit with room, a limit
+  reached at the cut, a limit 0.5 s short, fade mode fitting and not fitting, and no fade;
+- a restricted clip renders 17.5 s / 525 frames with **no source audio after the cut** and
+  the clip's own audio intact;
+- an allowed tail still continues the gameplay under the outro;
+- the fade-mode tail is used only when it fits;
+- a recording that ends at the clip boundary has no tail.
+
+**Native Mac verification of `7911092`: all passed.** Test suites, acceptance 29/29,
+Alembic checks, the demo-DB copy migration and end-to-end 14/14 passed at 15:05Z. The smoke
+test was re-run at 15:13Z after stopping a leftover smoke instance that held its port:
+30/0/0. Evidence: [`acceptance/2026-11-25-macos-pr14-7911092/`](acceptance/2026-11-25-macos-pr14-7911092/README.md).
+
 ## 2. Pillow (approved by the owner, 2026-11-25)
 | | |
 |---|---|

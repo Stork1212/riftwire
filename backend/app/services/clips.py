@@ -16,10 +16,13 @@ from sqlalchemy import select
 
 from app.core.config import REPO_ROOT, Settings
 from app.core.errors import ConflictError, NotFoundError, ServiceUnavailable, ValidationFailed
+from app.core.logging import get_logger
 from app.db.session import Database
 from app.models import Job, JobType, Recording, RecordingStatus
 from app.services import media, outro, reservations, rights, split_shorts
 from app.services.locations import get_layout, require_no_maintenance
+
+log = get_logger(__name__)
 
 ANALYSIS_SECONDS = 300
 MAX_CLIP_MS = 30_000
@@ -196,19 +199,45 @@ def highlight_frame(db: Database, settings: Settings, recording_id: str, index: 
 ClipLayout = Literal["original", "split", "split_facecam"]
 
 
+def outro_tail(db: Database, settings: Settings, recording: Recording, end_ms: int,
+               length: int) -> tuple[int, rights.Decision | None, str]:
+    """Source audio after the cut that the outro may use, within the rights scope.
+
+    In ``continue`` mode (and ``outro`` mode with a fade) the outro plays gameplay audio
+    from *after* ``end_ms``. That audio is source footage used in the export, so it counts
+    toward the rights-checked length: ``edit`` is evaluated again for ``length + tail``. If
+    that is refused (for example a licence's ``max_clip_seconds`` is reached), the tail is
+    dropped: the gameplay audio ends at the cut and the outro still plays whole. Returns
+    ``(tail_ms, decision covering the tail or None, reason)``; the decision is fenced again
+    before the export is returned (independent review of PR #14, 2026-11-25)."""
+    if recording.has_audio is False:
+        return 0, None, "recording_has_no_audio"
+    wanted = outro.tail_ms(settings, outro.load(settings),
+                           max(0, (recording.duration_ms or end_ms) - end_ms))
+    if wanted == 0:
+        return 0, None, "no_tail_wanted_or_recording_ends_at_the_cut"
+    with db.session() as session:
+        decision = rights.evaluate_recording(session, recording.id, "edit",
+                                             clip_ms=length + wanted)
+    if decision.allowed:
+        return wanted, decision, "within_rights_scope"
+    return 0, None, f"tail_dropped:{decision.reason}"
+
+
 def _render_split(settings: Settings, source: Path, folder: Path, output: Path,
                   start_ms: int, length: int, recording: Recording, facecam: bool,
-                  title: str) -> None:
+                  title: str, tail: int = 0) -> None:
     """One FFmpeg pass: the 35/65 gameplay segment with its original audio untouched, then
-    the whole outro (``services/outro.py``): ``length`` + the outro's own duration."""
+    the whole outro (``services/outro.py``): ``length`` + the outro's own duration.
+    ``tail``: milliseconds of source audio after the cut that the outro may use, already
+    checked against the rights scope by :func:`outro_tail` (0 = none)."""
     asset = outro.load(settings)
     has_audio = recording.has_audio is not False
     words = _transcribe(settings, source, folder, start_ms, length) if has_audio else []
     header, captions = split_shorts.overlays(folder, words, title, length)
     duration = f"{length / 1000:.3f}"
     end_ms = start_ms + length
-    tail = (outro.tail_ms(settings, asset, (recording.duration_ms or end_ms) - end_ms)
-            if has_audio else 0)
+    tail = tail if has_audio else 0
     audio = ("[0:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
              if has_audio else "anullsrc=r=48000:cl=stereo,")
     audio += (f"apad=whole_dur={duration},atrim=duration={duration},"
@@ -244,6 +273,10 @@ def cut(db: Database, settings: Settings, recording_id: str, start_ms: int, end_
     recording, source, decision = _recording(db, settings, recording_id, "edit", length)
     if end_ms > recording.duration_ms:
         raise ValidationFailed("The clip ends past the recording.")
+    tail, tail_decision, tail_reason = (outro_tail(db, settings, recording, end_ms, length)
+                                        if split else (0, None, "not_a_short"))
+    log.info("clip_outro_tail", extra={"recording_id": recording_id, "component": "clips",
+                                       "tail_ms": tail, "tail_reason": tail_reason})
     analyze = None
     if subtitles or (split and recording.has_audio is not False):
         if recording.has_audio is False:
@@ -253,7 +286,7 @@ def cut(db: Database, settings: Settings, recording_id: str, start_ms: int, end_
         output = folder / "clip.mp4"
         if split:
             _render_split(settings, source, folder, output, start_ms, length, recording,
-                          layout == "split_facecam", title)
+                          layout == "split_facecam", title, tail)
         else:
             subtitle_input: list[str] = []
             subtitle_output: list[str] = []
@@ -278,6 +311,8 @@ def cut(db: Database, settings: Settings, recording_id: str, start_ms: int, end_
         data = output.read_bytes()
         with db.session() as session:
             rights.fence(session, decision)
+            if tail_decision is not None:
+                rights.fence(session, tail_decision)
             if analyze is not None:
                 rights.fence(session, analyze)
         return data
