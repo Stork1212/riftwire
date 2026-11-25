@@ -109,6 +109,30 @@ recommendation backed by benchmark evidence.
   The script reports **inference** and **benchmark** separately.
 - **Evidence:** `docs/acceptance/2026-11-25-macos-m5-inference-9f7b499/`.
 
+## Third native run (05:58Z, `2582087`): inference verified, benchmark passed
+- **With prompt v2:**
+  - **10/10** answers accepted, with 0 provider errors;
+  - 8/8 highlight tasks selected their highlight (recall 1.0);
+  - the injection trap was never chosen;
+  - 0 unsupported claims, and the payoff was kept in both clips.
+- **Padding:** 4/10 answers padded the list with filler that the model itself scored
+  32–44, against 82–91 for the highlights. The editorial ranking cut (`app/ai/scoring.py`,
+  the brief's weights, `min_score` 60) removes all of it. That was re-scored from the
+  recorded answers by `bench/llm/rescore.py`, with no new inference. The benchmark gate
+  now also fails on padding that remains after the cut, and on a cut that drops real
+  highlights.
+- **Speed:** about 36 output tokens/s, and 15 s per evaluation (median).
+- **Memory:** Ollama peaked at 4.2 GB, with at least 1.97 GB available throughout.
+- **Evidence:** `docs/acceptance/2026-11-25-macos-m5-inference-2582087/`.
+- **Model decision:**
+  - `qwen3.5:4b` is **sufficient for the engineering stage**, so no other model is
+    downloaded;
+  - a stronger model (`qwen3.5:9b`, or a GGUF build that supports output constraint) is
+    recommended only if real-footage evaluation shows the 4B falling short;
+  - the GGUF Q4_K_M build (llama.cpp runner) could restore schema-constrained output and
+    cut the repair retries (two tasks needed 3 attempts, at about 137 s each). That is a
+    possible optimization, not a need, and would be a separate download needing approval.
+
 ## Benchmark (`bench/llm/llm_bench.py`)
 **What it measures:**
 - the model's identity and digest;

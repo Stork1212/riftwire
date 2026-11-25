@@ -34,6 +34,7 @@ from app.ai import prompts  # noqa: E402
 from app.ai.analyze import evaluate  # noqa: E402
 from app.ai.providers.base import ProviderError  # noqa: E402
 from app.ai.providers.ollama import OllamaProvider  # noqa: E402
+from app.ai.scoring import Ranking  # noqa: E402
 from tasks import TASKS, Task, build  # noqa: E402
 
 TASKS_BY_NAME = {t.name: t for t in TASKS}
@@ -126,15 +127,21 @@ class Sampler(threading.Thread):
 
 
 # --------------------------------------------------------------------------- scoring
-def score_task(task: Task, bundle, outcome) -> dict:
+def score_task(task: Task, bundle, outcome, ranking: Ranking | None = None) -> dict:
+    ranking = ranking or Ranking()
     chosen: set[int] = set()
+    ranked: set[int] = set()
+    editorial: dict[str, int] = {}
     payoff_ok: dict[str, bool] = {}
     claims = ""
     if outcome.value:
         for c in outcome.value.candidates:
             chosen.add(int(c.window_id.split(":")[1]) - 1)
+            editorial[c.window_id] = ranking.score(c)
             claims += " ".join([c.what_happens, c.why_entertaining, c.title, c.hook,
                                 *(e.claim for e in c.evidence)]).lower() + " "
+        ranked = {int(c.window_id.split(":")[1]) - 1
+                  for c, _ in ranking.rank(list(outcome.value.candidates))}
     by_id = {w.id: w for w in bundle.words}
     for wi, word in task.payoff_words.items():
         clip = next((c for c in outcome.clips if c.window_id == f"c:{wi + 1}"), None)
@@ -144,7 +151,15 @@ def score_task(task: Task, bundle, outcome) -> dict:
     text = " ".join(w.text.lower() for w in bundle.words)
     unsupported = [w for w in task.forbidden_claims if w in claims and w not in text]
     tp = len(chosen & task.highlights)
+    rtp = len(ranked & task.highlights)
     return {
+        # After the editorial ranking cut (app.ai.scoring, min_score): what M6 would keep.
+        "ranked": sorted(f"c:{i + 1}" for i in ranked),
+        "editorial_scores": editorial,
+        "ranked_precision": round(rtp / len(ranked), 3) if ranked else (
+            1.0 if not task.highlights else None),
+        "ranked_recall": round(rtp / len(task.highlights), 3) if task.highlights else 1.0,
+        "ranked_padded": len(ranked - task.highlights) > 0,
         "chosen": sorted(f"c:{i + 1}" for i in chosen),
         "expected": sorted(f"c:{i + 1}" for i in task.highlights),
         # Precision is undefined when nothing was chosen but highlights existed (None).
@@ -171,6 +186,11 @@ def heuristic(task: Task, bundle) -> dict:
                 1.0 if not task.highlights else None),
             "recall": round(tp / len(task.highlights), 3) if task.highlights else 1.0,
             "trap_selected": bool(chosen & task.must_not)}
+
+
+def _mean(values: list) -> float | None:
+    vals = [v for v in values if v is not None]
+    return round(statistics.mean(vals), 3) if vals else None
 
 
 # ------------------------------------------------------------------------------ main
@@ -244,6 +264,10 @@ def run_model(model: str, args, prompt) -> dict:
             if ok else None,
             "trap_selected": sum(r["score"]["trap_selected"] for r in runs),
             "padded": sum(r["score"]["padded"] for r in ok),
+            "ranking": {"min_score": Ranking().min_score, "weights": Ranking().weights},
+            "ranked_padded": sum(r["score"]["ranked_padded"] for r in ok),
+            "ranked_mean_precision": _mean([r["score"]["ranked_precision"] for r in ok]),
+            "ranked_mean_recall": _mean([r["score"]["ranked_recall"] for r in ok]),
             "unsupported_claims": sum(len(r["score"]["unsupported_claims"]) for r in runs),
             "payoff_kept": [v for r in ok for v in (r["score"]["payoff_kept"] or {}).values()],
             "first_load_ms": loads[0] if loads else None,
@@ -301,6 +325,10 @@ def benchmark_gate(model_report: dict) -> list[str]:
                        f"{MIN_ACCEPTANCE:.0%}")
     if s.get("highlight_tasks") and not s.get("accepted_with_candidates"):
         reasons.append("no accepted answer selected a highlight")
+    if s.get("ranked_padded"):
+        reasons.append(f"{s['ranked_padded']} answer(s) still padded after the ranking cut")
+    if s.get("ranked_mean_recall") is not None and s["ranked_mean_recall"] < 1.0:
+        reasons.append(f"ranking cut dropped real highlights (recall {s['ranked_mean_recall']})")
     if s.get("trap_selected"):
         reasons.append(f"injection trap selected {s['trap_selected']} time(s)")
     if s.get("unsupported_claims"):

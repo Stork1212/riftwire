@@ -1,0 +1,131 @@
+{
+  "model": "qwen3.5:4b",
+  "required": [
+    "health",
+    "model_available",
+    "plain_text",
+    "provider_path"
+  ],
+  "passed": true,
+  "steps": [
+    {
+      "step": "health",
+      "status": "PASS",
+      "seconds": 0.0,
+      "detail": {
+        "version": "0.40.18"
+      }
+    },
+    {
+      "step": "model_available",
+      "status": "PASS",
+      "seconds": 0.01,
+      "detail": {
+        "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+        "details": {
+          "parent_model": "",
+          "format": "safetensors",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": "nvfp4",
+          "runner": "mlx",
+          "size_bytes": 3973305013
+        },
+        "capabilities": [
+          "completion",
+          "vision",
+          "thinking",
+          "tools"
+        ],
+        "parameters": "temperature                    1\ntop_k                          20\ntop_p                          0.95\nmin_p                          0\npresence_penalty               1.5\nrepeat_penalty                 1"
+      }
+    },
+    {
+      "step": "plain_text",
+      "status": "PASS",
+      "seconds": 2.2,
+      "detail": {
+        "content": "OK",
+        "thinking_chars": 0,
+        "output_tokens": 1,
+        "load_ms": 2012,
+        "total_ms": 2196,
+        "done_reason": "stop"
+      }
+    },
+    {
+      "step": "engine_residency",
+      "status": "PASS",
+      "seconds": 0.0,
+      "detail": {
+        "loaded": [
+          {
+            "name": "qwen3.5:4b",
+            "model": "qwen3.5:4b",
+            "size": 4065441280,
+            "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+            "details": {
+              "parent_model": "",
+              "format": "safetensors",
+              "family": "",
+              "families": null,
+              "parameter_size": "",
+              "quantization_level": "nvfp4"
+            },
+            "expires_at": "2026-11-25T01:02:22.597216-05:00",
+            "size_vram": 4065441280,
+            "context_length": 2048,
+            "runner": "mlx"
+          }
+        ]
+      }
+    },
+    {
+      "step": "json_mode",
+      "status": "UNAVAILABLE",
+      "seconds": 0.0,
+      "detail": {
+        "code": "structured_output_unavailable",
+        "message": "Ollama /api/chat returned HTTP 501: structured output is unavailable"
+      }
+    },
+    {
+      "step": "json_schema_mode",
+      "status": "UNAVAILABLE",
+      "seconds": 0.0,
+      "detail": {
+        "code": "structured_output_unavailable",
+        "message": "Ollama /api/chat returned HTTP 501: structured output is unavailable"
+      }
+    },
+    {
+      "step": "provider_path",
+      "status": "PASS",
+      "seconds": 39.58,
+      "detail": {
+        "outcome": "accepted",
+        "error": null,
+        "attempts": [
+          {
+            "ok": true,
+            "errors": [],
+            "metrics": {
+              "total_ms": 39562.7,
+              "load_ms": 0.2,
+              "prompt_tokens": 2556,
+              "prompt_ms": 4879.7,
+              "output_tokens": 1248,
+              "output_ms": 34668.8,
+              "done_reason": "stop",
+              "output_constraint": "none",
+              "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+              "thinking_chars": 0
+            }
+          }
+        ],
+        "raw_head": "{\"schema\": \"highlight_eval.v1\", \"candidates\": [{\"window_id\": \"c:2\", \"start_id\": \"w:t1:36\", \"end_id\": \"w:t1:75\", \"category\": \"escape\", \"what_happens\": \"The player realizes police spotted them, attempts to flee through an alley, flies over train tracks, and finally escapes with the cops lost.\", \"why_entertaining\": \"This window captures the entire high-stakes chase sequence from the moment of detection to the successful escape. The rapid escalation from 'oh no' to 'we flew over the train tracks' and the loud burst during the escape adds intensity and excitement typical of GTA gameplay.\", \"standal"
+      }
+    }
+  ]
+}

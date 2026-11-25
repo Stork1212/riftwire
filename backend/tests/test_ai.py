@@ -408,3 +408,52 @@ def test_benchmark_gate_rejects_empty_only_acceptance():
     assert llm_bench.benchmark_gate(good) == []
     trap = {"summary": {**good["summary"], "trap_selected": 1}}
     assert any("injection trap" in r for r in llm_bench.benchmark_gate(trap))
+
+
+# ------------------------------------------- editorial ranking (third Mac run, 05:58Z)
+def test_editorial_score_is_the_weighted_sum_and_the_cut_drops_padding():
+    """The third run accepted 10/10 answers, but 4 padded the list with filler that the
+    model itself scored 32-44 (highlights 82-91). The ranking cut removes them."""
+    from app.ai.schemas import Candidate
+    from app.ai.scoring import Ranking
+    b = bundle()
+    strong = Candidate.model_validate(answer(b)["candidates"][0])
+    weak_scores = {k: 30 for k in ("hook", "entertainment", "surprise", "intensity",
+                                   "standalone", "pacing", "payoff")}
+    weak = strong.model_copy(update={"window_id": "c:1",
+                                     "scores": strong.scores.model_copy(update=weak_scores)})
+    r = Ranking()
+    assert r.score(strong) == 70 and r.score(weak) == 30
+    assert [c.window_id for c, _ in r.rank([weak, strong])] == ["c:2"]
+    assert [c.window_id for c, _ in Ranking(min_score=0).rank([weak, strong])] == ["c:2", "c:1"]
+
+
+@pytest.mark.parametrize("bad", [
+    {"weights": {"hook": 1.0}},
+    {"weights": {k: 0.5 for k in ("hook", "entertainment", "surprise", "intensity",
+                                   "standalone", "pacing", "payoff")}},
+    {"min_score": 101},
+])
+def test_ranking_configuration_is_validated(bad):
+    from app.ai.scoring import Ranking
+    with pytest.raises(ValueError):
+        Ranking(**bad)
+
+
+def test_rescore_recorded_answers_without_a_model():
+    import rescore
+    b = bundle()
+    a = answer(b)
+    filler = dict(a["candidates"][0])
+    ws = words_in(b, "c:1")
+    filler.update(window_id="c:1", start_id=ws[0].id, end_id=ws[-1].id,
+                  scores={k: 35 for k in a["candidates"][0]["scores"]},
+                  evidence=[{"ids": [ws[0].id], "claim": "driving", "basis": "transcript"}])
+    a["candidates"].append(filler)
+    a["rejected_window_ids"] = ["c:3"]
+    report = {"models": [{"model": "m", "runs": [
+        {"task": "pursuit_escape", "repeat": 0, "record": {"result": a}}]}]}
+    from app.ai.scoring import Ranking
+    out = rescore.rescore(report, Ranking())["m"]
+    assert out["padded_before_cut"] == 1 and out["padded_after_cut"] == 0
+    assert out["precision_after"] == 1.0 and out["recall_after"] == 1.0
