@@ -1,0 +1,80 @@
+RIFTWIRE smoke test  20261126T014030Z
+commit:   d85634e (phase2/m6-highlights)
+platform: Darwin arm64 26.5.2
+data dir: /Users/gregstork/Claude/riftwire-env/smoke-data-20261126T014030Z (isolated)
+port:     18930
+
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, initial schema
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, storage locations, reservations, migrations (M1)
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, migration journal records the destination drive's OS volume UUID (M1 review)
+INFO  [alembic.runtime.migration] Running upgrade 0003 -> 0004, rights and sources (M2)
+INFO  [alembic.runtime.migration] Running upgrade 0004 -> 0005, recordings.acquisition_method: how linked media was actually obtained (M2 review)
+INFO  [alembic.runtime.migration] Running upgrade 0005 -> 0006, freeze attested coverage against UPDATE (independent audit of 63a2e5e, finding 3)
+INFO  [alembic.runtime.migration] Running upgrade 0006 -> 0007, ACQUIRE jobs: fetching a saved source URL is a durable queued job
+INFO  [alembic.runtime.migration] Running upgrade 0007 -> 0008, Persist completed highlight scans in the recording job queue.
+INFO  [alembic.runtime.migration] Running upgrade 0008 -> 0009, public_web rights basis (a classification; authorizes nothing since 2026-11-25)
+INFO  [alembic.runtime.migration] Running upgrade 0009 -> 0010, M4: shared, versioned transcripts (docs/M4_TRANSCRIPTION_SIGNALS_PLAN.md §3).
+INFO  [alembic.runtime.migration] Running upgrade 0010 -> 0011, M4: audio and visual signal runs and keyframes (docs/M4_TRANSCRIPTION_SIGNALS_PLAN.md
+§3, §5, §6).
+INFO  [alembic.runtime.migration] Running upgrade 0011 -> 0012, M5/M6: AI highlight requests, AI runs and candidates (docs/M5_M6_AI_HIGHLIGHTS_PLAN.md).
+[1;32m✓[0m Database schema is up to date
+[1;36m▸[0m Starting API on http://127.0.0.1:18930
+[1;36m▸[0m Starting worker
+[1;32m✓[0m caffeinate active while the worker runs
+[1;32m✓[0m Ready
+
+[1;32m✓[0m Dashboard: http://127.0.0.1:18930
+  Logs: /Users/gregstork/Claude/riftwire-env/smoke-data-20261126T014030Z/logs   Stop: scripts/stop.sh
+PASS  start.sh exits 0
+PASS  API process running (pid 1100)
+PASS  worker process running (pid 1101)
+PASS  caffeinate running while worker runs (pid 1102)
+PASS  status.sh runs
+PASS  /health ok
+PASS  /health/ready ready=true
+PASS  API bound to 127.0.0.1 only
+PASS  dashboard HTML served at /
+PASS  dashboard deep link served (/recordings)
+PASS  worker heartbeat state RUNNING
+PASS  synthetic 1080p H.264/AAC clip
+PASS  synthetic 720p60 VP9 clip (no audio)
+PASS  import mp4 → 201
+PASS  import webm → 201
+PASS  duplicate import → 409
+PASS  both recordings READY with thumbnails (≤60 s)
+PASS  thumbnail JPEG for 22a2dea2
+PASS  thumbnail JPEG for 227a8715
+PASS  metadata 1920x1080 30000/1001 h264/aac
+[1;36m▸[0m Stopping worker (pid 1101)
+[1;32m✓[0m worker stopped
+[1;36m▸[0m Stopping api (pid 1100)
+[1;32m✓[0m api stopped
+PASS  stop.sh exits 0
+PASS  API process gone
+PASS  worker process gone
+PASS  caffeinate gone
+PASS  port closed after stop
+PASS  worker recorded STOPPED (graceful)
+PASS  PID files removed
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+[1;32m✓[0m Database schema is up to date
+[1;36m▸[0m Starting API on http://127.0.0.1:18930
+[1;36m▸[0m Starting worker
+[1;32m✓[0m caffeinate active while the worker runs
+[1;32m✓[0m Ready
+
+[1;32m✓[0m Dashboard: http://127.0.0.1:18930
+  Logs: /Users/gregstork/Claude/riftwire-env/smoke-data-20261126T014030Z/logs   Stop: scripts/stop.sh
+PASS  start.sh again exits 0
+PASS  2 recordings persisted across restart
+PASS  6 COMPLETED jobs persisted across restart
+
+RESULT: 0 failure(s)
+
+RIFTWIRE is still running for the dashboard check: http://127.0.0.1:18930
+When finished, stop it with:
+  RIFTWIRE_DATA_DIR='/Users/gregstork/Claude/riftwire-env/smoke-data-20261126T014030Z' RIFTWIRE_API_PORT=18930 scripts/stop.sh
+report: /Users/gregstork/Claude/riftwire-env/m6-native-d85634e-20261126T013611Z/smoke-report.txt
