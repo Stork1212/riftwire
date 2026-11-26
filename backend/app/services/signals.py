@@ -47,13 +47,14 @@ from app.models import (
     SignalStatus,
 )
 
+# Version 2 uses FFmpeg-relative timestamps without subtracting container start again.
 AUDIO_CONFIG = {
-    "version": 1, "method": "ffmpeg astats", "sample_rate": 8000, "window_ms": 100,
+    "version": 2, "method": "ffmpeg astats", "sample_rate": 8000, "window_ms": 100,
     "silence_db": -50.0, "silence_min_ms": 500, "onset_db": 12.0, "onset_window_ms": 500,
     "loud_burst_db": -20.0, "loud_burst_percentile": 95, "floor_db": -120.0,
 }
 VISUAL_CONFIG = {
-    "version": 1, "method": "ffmpeg scdet", "proxy_width": 160, "scdet_threshold": 10.0,
+    "version": 2, "method": "ffmpeg scdet", "proxy_width": 160, "scdet_threshold": 10.0,
     "bin_ms": 250, "burst_cuts": 3, "burst_window_ms": 2000, "calm_mafd": 2.0,
     "calm_window_ms": 1000, "keyframe_width": 480, "keyframe_height": 854,
     "keyframes_per_hour": 60, "keyframes_min": 4,

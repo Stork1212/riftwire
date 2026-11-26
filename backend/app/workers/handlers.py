@@ -347,8 +347,8 @@ def _shared_transcript(ctx: JobContext, recording: Recording):
         tr = transcripts.current(s, ctx.settings, recording.id)
         if tr is not None:
             ws = transcripts.words(s, tr.id)
-            return tr.id, [{"w": w["w"], "start_ms": w["start_ms"], "end_ms": w["end_ms"],
-                            "prob": w["prob"] or 0.0} for w in ws]
+            return tr.id, [{"idx": w["idx"], "w": w["w"], "start_ms": w["start_ms"],
+                            "end_ms": w["end_ms"], "prob": w["prob"] or 0.0} for w in ws]
         _fail_if(transcripts.failed_for_current_config(s, ctx.settings, recording.id),
                  "shared transcript")
         transcripts.request(s, ctx.settings, recording.id)
@@ -651,8 +651,8 @@ def handle_ai_highlights(ctx: JobContext) -> None:
                               ("audio signals", audio)) if v is _PENDING]
     if pending:
         raise DependencyPendingJobError(f"waiting for the shared {' and '.join(pending)}")
-    _transcript_id, words = transcript
-    audio_state, _audio_run, audio_series = audio
+    transcript_id, words = transcript
+    audio_state, audio_run, audio_series = audio
 
     def superseded() -> None:
         # Never finalize a superseded request. The job is still needed if a newer request
@@ -675,8 +675,10 @@ def handle_ai_highlights(ctx: JobContext) -> None:
                 assessed = evidence_reliability.assess_words(words, audio_series,
                                                              audio_state=audio_state)
                 triggering = evidence_reliability.triggering(words, assessed, audio_state)
-                planned = ai_highlights.windows(visual[1], triggering, recording.duration_ms,
-                                                settings.ai_max_windows)
+                planned = ai_highlights.windows(
+                    s, recording, transcript_id=transcript_id, trigger_words=triggering,
+                    audio_run_id=audio_run, visual_run_id=visual[0],
+                    max_windows=settings.ai_max_windows)
                 ai_highlights.pin_plan(r, planned)
             if r.status == RequestStatus.PENDING.value:
                 r.status = RequestStatus.RUNNING.value

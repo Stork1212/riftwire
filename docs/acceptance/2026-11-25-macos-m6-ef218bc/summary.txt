@@ -1,0 +1,47 @@
+RIFTWIRE M5/M6 native verification  started 2026-11-25T20:48:20Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m6-native-ef218bc-20261125T204820Z
+HEAD: ef218bcbb41f53869a20c7d0dbd4382ef395d3fb (branch phase2/m6-highlights)
+approved outro extracted from PR #6 (29f6a7b); SHA-256 verified
+free space before: 125.54 GiB (floor 60 GiB)
+
+== test: scripts/test.sh
+   exit code 0  (282 s)  free now 131.26 GiB
+   588 passed, 3 skipped, 1 warning in 253.36s (0:04:13)
+   47 passed, 1 skipped in 17.24s
+
+== acceptance: /Users/gregstork/Claude/riftwire/backend/.venv/bin/python scripts/acceptance.py --port 18931 --min-free-gib 60 --report /Users/gregstork/Claude/riftwire-env/m6-native-ef218bc-20261125T204820Z/acceptance.json
+   exit code 0  (30 s)  free now 131.26 GiB
+   29/29 steps passed
+
+== smoke: scripts/smoke_test.sh /Users/gregstork/Claude/riftwire-env/m6-native-ef218bc-20261125T204820Z/smoke-report.txt
+   exit code 0  (10 s)  free now 131.25 GiB
+   smoke instance stopped (port 18930 closed)
+
+== alembic checks (empty disposable database)
+   alembic exit 0 (heads=['0012 (head)'] version=0012 triggers=30 fk_violations=0)
+
+== demo database migration (disposable copy)
+   demo copy migration exit 0 (details in demo-migration.txt)
+
+== Ollama (installed earlier; model on disk; nothing downloaded)
+   listening on 127.0.0.1:11434 only; qwen3.5:4b digest matches
+
+== M5/M6 native: recording -> transcript -> signals -> Qwen3.5 4B -> highlights -> Short
+   PASS  floor: min free 60 GiB per volume
+   PASS  request completes: request COMPLETE; job {'status': 'COMPLETED', 'attempts': 1, 'last_error': None}; 79 s end to end
+   PASS  genuine local inference: 2 runs (accepted, accepted); model qwen3.5:4b 7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13
+   PASS  cost zero: every run records $0
+   INFO  latency (recorded): per batch wall s [25.584, 47.055]; attempts [1, 1]
+   PASS  highlights grounded: 2 of 5 returned; all bounds and ids valid
+         #1 121.3-133.5s score 81 conf 0.85 mechanic: 'Car is flying! GTA glitch escape' / 'Wait, the car is flying? This game is broken.'
+         #2 41.4-54.0s score 72 conf 0.95 police_pursuit: 'Cops Right Behind Us!' / 'The streamer panics when cops appear behind them.'
+   INFO  scripted reaction moments: 2 of 2 selected highlights overlap the scripted reactions (informative only; not a quality measurement)
+   PASS  rendered Short: 1080x1920, 14.70 s (clip + 2.5 s outro = 14.70 s), 22 caption words from transcript ee14b981-c357-4360-9024-048427d4fcf3
+   RESULT PASS (6/6 gate checks)
+   m6_native exit 0
+   Ollama stopped
+
+working tree after: clean
+free space after: 130.90 GiB
+ALL PASSED at ef218bcbb41f53869a20c7d0dbd4382ef395d3fb
+Evidence: /Users/gregstork/Claude/riftwire-env/m6-native-ef218bc-20261125T204820Z  (the rendered Short is m6-native/top-highlight-short.mp4)

@@ -1,0 +1,74 @@
+[
+ {
+  "batch": 0,
+  "status": "failed_validation",
+  "attempts": 3,
+  "wall_s": 280.394,
+  "model": "qwen3.5:4b",
+  "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+  "error": "candidates[1]: clip length 3940 ms is outside 8000-60000 ms; candidates[2]: clip length 2700 ms is outside 8000-60000 ms",
+  "cost_usd": 0.0,
+  "metrics": [
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 0.5,
+    "output_constraint": "none",
+    "output_ms": 79576.4,
+    "output_tokens": 2559,
+    "prompt_ms": 8726.3,
+    "prompt_tokens": 4389,
+    "thinking_chars": 0,
+    "total_ms": 88345.7
+   },
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 6.9,
+    "output_constraint": "none",
+    "output_ms": 86927.8,
+    "output_tokens": 2591,
+    "prompt_ms": 8988.7,
+    "prompt_tokens": 4478,
+    "thinking_chars": 0,
+    "total_ms": 95940.3
+   },
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 2.4,
+    "output_constraint": "none",
+    "output_ms": 83999.0,
+    "output_tokens": 2591,
+    "prompt_ms": 9794.5,
+    "prompt_tokens": 4478,
+    "thinking_chars": 0,
+    "total_ms": 93824.3
+   }
+  ]
+ },
+ {
+  "batch": 1,
+  "status": "accepted",
+  "attempts": 1,
+  "wall_s": 26.528,
+  "model": "qwen3.5:4b",
+  "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+  "error": null,
+  "cost_usd": 0.0,
+  "metrics": [
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 1912.3,
+    "output_constraint": "none",
+    "output_ms": 17660.8,
+    "output_tokens": 559,
+    "prompt_ms": 6927.2,
+    "prompt_tokens": 3408,
+    "thinking_chars": 0,
+    "total_ms": 26517.3
+   }
+  ]
+ }
+]

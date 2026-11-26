@@ -1,0 +1,2 @@
+COMMAND   PID      USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+ollama  59765 gregstork    4u  IPv4 0x2cfc31f3d59deed1      0t0  TCP 127.0.0.1:11434 (LISTEN)

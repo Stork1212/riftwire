@@ -1,0 +1,74 @@
+[
+ {
+  "batch": 0,
+  "status": "failed_validation",
+  "attempts": 3,
+  "wall_s": 193.386,
+  "model": "qwen3.5:4b",
+  "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+  "error": "schema: candidates: Value error, each window may be selected at most once",
+  "cost_usd": 0.0,
+  "metrics": [
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 3.6,
+    "output_constraint": "none",
+    "output_ms": 44258.0,
+    "output_tokens": 1535,
+    "prompt_ms": 11544.4,
+    "prompt_tokens": 5874,
+    "thinking_chars": 0,
+    "total_ms": 55829.5
+   },
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 0.5,
+    "output_constraint": "none",
+    "output_ms": 56931.5,
+    "output_tokens": 1979,
+    "prompt_ms": 11673.2,
+    "prompt_tokens": 5924,
+    "thinking_chars": 0,
+    "total_ms": 68621.6
+   },
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 0.6,
+    "output_constraint": "none",
+    "output_ms": 54836.6,
+    "output_tokens": 1909,
+    "prompt_ms": 11750.8,
+    "prompt_tokens": 5963,
+    "thinking_chars": 0,
+    "total_ms": 66604.3
+   }
+  ]
+ },
+ {
+  "batch": 1,
+  "status": "accepted",
+  "attempts": 1,
+  "wall_s": 26.612,
+  "model": "qwen3.5:4b",
+  "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+  "error": null,
+  "cost_usd": 0.0,
+  "metrics": [
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 2014.2,
+    "output_constraint": "none",
+    "output_ms": 17655.0,
+    "output_tokens": 559,
+    "prompt_ms": 6896.1,
+    "prompt_tokens": 3535,
+    "thinking_chars": 0,
+    "total_ms": 26591.4
+   }
+  ]
+ }
+]

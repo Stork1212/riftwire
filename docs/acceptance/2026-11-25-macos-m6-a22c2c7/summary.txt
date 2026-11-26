@@ -1,0 +1,44 @@
+RIFTWIRE M5/M6 native verification  started 2026-11-25T19:27:41Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m6-native-a22c2c7-20261125T192741Z
+HEAD: a22c2c7208089c43366accb19d72bd7c6ec02ce4 (branch phase2/m6-highlights)
+approved outro extracted from PR #6 (29f6a7b); SHA-256 verified
+free space before: 124.97 GiB (floor 60 GiB)
+
+== test: scripts/test.sh
+   exit code 0  (290 s)  free now 125.80 GiB
+   584 passed, 3 skipped, 1 warning in 261.33s (0:04:21)
+   47 passed, 1 skipped in 17.46s
+
+== acceptance: /Users/gregstork/Claude/riftwire/backend/.venv/bin/python scripts/acceptance.py --port 18931 --min-free-gib 60 --report /Users/gregstork/Claude/riftwire-env/m6-native-a22c2c7-20261125T192741Z/acceptance.json
+   exit code 0  (30 s)  free now 125.79 GiB
+   29/29 steps passed
+
+== smoke: scripts/smoke_test.sh /Users/gregstork/Claude/riftwire-env/m6-native-a22c2c7-20261125T192741Z/smoke-report.txt
+   exit code 0  (11 s)  free now 125.79 GiB
+   smoke instance stopped (port 18930 closed)
+
+== alembic checks (empty disposable database)
+   alembic exit 0 (heads=['0012 (head)'] version=0012 triggers=30 fk_violations=0)
+
+== demo database migration (disposable copy)
+   demo copy migration exit 0 (details in demo-migration.txt)
+
+== Ollama (installed earlier; model on disk; nothing downloaded)
+   listening on 127.0.0.1:11434 only; qwen3.5:4b digest matches
+
+== M5/M6 native: recording -> transcript -> signals -> Qwen3.5 4B -> highlights -> Short
+   PASS  floor: min free 60 GiB per volume
+   PASS  request completes: request COMPLETE; job {'status': 'COMPLETED', 'attempts': 1, 'last_error': None}; 226 s end to end
+   PASS  genuine local inference: 2 runs (failed_validation, accepted); model qwen3.5:4b 7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13
+   PASS  cost zero: every run records $0
+   INFO  latency (recorded): per batch wall s [26.612, 193.386]; attempts [3, 1]
+   PASS  highlights grounded: 1 of 5 returned; all bounds and ids valid
+         #1 121.3-167.8s score 75 conf 0.95 mechanic: 'Game is Broken! Car Flying & Escape' / 'The car is flying and the game is broken!'
+   INFO  scripted reaction moments: 1 of 1 selected highlights overlap the scripted reactions (informative only; not a quality measurement)
+   m6_native exit 1
+   Ollama stopped
+
+working tree after: clean
+free space after: 125.62 GiB
+SOME CHECKS FAILED: test=0 acceptance=0 smoke=0 alembic=0 demo=0 native=1
+Evidence: /Users/gregstork/Claude/riftwire-env/m6-native-a22c2c7-20261125T192741Z  (the rendered Short is m6-native/top-highlight-short.mp4)

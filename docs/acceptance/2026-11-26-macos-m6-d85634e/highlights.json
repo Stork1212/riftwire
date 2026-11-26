@@ -1,0 +1,147 @@
+{
+ "request": {
+  "id": "f6ffd247-f9e0-41d2-9316-cbf8314c8606",
+  "status": "COMPLETE",
+  "game": "gta",
+  "channel": "rumbleframe",
+  "prompt_id": "gaming.gta.v2",
+  "target_count": 5,
+  "error": null,
+  "summary": {
+   "batch_status": [
+    "failed_validation",
+    "accepted"
+   ],
+   "batches": 2,
+   "candidates_validated": 1,
+   "editorial_score_meaning": "estimated editorial quality 0-100; not a probability of going viral",
+   "fewer_than_requested": true,
+   "reason": "only these candidates passed validation, the editorial cut and duplicate suppression",
+   "requested": 5,
+   "returned": 1
+  },
+  "created_at": "2026-11-26T01:40:59.268878+00:00"
+ },
+ "job": {
+  "id": "9c2133d9-a600-49bb-baef-8544d0026ffa",
+  "status": "COMPLETED",
+  "progress_percent": 100,
+  "last_error": null
+ },
+ "highlights": [
+  {
+   "id": "d289ee1e-409a-45b8-be95-c56069897a82",
+   "rank": 1,
+   "status": "selected",
+   "reason": null,
+   "start_ms": 121320,
+   "end_ms": 133520,
+   "start_id": "w:9c089a42-cec5-4855-aad8-c2e9a6247261:41",
+   "end_id": "w:9c089a42-cec5-4855-aad8-c2e9a6247261:62",
+   "category": "mechanic",
+   "title": "Game is Broken! We Escaped Police",
+   "hook": "Wait, the car is flying? This game is broken!",
+   "what_happens": "The streamer reacts to a car flying in the sky, stating the game is broken and that they escaped the police.",
+   "why_entertaining": "The combination of a glitched vehicle state (flying) and the successful escape from police creates a chaotic, memorable moment that fits GTA's absurdity.",
+   "editorial_score": 83,
+   "confidence": 0.95,
+   "scores": {
+    "entertainment": 80,
+    "hook": 85,
+    "intensity": 75,
+    "pacing": 85,
+    "payoff": 80,
+    "standalone": 90,
+    "surprise": 90
+   },
+   "evidence": [
+    {
+     "basis": "transcript",
+     "claim": "Streamer expresses disbelief at a flying car and successful police escape.",
+     "ids": [
+      "w:9c089a42-cec5-4855-aad8-c2e9a6247261:41",
+      "w:9c089a42-cec5-4855-aad8-c2e9a6247261:46",
+      "w:9c089a42-cec5-4855-aad8-c2e9a6247261:50",
+      "w:9c089a42-cec5-4855-aad8-c2e9a6247261:60",
+      "w:9c089a42-cec5-4855-aad8-c2e9a6247261:62"
+     ],
+     "quote": null
+    }
+   ],
+   "model_clip": [
+    121620,
+    132920
+   ],
+   "boundary_notes": [
+    "pre-roll 300 ms and post-roll 600 ms with no transcribed speech"
+   ],
+   "penalties": [],
+   "model_editorial_score": 83,
+   "text_checks": [],
+   "window": {
+    "end_ms": 150500,
+    "id": "c:4",
+    "reason": "seeds: audio_loud_burst, audio_onset, baseline_scan; support 17.08; ids a:69f8f519-1b62-4174-902f-edefb6bbbcf2:24, w:9c089a42-cec5-4855-aad8-c2e9a6247261:41, w:9c089a42-cec5-4855-aad8-c2e9a6247261:42, w:9c089a42-cec5-4855-aad8-c2e9a6247261:43, cue:reaction, cue:pursuit",
+    "sources": [
+     "audio_loud_burst",
+     "audio_onset",
+     "baseline_scan"
+    ],
+    "start_ms": 110000,
+    "trigger_ids": [
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:24",
+     "w:9c089a42-cec5-4855-aad8-c2e9a6247261:41",
+     "w:9c089a42-cec5-4855-aad8-c2e9a6247261:42",
+     "w:9c089a42-cec5-4855-aad8-c2e9a6247261:43",
+     "cue:reaction",
+     "cue:pursuit",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:25",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:26",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:27",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:28",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:29",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:30",
+     "w:9c089a42-cec5-4855-aad8-c2e9a6247261:44",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:31",
+     "w:9c089a42-cec5-4855-aad8-c2e9a6247261:53",
+     "w:9c089a42-cec5-4855-aad8-c2e9a6247261:54",
+     "w:9c089a42-cec5-4855-aad8-c2e9a6247261:55",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:32",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:33",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:34",
+     "a:69f8f519-1b62-4174-902f-edefb6bbbcf2:35"
+    ],
+    "weight": 17.08
+   },
+   "uncertainty": "The audio evidence suggests loud bursts during the escape, confirming high intensity, but visual confirmation of the 'flying' state is inferred from the transcript context.",
+   "review_status": "pending",
+   "transcript_id": "9c089a42-cec5-4855-aad8-c2e9a6247261",
+   "ai_run_id": "450e6971-a70a-45e2-a840-bc08b2f187ba"
+  }
+ ],
+ "rejected": [],
+ "runs": [
+  {
+   "id": "525499a8-31c7-43f0-b718-4db0da678e1f",
+   "batch": 0,
+   "status": "failed_validation",
+   "model": "qwen3.5:4b",
+   "prompt": "gaming.gta.v2 v2",
+   "attempts": 3,
+   "wall_s": 280.394,
+   "error": "candidates[1]: clip length 3940 ms is outside 8000-60000 ms; candidates[2]: clip length 2700 ms is outside 8000-60000 ms",
+   "cost_usd": 0.0
+  },
+  {
+   "id": "450e6971-a70a-45e2-a840-bc08b2f187ba",
+   "batch": 1,
+   "status": "accepted",
+   "model": "qwen3.5:4b",
+   "prompt": "gaming.gta.v2 v2",
+   "attempts": 1,
+   "wall_s": 26.528,
+   "error": null,
+   "cost_usd": 0.0
+  }
+ ]
+}

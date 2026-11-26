@@ -154,7 +154,9 @@ def test_request_to_ranked_grounded_highlights(db, settings, recording, provider
         for h in hl:                       # times are the stored word times, not the model's
             c = s.get(HighlightCandidate, h["id"])
             tid, start_idx = c.start_id.rsplit(":", 1)[0][2:], int(c.start_id.rsplit(":", 1)[1])
-            assert s.get(TranscriptWord, (tid, start_idx)).start_ms == c.start_ms
+            word_start = s.get(TranscriptWord, (tid, start_idx)).start_ms
+            assert h["model_clip"][0] == word_start               # the model's choice
+            assert word_start - 300 <= c.start_ms <= word_start   # refined: pre-roll only
             assert c.transcript_id == tid and len(c.evidence_fingerprint) == 64
         runs = s.scalars(select(AIRun)).all()
         assert runs and all(r.cost_usd == 0 and r.status == "accepted" for r in runs)
@@ -454,7 +456,7 @@ def test_review_bad_prompt_voice_or_scoring_is_a_422(db, settings, recording, pr
 
 @requires_ffmpeg
 def test_review_retries_use_the_windows_planned_on_the_first_run(db, settings, recording,
-                                                                provider):
+                                                                provider, monkeypatch):
     provider["p"] = Scripted(fail_first=1)
     req = _ask(db, settings, recording)
     worker = WorkerProcess(settings, db)
@@ -467,8 +469,13 @@ def test_review_retries_use_the_windows_planned_on_the_first_run(db, settings, r
                 break
     with db.session() as s:
         planned = json.loads(s.get(HighlightRequest, req).plan_json)
-    assert len(planned) >= 2
+    assert planned
+
+    def replanned(*a, **k):
+        raise AssertionError("a retry must reuse the pinned windows")
+
     settings.ai_max_windows = 1                             # a configuration change
+    monkeypatch.setattr(ai_highlights, "windows", replanned)
     drain(db, settings, max_jobs=40)
     with db.session() as s:
         assert json.loads(s.get(HighlightRequest, req).plan_json) == planned

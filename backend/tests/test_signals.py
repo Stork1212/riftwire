@@ -145,6 +145,30 @@ def test_signals_are_measured_once_and_complete_runs_are_immutable(db, settings,
 
 
 @requires_ffmpeg
+def test_time_base_upgrade_replaces_both_version_one_runs(db, settings, media_dir, monkeypatch):
+    rec = _cleared(db, settings, media_dir / "basic.mp4")
+    with monkeypatch.context() as legacy:
+        legacy.setitem(signals.AUDIO_CONFIG, "version", 1)
+        legacy.setitem(signals.VISUAL_CONFIG, "version", 1)
+        old_runs = _measure(db, settings, rec.id)
+
+    with db.session() as s:
+        for kind in SignalKind:
+            assert signals.current(s, rec.id, kind) is None
+            job = signals.request(s, settings, rec.id, kind)
+            assert job is not None and job.status == "PENDING"
+    drain(db, settings)
+
+    with db.session() as s:
+        for kind, previous in zip(SignalKind, old_runs, strict=True):
+            current = signals.current(s, rec.id, kind)
+            assert current is not None and current.id != previous.id
+            assert current.config_fingerprint != previous.config_fingerprint
+            assert s.get(SignalRun, previous.id).events_json == previous.events_json
+            assert signals.request(s, settings, rec.id, kind) is None
+
+
+@requires_ffmpeg
 def test_silent_recording_measures_visuals_only(db, settings, media_dir):
     rec = _cleared(db, settings, media_dir / "noaudio.mp4")
     with db.session() as s:

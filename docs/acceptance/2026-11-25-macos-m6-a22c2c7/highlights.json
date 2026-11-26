@@ -1,0 +1,152 @@
+{
+ "request": {
+  "id": "ee6763ed-2dc7-48c8-b100-0f1997a361c2",
+  "status": "COMPLETE",
+  "game": "gta",
+  "channel": "rumbleframe",
+  "prompt_id": "gaming.gta.v2",
+  "target_count": 5,
+  "error": null,
+  "summary": {
+   "batch_status": [
+    "failed_validation",
+    "accepted"
+   ],
+   "batches": 2,
+   "candidates_validated": 1,
+   "editorial_score_meaning": "estimated editorial quality 0-100; not a probability of going viral",
+   "fewer_than_requested": true,
+   "reason": "only these candidates passed validation, the editorial cut and duplicate suppression",
+   "requested": 5,
+   "returned": 1
+  },
+  "created_at": "2026-11-25T19:33:32.265687+00:00"
+ },
+ "job": {
+  "id": "065baf0f-b9fe-4e41-9cfc-a05f2421454d",
+  "status": "COMPLETED",
+  "progress_percent": 100,
+  "last_error": null
+ },
+ "highlights": [
+  {
+   "id": "df32d57d-822e-419b-bd02-5ad9f5f8084a",
+   "rank": 1,
+   "status": "selected",
+   "reason": null,
+   "start_ms": 121320,
+   "end_ms": 167800,
+   "category": "mechanic",
+   "title": "Game is Broken! Car Flying & Escape",
+   "hook": "The car is flying and the game is broken!",
+   "what_happens": "The streamer reacts to the car flying and escaping the police, stating the game is broken and the mission is complete.",
+   "why_entertaining": "The combination of the car flying (a major glitch) and the immediate completion of the mission creates a chaotic, funny moment where the player exploits a game mechanic to escape police pursuit.",
+   "editorial_score": 75,
+   "confidence": 0.95,
+   "scores": {
+    "entertainment": 90,
+    "hook": 85,
+    "intensity": 70,
+    "pacing": 80,
+    "payoff": 85,
+    "standalone": 90,
+    "surprise": 95
+   },
+   "evidence": [
+    {
+     "basis": "transcript",
+     "claim": "The car is flying and the game is broken; the player escaped the police and the mission is complete.",
+     "ids": [
+      "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:41",
+      "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:47",
+      "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:50",
+      "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:60",
+      "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:63"
+     ],
+     "quote": null
+    }
+   ],
+   "model_clip": [
+    121620,
+    165780
+   ],
+   "boundary_notes": [
+    "end extended 1420 ms to keep speech that continues without a pause",
+    "pre-roll 300 ms and post-roll 600 ms in silence"
+   ],
+   "penalties": [
+    {
+     "name": "dead_air",
+     "points": 10,
+     "reason": "77% of the clip is measured silence without speech"
+    }
+   ],
+   "model_editorial_score": 85,
+   "text_checks": [],
+   "window": {
+    "end_ms": 165780,
+    "id": "c:4",
+    "reason": "seeds: audio_loud_burst, audio_onset, baseline_scan; support 18.32; ids a:cdef319b-74f6-4659-814b-6cf9ae87b88a:24, w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:41, w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:42, w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:43, cue:reaction, cue:pursuit",
+    "sources": [
+     "audio_loud_burst",
+     "audio_onset",
+     "baseline_scan"
+    ],
+    "start_ms": 110000,
+    "trigger_ids": [
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:24",
+     "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:41",
+     "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:42",
+     "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:43",
+     "cue:reaction",
+     "cue:pursuit",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:25",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:26",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:27",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:28",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:29",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:30",
+     "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:44",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:31",
+     "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:53",
+     "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:54",
+     "w:b47e1928-16ad-457d-bcbf-9bc19cea3e7f:55",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:32",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:33",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:34",
+     "a:cdef319b-74f6-4659-814b-6cf9ae87b88a:35"
+    ],
+    "weight": 18.317
+   },
+   "uncertainty": "The transcript confirms the car is flying and the mission is complete, but does not explicitly confirm the car crashed or the police were chased, though the context implies it.",
+   "review_status": "pending",
+   "transcript_id": "b47e1928-16ad-457d-bcbf-9bc19cea3e7f",
+   "ai_run_id": "8236ffc1-84b6-4df1-aaf0-deefb059444c"
+  }
+ ],
+ "rejected": [],
+ "runs": [
+  {
+   "id": "94ab0058-547b-4f16-8142-33c3c5f3d8eb",
+   "batch": 0,
+   "status": "failed_validation",
+   "model": "qwen3.5:4b",
+   "prompt": "gaming.gta.v2 v2",
+   "attempts": 3,
+   "wall_s": 193.386,
+   "error": "schema: candidates: Value error, each window may be selected at most once",
+   "cost_usd": 0.0
+  },
+  {
+   "id": "8236ffc1-84b6-4df1-aaf0-deefb059444c",
+   "batch": 1,
+   "status": "accepted",
+   "model": "qwen3.5:4b",
+   "prompt": "gaming.gta.v2 v2",
+   "attempts": 1,
+   "wall_s": 26.612,
+   "error": null,
+   "cost_usd": 0.0
+  }
+ ]
+}

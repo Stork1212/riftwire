@@ -1,0 +1,74 @@
+[
+ {
+  "batch": 0,
+  "status": "failed_validation",
+  "attempts": 3,
+  "wall_s": 141.828,
+  "model": "qwen3.5:4b",
+  "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+  "error": "candidates[1]: clip length 3940 ms is outside 8000-60000 ms; candidates[2]: clip length 2700 ms is outside 8000-60000 ms; candidates[2].evidence[1]: basis 'scene' must cite only sc: ids",
+  "cost_usd": 0.0,
+  "metrics": [
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 0.5,
+    "output_constraint": "none",
+    "output_ms": 40679.0,
+    "output_tokens": 1430,
+    "prompt_ms": 8503.9,
+    "prompt_tokens": 4359,
+    "thinking_chars": 0,
+    "total_ms": 49199.5
+   },
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 0.5,
+    "output_constraint": "none",
+    "output_ms": 35499.2,
+    "output_tokens": 1235,
+    "prompt_ms": 8620.1,
+    "prompt_tokens": 4448,
+    "thinking_chars": 0,
+    "total_ms": 44132.2
+   },
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 0.5,
+    "output_constraint": "none",
+    "output_ms": 46005.0,
+    "output_tokens": 1581,
+    "prompt_ms": 224.2,
+    "prompt_tokens": 4448,
+    "thinking_chars": 0,
+    "total_ms": 46244.1
+   }
+  ]
+ },
+ {
+  "batch": 1,
+  "status": "accepted",
+  "attempts": 1,
+  "wall_s": 22.81,
+  "model": "qwen3.5:4b",
+  "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+  "error": null,
+  "cost_usd": 0.0,
+  "metrics": [
+   {
+    "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+    "done_reason": "stop",
+    "load_ms": 1613.1,
+    "output_constraint": "none",
+    "output_ms": 14664.1,
+    "output_tokens": 490,
+    "prompt_ms": 6509.5,
+    "prompt_tokens": 3389,
+    "thinking_chars": 0,
+    "total_ms": 22802.6
+   }
+  ]
+ }
+]

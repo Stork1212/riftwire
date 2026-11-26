@@ -1,0 +1,71 @@
+time=2026-11-25T14:33:16.559-05:00 level=INFO source=routes.go:2484 msg="server config" env="map[HTTPS_PROXY: HTTP_PROXY: LLAMA_ARG_FIT: LLAMA_ARG_FIT_TARGET: NO_PROXY: OLLAMA_CONTEXT_LENGTH:8192 OLLAMA_CREATE_REMOTE:false OLLAMA_DEBUG:INFO OLLAMA_DEBUG_LOG_REQUESTS:false OLLAMA_EDITOR: OLLAMA_FLASH_ATTENTION:false OLLAMA_GO_TEMPLATE:true OLLAMA_GPU_OVERHEAD:0 OLLAMA_HOST:http://127.0.0.1:11434 OLLAMA_IGPU_ENABLE: OLLAMA_KEEP_ALIVE:0s OLLAMA_KV_CACHE_TYPE: OLLAMA_LLM_LIBRARY: OLLAMA_LOAD_TIMEOUT:5m0s OLLAMA_MAX_LOADED_MODELS:1 OLLAMA_MAX_QUEUE:512 OLLAMA_MAX_TRANSFER_STREAMS:4 OLLAMA_MODELS:/Users/gregstork/Claude/riftwire/data/models/ollama OLLAMA_NOHISTORY:false OLLAMA_NOPRUNE:false OLLAMA_NO_CLOUD:true OLLAMA_NUM_PARALLEL:1 OLLAMA_ORIGINS:[http://localhost https://localhost http://localhost:* https://localhost:* http://127.0.0.1 https://127.0.0.1 http://127.0.0.1:* https://127.0.0.1:* http://0.0.0.0 https://0.0.0.0 http://0.0.0.0:* https://0.0.0.0:* app://* file://* tauri://* vscode-webview://* vscode-file://*] OLLAMA_REMOTES:[ollama.com] OLLAMA_SCHED_SPREAD:false http_proxy: https_proxy: no_proxy:]"
+time=2026-11-25T14:33:16.560-05:00 level=INFO source=routes.go:2486 msg="Ollama cloud disabled: true"
+time=2026-11-25T14:33:16.577-05:00 level=INFO source=images.go:1033 msg="total blobs: 734"
+time=2026-11-25T14:33:16.581-05:00 level=INFO source=images.go:1042 msg="total unused blobs removed: 0"
+time=2026-11-25T14:33:16.583-05:00 level=INFO source=routes.go:2546 msg="Listening on 127.0.0.1:11434 (version 0.40.18)"
+time=2026-11-25T14:33:16.584-05:00 level=INFO source=model_recommendations.go:177 msg="model recommendations cache sleep scheduled" wait=3h53m57.536928298s consecutive_failures=0
+time=2026-11-25T14:33:16.584-05:00 level=INFO source=runner.go:60 msg="discovering available GPUs..."
+time=2026-11-25T14:33:16.739-05:00 level=INFO source=types.go:32 msg="inference compute" id=0 filter_id=0 library=Metal compute=0.0 name=MTL0 description="Apple M3 Pro" libdirs=ollama driver=0.0 pci_id="" type=iGPU total="13.3 GiB" available="13.3 GiB"
+time=2026-11-25T14:33:16.739-05:00 level=INFO source=routes.go:2596 msg="vram-based default context" total_vram="13.3 GiB" default_num_ctx=4096
+[GIN] 2026/11/25 - 14:33:17 | 200 | 339.75µs |       127.0.0.1 | GET      "/api/version"
+[GIN] 2026/11/25 - 14:33:17 | 200 |   3.98ms |       127.0.0.1 | GET      "/api/tags"
+[GIN] 2026/11/25 - 14:33:38 | 200 |    3.6ms |       127.0.0.1 | GET      "/api/tags"
+time=2026-11-25T14:33:38.368-05:00 level=INFO source=sched.go:656 msg="system memory" total="18.0 GiB" free="5.8 GiB" free_swap="0 B"
+time=2026-11-25T14:33:38.369-05:00 level=INFO source=sched.go:663 msg="gpu memory" id=0 library=Metal available="12.8 GiB" free="13.3 GiB" minimum="512.0 MiB" overhead="0 B"
+time=2026-11-25T14:33:38.369-05:00 level=INFO source=client.go:544 msg="starting mlx runner subprocess" model=qwen3.5:4b port=49398
+time=2026-11-25T14:33:38.370-05:00 level=INFO source=images.go:431 msg="template selection" model=registry.ollama.ai/library/qwen3.5:4b selected=renderer_parser renderer=qwen3.5 parser=qwen3.5 go_template=null chat_template=null harmony=null renderer_parser="[completion vision thinking tools]"
+time=2026-11-25T14:33:38.370-05:00 level=INFO source=sched.go:779 msg="loaded runners" count=1
+time=2026-11-25T14:33:38.410-05:00 level=INFO source=server.go:53 msg="MLX engine initialized" "MLX version"=0.32.4 device=gpu
+time=2026-11-25T14:33:38.487-05:00 level=INFO source=model.go:161 msg="Model architecture" arch=Qwen3_5ForConditionalGeneration
+time=2026-11-25T14:33:38.629-05:00 level=INFO source=runner.go:430 msg="Loaded tensors from manifest" count=923
+time=2026-11-25T14:33:40.006-05:00 level=WARN source=grammar.go:74 msg="Structured output is unavailable" error="xgrammar library not found at /opt/homebrew/Cellar/ollama/0.40.18/libexec/lib/ollama/mlx_metal_v3/libollama_xgrammar.dylib: stat /opt/homebrew/Cellar/ollama/0.40.18/libexec/lib/ollama/mlx_metal_v3/libollama_xgrammar.dylib: no such file or directory"
+time=2026-11-25T14:33:40.583-05:00 level=INFO source=scheduler.go:229 msg="MLX request scheduler" parallel=1 drafting=shared-verification attention=per-request
+time=2026-11-25T14:33:40.583-05:00 level=INFO source=runner.go:443 msg="Starting HTTP server" host=127.0.0.1 port=49398
+time=2026-11-25T14:33:40.677-05:00 level=INFO source=server.go:280 msg=ServeHTTP method=GET path=/v1/status took=3.533833ms status="200 OK"
+time=2026-11-25T14:33:40.678-05:00 level=INFO source=client.go:114 msg="mlx runner is ready" port=49398
+time=2026-11-25T14:33:40.681-05:00 level=ERROR source=server.go:280 msg=ServeHTTP method=POST path=/v1/completions took=262.875µs status="501 Not Implemented"
+[GIN] 2026/11/25 - 14:33:40 | 501 |    2.31s |       127.0.0.1 | POST     "/api/chat"
+time=2026-11-25T14:33:40.689-05:00 level=INFO source=server.go:280 msg=ServeHTTP method=GET path=/v1/status took=35.459µs status="200 OK"
+time=2026-11-25T14:33:40.696-05:00 level=INFO source=prefix_cache.go:191 msg="cache miss" total=5874 matched=0 cached=0 left=5874
+time=2026-11-25T14:33:44.547-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=2048 total=5874
+time=2026-11-25T14:33:48.584-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=4096 total=5874
+time=2026-11-25T14:33:52.234-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=5873 total=5874
+time=2026-11-25T14:34:36.515-05:00 level=INFO source=server.go:280 msg=ServeHTTP method=POST path=/v1/completions took=55.825277666s status="200 OK"
+[GIN] 2026/11/25 - 14:34:36 | 200 |   55.83s |       127.0.0.1 | POST     "/api/chat"
+time=2026-11-25T14:34:36.523-05:00 level=INFO source=server.go:280 msg=ServeHTTP method=GET path=/v1/status took=45.917µs status="200 OK"
+time=2026-11-25T14:34:36.526-05:00 level=INFO source=prefix_cache.go:191 msg="cache miss" total=5924 matched=5865 cached=0 left=5924
+time=2026-11-25T14:34:40.366-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=2048 total=5924
+time=2026-11-25T14:34:44.420-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=4096 total=5924
+time=2026-11-25T14:34:48.195-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=5923 total=5924
+time=2026-11-25T14:35:45.143-05:00 level=INFO source=server.go:280 msg=ServeHTTP method=POST path=/v1/completions took=1m8.620631125s status="200 OK"
+[GIN] 2026/11/25 - 14:35:45 | 200 |     1m0s |       127.0.0.1 | POST     "/api/chat"
+time=2026-11-25T14:35:45.146-05:00 level=INFO source=server.go:280 msg=ServeHTTP method=GET path=/v1/status took=27.458µs status="200 OK"
+time=2026-11-25T14:35:45.149-05:00 level=INFO source=prefix_cache.go:191 msg="cache miss" total=5963 matched=5877 cached=0 left=5963
+time=2026-11-25T14:35:48.987-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=2048 total=5963
+time=2026-11-25T14:35:53.044-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=4096 total=5963
+time=2026-11-25T14:35:56.896-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=5962 total=5963
+time=2026-11-25T14:36:51.749-05:00 level=INFO source=server.go:280 msg=ServeHTTP method=POST path=/v1/completions took=1m6.603298583s status="200 OK"
+[GIN] 2026/11/25 - 14:36:51 | 200 |     1m0s |       127.0.0.1 | POST     "/api/chat"
+[GIN] 2026/11/25 - 14:36:51 | 200 |  652.5µs |       127.0.0.1 | POST     "/api/generate"
+time=2026-11-25T14:36:51.751-05:00 level=INFO source=client.go:153 msg="stopping mlx runner subprocess" pid=13371
+[GIN] 2026/11/25 - 14:36:51 | 200 |   5.65ms |       127.0.0.1 | GET      "/api/tags"
+time=2026-11-25T14:36:51.780-05:00 level=INFO source=sched.go:656 msg="system memory" total="18.0 GiB" free="5.2 GiB" free_swap="0 B"
+time=2026-11-25T14:36:51.781-05:00 level=INFO source=sched.go:663 msg="gpu memory" id=0 library=Metal available="12.8 GiB" free="13.3 GiB" minimum="512.0 MiB" overhead="0 B"
+time=2026-11-25T14:36:51.782-05:00 level=INFO source=client.go:544 msg="starting mlx runner subprocess" model=qwen3.5:4b port=50391
+time=2026-11-25T14:36:51.784-05:00 level=INFO source=images.go:431 msg="template selection" model=registry.ollama.ai/library/qwen3.5:4b selected=renderer_parser renderer=qwen3.5 parser=qwen3.5 go_template=null chat_template=null harmony=null renderer_parser="[completion vision thinking tools]"
+time=2026-11-25T14:36:51.784-05:00 level=INFO source=sched.go:779 msg="loaded runners" count=1
+time=2026-11-25T14:36:51.912-05:00 level=INFO source=server.go:53 msg="MLX engine initialized" "MLX version"=0.32.4 device=gpu
+time=2026-11-25T14:36:52.014-05:00 level=INFO source=model.go:161 msg="Model architecture" arch=Qwen3_5ForConditionalGeneration
+time=2026-11-25T14:36:52.157-05:00 level=INFO source=runner.go:430 msg="Loaded tensors from manifest" count=923
+time=2026-11-25T14:36:53.336-05:00 level=WARN source=grammar.go:74 msg="Structured output is unavailable" error="xgrammar library not found at /opt/homebrew/Cellar/ollama/0.40.18/libexec/lib/ollama/mlx_metal_v3/libollama_xgrammar.dylib: stat /opt/homebrew/Cellar/ollama/0.40.18/libexec/lib/ollama/mlx_metal_v3/libollama_xgrammar.dylib: no such file or directory"
+time=2026-11-25T14:36:53.754-05:00 level=INFO source=scheduler.go:229 msg="MLX request scheduler" parallel=1 drafting=shared-verification attention=per-request
+time=2026-11-25T14:36:53.754-05:00 level=INFO source=runner.go:443 msg="Starting HTTP server" host=127.0.0.1 port=50391
+time=2026-11-25T14:36:53.790-05:00 level=INFO source=server.go:280 msg=ServeHTTP method=GET path=/v1/status took=2.415084ms status="200 OK"
+time=2026-11-25T14:36:53.791-05:00 level=INFO source=client.go:114 msg="mlx runner is ready" port=50391
+time=2026-11-25T14:36:53.798-05:00 level=INFO source=prefix_cache.go:191 msg="cache miss" total=3535 matched=0 cached=0 left=3535
+time=2026-11-25T14:36:57.664-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=2048 total=3535
+time=2026-11-25T14:37:00.689-05:00 level=INFO source=pipeline.go:252 msg="Prompt processing progress" processed=3534 total=3535
+time=2026-11-25T14:37:18.369-05:00 level=INFO source=server.go:280 msg=ServeHTTP method=POST path=/v1/completions took=24.574773375s status="200 OK"
+[GIN] 2026/11/25 - 14:37:18 | 200 |   26.59s |       127.0.0.1 | POST     "/api/chat"
+[GIN] 2026/11/25 - 14:37:18 | 200 |   6.52ms |       127.0.0.1 | POST     "/api/generate"
+time=2026-11-25T14:37:18.387-05:00 level=INFO source=client.go:153 msg="stopping mlx runner subprocess" pid=13901
