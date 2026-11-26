@@ -141,6 +141,26 @@ def fail_active(session: Session, recording_id: str, error: str) -> int:
     return n
 
 
+JOB_FAILED_PREFIX = "the AI job failed: "
+
+
+def reactivate_failed(session: Session, recording_id: str) -> HighlightRequest | None:
+    """On a manual retry of the failed AI job: put the request that the job's failure
+    ended back to PENDING (finished batches and its pinned windows are kept, so the retry
+    resumes). A request that failed for another reason, or any newer request, is left."""
+    if active_request(session, recording_id) is not None:
+        return None
+    latest = session.scalar(select(HighlightRequest).where(
+        HighlightRequest.recording_id == recording_id,
+        HighlightRequest.status != RequestStatus.SUPERSEDED.value)
+        .order_by(HighlightRequest.created_at.desc()))
+    if latest is None or latest.status != RequestStatus.FAILED.value or \
+            not (latest.error or "").startswith(JOB_FAILED_PREFIX):
+        return None
+    latest.status, latest.error, latest.completed_at = RequestStatus.PENDING.value, None, None
+    return latest
+
+
 def active_request(session: Session, recording_id: str) -> HighlightRequest | None:
     return session.scalar(select(HighlightRequest).where(
         HighlightRequest.recording_id == recording_id,

@@ -27,6 +27,7 @@ from app.core.errors import (
     ServiceUnavailable,
     StorageOffline,
     StorageOfflineJobError,
+    SupersededJobError,
     TransientJobError,
     ValidationFailed,
 )
@@ -661,8 +662,8 @@ def handle_ai_highlights(ctx: JobContext) -> None:
         if newer is None:
             queue.complete(ctx.db, ctx.claimed)
             return
-        raise DependencyPendingJobError("superseded by a newer highlight request; "
-                                        "starting it next")
+        raise SupersededJobError("superseded by a newer highlight request; "
+                                 "starting it next")
 
     with queue.fenced(ctx.db, ctx.job_id, ctx.claimed.token) as s:
         r = s.get(HighlightRequest, req_id)
@@ -703,12 +704,12 @@ def handle_ai_highlights(ctx: JobContext) -> None:
             ctx.check()
             with ctx.db.session() as s:
                 r = s.get(HighlightRequest, req_id)
-                superseded = r.status == RequestStatus.SUPERSEDED.value
-                if not superseded:
+                was_superseded = r.status == RequestStatus.SUPERSEDED.value
+                if not was_superseded:
                     bundle, meta = ai_highlights.bundle_for(s, settings, recording,
                                                             batches[n], r.game)
                     s.expunge(r)
-            if superseded:
+            if was_superseded:
                 raise _Superseded()
             try:
                 outcome = ai_highlights.evaluate_batch(bundle, provider, r, settings)
