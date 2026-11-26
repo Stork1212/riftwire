@@ -1,0 +1,157 @@
+{
+  "model": "qwen3.5:4b",
+  "required": [
+    "health",
+    "model_available",
+    "plain_text",
+    "provider_path"
+  ],
+  "passed": true,
+  "steps": [
+    {
+      "step": "health",
+      "status": "PASS",
+      "seconds": 0.0,
+      "detail": {
+        "version": "0.40.18"
+      }
+    },
+    {
+      "step": "model_available",
+      "status": "PASS",
+      "seconds": 0.01,
+      "detail": {
+        "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+        "details": {
+          "parent_model": "",
+          "format": "safetensors",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": "nvfp4",
+          "runner": "mlx",
+          "size_bytes": 3973305013
+        },
+        "capabilities": [
+          "completion",
+          "vision",
+          "thinking",
+          "tools"
+        ],
+        "parameters": "min_p                          0\npresence_penalty               1.5\nrepeat_penalty                 1\ntemperature                    1\ntop_k                          20\ntop_p                          0.95"
+      }
+    },
+    {
+      "step": "plain_text",
+      "status": "PASS",
+      "seconds": 3.99,
+      "detail": {
+        "content": "OK",
+        "thinking_chars": 0,
+        "output_tokens": 1,
+        "load_ms": 2207,
+        "total_ms": 3990,
+        "done_reason": "stop"
+      }
+    },
+    {
+      "step": "engine_residency",
+      "status": "PASS",
+      "seconds": 0.0,
+      "detail": {
+        "loaded": [
+          {
+            "name": "qwen3.5:4b",
+            "model": "qwen3.5:4b",
+            "size": 4065441280,
+            "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+            "details": {
+              "parent_model": "",
+              "format": "safetensors",
+              "family": "",
+              "families": null,
+              "parameter_size": "",
+              "quantization_level": "nvfp4"
+            },
+            "expires_at": "2026-11-25T00:34:01.03671-05:00",
+            "size_vram": 4065441280,
+            "context_length": 2048,
+            "runner": "mlx"
+          }
+        ]
+      }
+    },
+    {
+      "step": "json_mode",
+      "status": "UNAVAILABLE",
+      "seconds": 0.0,
+      "detail": {
+        "code": "structured_output_unavailable",
+        "message": "Ollama /api/chat returned HTTP 501: structured output is unavailable"
+      }
+    },
+    {
+      "step": "json_schema_mode",
+      "status": "UNAVAILABLE",
+      "seconds": 0.0,
+      "detail": {
+        "code": "structured_output_unavailable",
+        "message": "Ollama /api/chat returned HTTP 501: structured output is unavailable"
+      }
+    },
+    {
+      "step": "provider_path",
+      "status": "PASS",
+      "seconds": 28.12,
+      "detail": {
+        "outcome": "failed_validation",
+        "error": "schema: candidates.0.window_id: Field required; schema: candidates.0.start_id: Field required; schema: candidates.0.end_id: Field required; schema: candidates.0.category: Input should be 'funny', 'unexpected', 'chaos', 'police_pursuit', 'escape', 'crash', 'stunt', 'reaction', 'close_call', 'skill', 'mechanic', 'discovery', 'glitch', 'character_interaction', 'story' or 'other'; schema: candidates.0.standalone: Input should be a valid boolean, unable to interpret input",
+        "attempts": [
+          {
+            "ok": false,
+            "errors": [
+              "schema: candidates.0.category: Field required",
+              "schema: candidates.0.what_happens: Field required",
+              "schema: candidates.0.why_entertaining: Field required",
+              "schema: candidates.0.standalone: Field required"
+            ],
+            "metrics": {
+              "total_ms": 12430.2,
+              "load_ms": 0.2,
+              "prompt_tokens": 1936,
+              "prompt_ms": 3815.7,
+              "output_tokens": 310,
+              "output_ms": 8564.8,
+              "done_reason": "stop",
+              "output_constraint": "none",
+              "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+              "thinking_chars": 0
+            }
+          },
+          {
+            "ok": false,
+            "errors": [
+              "schema: candidates.0.window_id: Field required",
+              "schema: candidates.0.start_id: Field required",
+              "schema: candidates.0.end_id: Field required",
+              "schema: candidates.0.category: Input should be 'funny', 'unexpected', 'chaos', 'police_pursuit', 'escape', 'crash', 'stunt', 'reaction', 'close_call', 'skill', 'mechanic', 'discovery', 'glitch', 'character_interaction', 'story' or 'other'"
+            ],
+            "metrics": {
+              "total_ms": 15665.9,
+              "load_ms": 0.5,
+              "prompt_tokens": 2063,
+              "prompt_ms": 4093.8,
+              "output_tokens": 419,
+              "output_ms": 11561.5,
+              "done_reason": "stop",
+              "output_constraint": "none",
+              "constraint_note": "Ollama /api/chat returned HTTP 501: structured output is unavailable",
+              "thinking_chars": 0
+            }
+          }
+        ],
+        "raw_head": "```json\n{\n  \"schema\": \"highlight_eval.v1\",\n  \"candidates\": [\n    {\n      \"id\": \"c:2\",\n      \"category\": \"pursuit_escape\",\n      \"what_happens\": \"The player spots three police cars behind them, attempts to cut through an alley, and then flies over train tracks to escape, successfully getting away.\",\n      \"why_entertaining\": \"The sequence builds tension with the police spotting the player, delivers a high-intensity stunt (flying over tracks), and resolves with a successful escape, fitting the GTA theme of chaotic escapes.\",\n      \"standalone\": true,\n      \"clear_start_and_end\": {\n        \"start"
+      }
+    }
+  ]
+}

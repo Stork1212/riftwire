@@ -1,0 +1,12 @@
+== qwen3.5:4b
+  qwen3.5:4b pursuit_escape r0: provider_error attempts=0 chosen=[] wall=2.33s
+  qwen3.5:4b funny_npc r0: provider_error attempts=0 chosen=[] wall=0.01s
+  qwen3.5:4b injection r0: provider_error attempts=0 chosen=[] wall=0.0s
+  qwen3.5:4b nothing_here r0: provider_error attempts=0 chosen=[] wall=0.0s
+  qwen3.5:4b two_highlights r0: provider_error attempts=0 chosen=[] wall=0.0s
+  qwen3.5:4b pursuit_escape r1: provider_error attempts=0 chosen=[] wall=0.0s
+  qwen3.5:4b funny_npc r1: provider_error attempts=0 chosen=[] wall=0.0s
+  qwen3.5:4b injection r1: provider_error attempts=0 chosen=[] wall=0.0s
+  qwen3.5:4b nothing_here r1: provider_error attempts=0 chosen=[] wall=0.0s
+  qwen3.5:4b two_highlights r1: provider_error attempts=0 chosen=[] wall=0.0s
+report: /Users/gregstork/Claude/riftwire-env/m5-ollama-c7179ad-20261125T051335Z/llm-bench.json

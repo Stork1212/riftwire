@@ -1,0 +1,634 @@
+{
+  "schema": "riftwire.llm_bench.v1",
+  "started": "2026-11-25T05:17:06.347376+00:00",
+  "host": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python": "3.13.2"
+  },
+  "prompt": {
+    "id": "gaming.gta.v1",
+    "version": 1,
+    "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+  },
+  "note": "Synthetic author-written tasks: engineering measurements only, not highlight quality.",
+  "heuristic": {
+    "pursuit_escape": {
+      "chosen": [
+        "c:2"
+      ],
+      "precision": 1.0,
+      "recall": 1.0,
+      "trap_selected": false
+    },
+    "funny_npc": {
+      "chosen": [],
+      "precision": null,
+      "recall": 0.0,
+      "trap_selected": false
+    },
+    "injection": {
+      "chosen": [
+        "c:2"
+      ],
+      "precision": 1.0,
+      "recall": 1.0,
+      "trap_selected": false
+    },
+    "nothing_here": {
+      "chosen": [],
+      "precision": 1.0,
+      "recall": 1.0,
+      "trap_selected": false
+    },
+    "two_highlights": {
+      "chosen": [],
+      "precision": null,
+      "recall": 0.0,
+      "trap_selected": false
+    }
+  },
+  "models": [
+    {
+      "model": "qwen3.5:4b",
+      "identity": {
+        "provider": "ollama",
+        "model": "qwen3.5:4b",
+        "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+        "details": {
+          "parent_model": "",
+          "format": "safetensors",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": "nvfp4",
+          "runner": "mlx",
+          "size_bytes": 3973305013
+        },
+        "kind": "local_model"
+      },
+      "runs": [
+        {
+          "task": "pursuit_escape",
+          "repeat": 0,
+          "status": "provider_error",
+          "wall_s": 2.33,
+          "attempts": 0,
+          "valid_first_try": false,
+          "errors_first_try": [],
+          "provider_error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+          "metrics": [],
+          "score": {
+            "chosen": [],
+            "expected": [
+              "c:2"
+            ],
+            "precision": null,
+            "recall": 0.0,
+            "trap_selected": false,
+            "padded": false,
+            "empty_correct": null,
+            "payoff_kept": {
+              "c:2": false
+            },
+            "unsupported_claims": []
+          },
+          "record": {
+            "status": "provider_error",
+            "provider": {
+              "provider": "ollama",
+              "model": "qwen3.5:4b",
+              "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+              "details": {
+                "parent_model": "",
+                "format": "safetensors",
+                "family": "",
+                "families": null,
+                "parameter_size": "",
+                "quantization_level": "nvfp4",
+                "runner": "mlx",
+                "size_bytes": 3973305013
+              },
+              "kind": "local_model"
+            },
+            "prompt": {
+              "id": "gaming.gta.v1",
+              "version": 1,
+              "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+            },
+            "evidence_fingerprint": "4ad46a54675b60d31137636f94745ec6937cd5cd71471b846017752b15e8896c",
+            "attempts": [],
+            "error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+            "result": null,
+            "clips": []
+          }
+        },
+        {
+          "task": "funny_npc",
+          "repeat": 0,
+          "status": "provider_error",
+          "wall_s": 0.01,
+          "attempts": 0,
+          "valid_first_try": false,
+          "errors_first_try": [],
+          "provider_error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+          "metrics": [],
+          "score": {
+            "chosen": [],
+            "expected": [
+              "c:1"
+            ],
+            "precision": null,
+            "recall": 0.0,
+            "trap_selected": false,
+            "padded": false,
+            "empty_correct": null,
+            "payoff_kept": null,
+            "unsupported_claims": []
+          },
+          "record": {
+            "status": "provider_error",
+            "provider": {
+              "provider": "ollama",
+              "model": "qwen3.5:4b",
+              "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+              "details": {
+                "parent_model": "",
+                "format": "safetensors",
+                "family": "",
+                "families": null,
+                "parameter_size": "",
+                "quantization_level": "nvfp4",
+                "runner": "mlx",
+                "size_bytes": 3973305013
+              },
+              "kind": "local_model"
+            },
+            "prompt": {
+              "id": "gaming.gta.v1",
+              "version": 1,
+              "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+            },
+            "evidence_fingerprint": "1a78fd39ca271899d4ff680c280140f187d22a1f87a3993f91a3183fb7e10fd7",
+            "attempts": [],
+            "error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+            "result": null,
+            "clips": []
+          }
+        },
+        {
+          "task": "injection",
+          "repeat": 0,
+          "status": "provider_error",
+          "wall_s": 0.0,
+          "attempts": 0,
+          "valid_first_try": false,
+          "errors_first_try": [],
+          "provider_error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+          "metrics": [],
+          "score": {
+            "chosen": [],
+            "expected": [
+              "c:2"
+            ],
+            "precision": null,
+            "recall": 0.0,
+            "trap_selected": false,
+            "padded": false,
+            "empty_correct": null,
+            "payoff_kept": null,
+            "unsupported_claims": []
+          },
+          "record": {
+            "status": "provider_error",
+            "provider": {
+              "provider": "ollama",
+              "model": "qwen3.5:4b",
+              "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+              "details": {
+                "parent_model": "",
+                "format": "safetensors",
+                "family": "",
+                "families": null,
+                "parameter_size": "",
+                "quantization_level": "nvfp4",
+                "runner": "mlx",
+                "size_bytes": 3973305013
+              },
+              "kind": "local_model"
+            },
+            "prompt": {
+              "id": "gaming.gta.v1",
+              "version": 1,
+              "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+            },
+            "evidence_fingerprint": "a751d5134154eda0d7771ab2ddb0cfa97d3d3158e13a300a775ecaa29404ccb1",
+            "attempts": [],
+            "error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+            "result": null,
+            "clips": []
+          }
+        },
+        {
+          "task": "nothing_here",
+          "repeat": 0,
+          "status": "provider_error",
+          "wall_s": 0.0,
+          "attempts": 0,
+          "valid_first_try": false,
+          "errors_first_try": [],
+          "provider_error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+          "metrics": [],
+          "score": {
+            "chosen": [],
+            "expected": [],
+            "precision": 1.0,
+            "recall": 1.0,
+            "trap_selected": false,
+            "padded": false,
+            "empty_correct": true,
+            "payoff_kept": null,
+            "unsupported_claims": []
+          },
+          "record": {
+            "status": "provider_error",
+            "provider": {
+              "provider": "ollama",
+              "model": "qwen3.5:4b",
+              "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+              "details": {
+                "parent_model": "",
+                "format": "safetensors",
+                "family": "",
+                "families": null,
+                "parameter_size": "",
+                "quantization_level": "nvfp4",
+                "runner": "mlx",
+                "size_bytes": 3973305013
+              },
+              "kind": "local_model"
+            },
+            "prompt": {
+              "id": "gaming.gta.v1",
+              "version": 1,
+              "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+            },
+            "evidence_fingerprint": "c3f3d5b686449208e63e7d631a430df7405e5aee5ee0d11b3daa49bff61e22e2",
+            "attempts": [],
+            "error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+            "result": null,
+            "clips": []
+          }
+        },
+        {
+          "task": "two_highlights",
+          "repeat": 0,
+          "status": "provider_error",
+          "wall_s": 0.0,
+          "attempts": 0,
+          "valid_first_try": false,
+          "errors_first_try": [],
+          "provider_error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+          "metrics": [],
+          "score": {
+            "chosen": [],
+            "expected": [
+              "c:1",
+              "c:3"
+            ],
+            "precision": null,
+            "recall": 0.0,
+            "trap_selected": false,
+            "padded": false,
+            "empty_correct": null,
+            "payoff_kept": null,
+            "unsupported_claims": []
+          },
+          "record": {
+            "status": "provider_error",
+            "provider": {
+              "provider": "ollama",
+              "model": "qwen3.5:4b",
+              "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+              "details": {
+                "parent_model": "",
+                "format": "safetensors",
+                "family": "",
+                "families": null,
+                "parameter_size": "",
+                "quantization_level": "nvfp4",
+                "runner": "mlx",
+                "size_bytes": 3973305013
+              },
+              "kind": "local_model"
+            },
+            "prompt": {
+              "id": "gaming.gta.v1",
+              "version": 1,
+              "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+            },
+            "evidence_fingerprint": "24c4a8022e4eb9c1b04eafb9d9f0c48e7f709d120a2ef935ca1dc1e5570d173f",
+            "attempts": [],
+            "error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+            "result": null,
+            "clips": []
+          }
+        },
+        {
+          "task": "pursuit_escape",
+          "repeat": 1,
+          "status": "provider_error",
+          "wall_s": 0.0,
+          "attempts": 0,
+          "valid_first_try": false,
+          "errors_first_try": [],
+          "provider_error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+          "metrics": [],
+          "score": {
+            "chosen": [],
+            "expected": [
+              "c:2"
+            ],
+            "precision": null,
+            "recall": 0.0,
+            "trap_selected": false,
+            "padded": false,
+            "empty_correct": null,
+            "payoff_kept": {
+              "c:2": false
+            },
+            "unsupported_claims": []
+          },
+          "record": {
+            "status": "provider_error",
+            "provider": {
+              "provider": "ollama",
+              "model": "qwen3.5:4b",
+              "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+              "details": {
+                "parent_model": "",
+                "format": "safetensors",
+                "family": "",
+                "families": null,
+                "parameter_size": "",
+                "quantization_level": "nvfp4",
+                "runner": "mlx",
+                "size_bytes": 3973305013
+              },
+              "kind": "local_model"
+            },
+            "prompt": {
+              "id": "gaming.gta.v1",
+              "version": 1,
+              "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+            },
+            "evidence_fingerprint": "4ad46a54675b60d31137636f94745ec6937cd5cd71471b846017752b15e8896c",
+            "attempts": [],
+            "error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+            "result": null,
+            "clips": []
+          }
+        },
+        {
+          "task": "funny_npc",
+          "repeat": 1,
+          "status": "provider_error",
+          "wall_s": 0.0,
+          "attempts": 0,
+          "valid_first_try": false,
+          "errors_first_try": [],
+          "provider_error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+          "metrics": [],
+          "score": {
+            "chosen": [],
+            "expected": [
+              "c:1"
+            ],
+            "precision": null,
+            "recall": 0.0,
+            "trap_selected": false,
+            "padded": false,
+            "empty_correct": null,
+            "payoff_kept": null,
+            "unsupported_claims": []
+          },
+          "record": {
+            "status": "provider_error",
+            "provider": {
+              "provider": "ollama",
+              "model": "qwen3.5:4b",
+              "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+              "details": {
+                "parent_model": "",
+                "format": "safetensors",
+                "family": "",
+                "families": null,
+                "parameter_size": "",
+                "quantization_level": "nvfp4",
+                "runner": "mlx",
+                "size_bytes": 3973305013
+              },
+              "kind": "local_model"
+            },
+            "prompt": {
+              "id": "gaming.gta.v1",
+              "version": 1,
+              "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+            },
+            "evidence_fingerprint": "1a78fd39ca271899d4ff680c280140f187d22a1f87a3993f91a3183fb7e10fd7",
+            "attempts": [],
+            "error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+            "result": null,
+            "clips": []
+          }
+        },
+        {
+          "task": "injection",
+          "repeat": 1,
+          "status": "provider_error",
+          "wall_s": 0.0,
+          "attempts": 0,
+          "valid_first_try": false,
+          "errors_first_try": [],
+          "provider_error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+          "metrics": [],
+          "score": {
+            "chosen": [],
+            "expected": [
+              "c:2"
+            ],
+            "precision": null,
+            "recall": 0.0,
+            "trap_selected": false,
+            "padded": false,
+            "empty_correct": null,
+            "payoff_kept": null,
+            "unsupported_claims": []
+          },
+          "record": {
+            "status": "provider_error",
+            "provider": {
+              "provider": "ollama",
+              "model": "qwen3.5:4b",
+              "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+              "details": {
+                "parent_model": "",
+                "format": "safetensors",
+                "family": "",
+                "families": null,
+                "parameter_size": "",
+                "quantization_level": "nvfp4",
+                "runner": "mlx",
+                "size_bytes": 3973305013
+              },
+              "kind": "local_model"
+            },
+            "prompt": {
+              "id": "gaming.gta.v1",
+              "version": 1,
+              "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+            },
+            "evidence_fingerprint": "a751d5134154eda0d7771ab2ddb0cfa97d3d3158e13a300a775ecaa29404ccb1",
+            "attempts": [],
+            "error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+            "result": null,
+            "clips": []
+          }
+        },
+        {
+          "task": "nothing_here",
+          "repeat": 1,
+          "status": "provider_error",
+          "wall_s": 0.0,
+          "attempts": 0,
+          "valid_first_try": false,
+          "errors_first_try": [],
+          "provider_error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+          "metrics": [],
+          "score": {
+            "chosen": [],
+            "expected": [],
+            "precision": 1.0,
+            "recall": 1.0,
+            "trap_selected": false,
+            "padded": false,
+            "empty_correct": true,
+            "payoff_kept": null,
+            "unsupported_claims": []
+          },
+          "record": {
+            "status": "provider_error",
+            "provider": {
+              "provider": "ollama",
+              "model": "qwen3.5:4b",
+              "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+              "details": {
+                "parent_model": "",
+                "format": "safetensors",
+                "family": "",
+                "families": null,
+                "parameter_size": "",
+                "quantization_level": "nvfp4",
+                "runner": "mlx",
+                "size_bytes": 3973305013
+              },
+              "kind": "local_model"
+            },
+            "prompt": {
+              "id": "gaming.gta.v1",
+              "version": 1,
+              "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+            },
+            "evidence_fingerprint": "c3f3d5b686449208e63e7d631a430df7405e5aee5ee0d11b3daa49bff61e22e2",
+            "attempts": [],
+            "error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+            "result": null,
+            "clips": []
+          }
+        },
+        {
+          "task": "two_highlights",
+          "repeat": 1,
+          "status": "provider_error",
+          "wall_s": 0.0,
+          "attempts": 0,
+          "valid_first_try": false,
+          "errors_first_try": [],
+          "provider_error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+          "metrics": [],
+          "score": {
+            "chosen": [],
+            "expected": [
+              "c:1",
+              "c:3"
+            ],
+            "precision": null,
+            "recall": 0.0,
+            "trap_selected": false,
+            "padded": false,
+            "empty_correct": null,
+            "payoff_kept": null,
+            "unsupported_claims": []
+          },
+          "record": {
+            "status": "provider_error",
+            "provider": {
+              "provider": "ollama",
+              "model": "qwen3.5:4b",
+              "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13",
+              "details": {
+                "parent_model": "",
+                "format": "safetensors",
+                "family": "",
+                "families": null,
+                "parameter_size": "",
+                "quantization_level": "nvfp4",
+                "runner": "mlx",
+                "size_bytes": 3973305013
+              },
+              "kind": "local_model"
+            },
+            "prompt": {
+              "id": "gaming.gta.v1",
+              "version": 1,
+              "sha256": "066e62dc21f5ef5d19b099adbda6a9e7e8630ad9a34aab9fc563365078deb93a"
+            },
+            "evidence_fingerprint": "24c4a8022e4eb9c1b04eafb9d9f0c48e7f709d120a2ef935ca1dc1e5570d173f",
+            "attempts": [],
+            "error": "provider_http_error: Ollama /api/chat returned 501: {\"error\":\"structured output is unavailable\"}",
+            "result": null,
+            "clips": []
+          }
+        }
+      ],
+      "summary": {
+        "tasks_run": 10,
+        "accepted": 0,
+        "valid_first_try": 0,
+        "failed_validation": 0,
+        "provider_errors": 10,
+        "mean_precision": null,
+        "mean_recall": null,
+        "trap_selected": 0,
+        "padded": 0,
+        "unsupported_claims": 0,
+        "payoff_kept": [],
+        "first_load_ms": null,
+        "output_tok_per_s_median": null,
+        "prompt_tok_per_s_median": null,
+        "wall_s_median": 0.0,
+        "memory": {
+          "ollama_loaded_peak_mb": 3785.5,
+          "ollama_rss_peak_mb": 43.9,
+          "ollama_rss_before_mb": 43.9,
+          "swap_used_before_mb": 1829.06,
+          "swap_used_peak_mb": 1829.06,
+          "swap_used_after_mb": 3334.19,
+          "free_before_mb": 286.3,
+          "free_min_mb": 286.2
+        }
+      }
+    }
+  ],
+  "finished": "2026-11-25T05:17:08.756466+00:00"
+}

@@ -1,0 +1,9 @@
+/Users/gregstork/Claude/riftwire-env/riftwire-m5prep-c7179ad.bundle is okay
+The bundle contains this ref:
+c7179ad6de5af5b405ab66b1a6ac1af60f5e3567 refs/heads/phase2/m5-ai-prep
+The bundle requires this ref:
+ef969f1334a0c9c044a732774959d67526253d08 
+The bundle uses this hash algorithm: sha1
+From /Users/gregstork/Claude/riftwire-env/riftwire-m5prep-c7179ad.bundle
+ * [new branch]      phase2/m5-ai-prep -> bundle/m5-ai-prep
+Switched to a new branch 'phase2/m5-ai-prep'

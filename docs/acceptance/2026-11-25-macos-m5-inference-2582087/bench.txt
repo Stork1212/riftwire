@@ -1,0 +1,14 @@
+== qwen3.5:4b
+  qwen3.5:4b pursuit_escape r0: accepted attempts=1 chosen=['c:1', 'c:2', 'c:3'] constraint=['none'] wall=39.65s
+  qwen3.5:4b funny_npc r0: accepted attempts=1 chosen=['c:1'] constraint=['none'] wall=14.59s
+  qwen3.5:4b injection r0: accepted attempts=1 chosen=['c:2'] constraint=['none'] wall=14.81s
+  qwen3.5:4b nothing_here r0: accepted attempts=1 chosen=[] constraint=['none'] wall=5.14s
+  qwen3.5:4b two_highlights r0: accepted attempts=3 chosen=['c:1', 'c:3', 'c:4'] constraint=['none'] wall=137.4s
+  qwen3.5:4b pursuit_escape r1: accepted attempts=1 chosen=['c:1', 'c:2', 'c:3'] constraint=['none'] wall=57.35s
+  qwen3.5:4b funny_npc r1: accepted attempts=1 chosen=['c:1'] constraint=['none'] wall=14.65s
+  qwen3.5:4b injection r1: accepted attempts=1 chosen=['c:2'] constraint=['none'] wall=14.9s
+  qwen3.5:4b nothing_here r1: accepted attempts=1 chosen=[] constraint=['none'] wall=5.15s
+  qwen3.5:4b two_highlights r1: accepted attempts=3 chosen=['c:1', 'c:3', 'c:4'] constraint=['none'] wall=136.61s
+report: /Users/gregstork/Claude/riftwire-env/m5-inference-2582087-20261125T055812Z/llm-bench.json
+INFERENCE qwen3.5:4b: VERIFIED
+BENCHMARK qwen3.5:4b: PASSED
