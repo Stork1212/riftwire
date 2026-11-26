@@ -323,6 +323,14 @@ def words(session: Session, transcript_id: str, start_ms: int | None = None,
     return out
 
 
+def raw_words(session: Session, transcript_id: str, idxs: list[int]) -> list[dict]:
+    """The raw (engine) words with these indexes, in the given order."""
+    rows = {r.idx: r for r in session.scalars(select(TranscriptWord).where(
+        TranscriptWord.transcript_id == transcript_id, TranscriptWord.idx.in_(idxs)))}
+    return [{"idx": i, "w": rows[i].text, "start_ms": rows[i].start_ms,
+             "end_ms": rows[i].end_ms, "prob": rows[i].prob} for i in idxs]
+
+
 def _validated(session: Session, transcript_id: str) -> TranscriptCorrection | None:
     return session.scalar(select(TranscriptCorrection).where(
         TranscriptCorrection.transcript_id == transcript_id,

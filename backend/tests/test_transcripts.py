@@ -393,7 +393,7 @@ def test_scan_and_clip_captions_share_one_transcript(db, settings, engine, spoke
         result = json.loads(scan_job.result_json)
         assert result["transcript_id"] == tr.id
         assert result["motion_source"] == "visual_signals"
-        assert set(result["signal_run_ids"]) == {"visual"}
+        assert set(result["signal_run_ids"]) == {"audio", "visual"}
     assert [w["w"] for w in seen["words"]] == [t.text for t in truth]
     caption_words, tr_id = clips._words(db, settings, rec, 10_000, 4_000)
     assert tr_id == tr.id

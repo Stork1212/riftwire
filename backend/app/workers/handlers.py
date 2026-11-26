@@ -40,6 +40,7 @@ from app.models import (
     TranscriptChunk,
 )
 from app.services import (
+    evidence_reliability,
     highlight_scan,
     media,
     queue,
@@ -349,6 +350,19 @@ def _shared_transcript(ctx: JobContext, recording: Recording):
     return _PENDING
 
 
+def _shared_audio(ctx: JobContext, recording: Recording):
+    """``(state, signal_run_id, series)`` of the recording's audio measurement (word
+    reliability), or ``_PENDING`` after queueing it. A measurement that failed for the
+    current configuration does not fail the scan: ``state == "failed"`` and the scan uses
+    the documented fallback (``evidence_reliability.triggering``)."""
+    with ctx.db.session() as s:
+        state, run_id, series = evidence_reliability.audio_basis(s, recording)
+        if state != "pending":
+            return state, run_id, series
+        signals.request(s, ctx.settings, recording.id, SignalKind.AUDIO)
+    return _PENDING
+
+
 def _shared_visual(ctx: JobContext, recording: Recording):
     """``(signal_run_id, motion series)`` from the current visual signal run, or
     ``_PENDING`` after queueing it."""
@@ -548,16 +562,33 @@ def handle_highlight_scan(ctx: JobContext) -> None:
         raise PermanentJobError("Wait for the recording to finish processing.")
     transcript = _shared_transcript(ctx, recording)
     visual = _shared_visual(ctx, recording)
-    if transcript is _PENDING or visual is _PENDING:
-        waiting = [n for n, v in (("transcript", transcript), ("visual signals", visual))
-                   if v is _PENDING]
-        raise DependencyPendingJobError(f"waiting for the shared {' and '.join(waiting)}")
+    audio = _shared_audio(ctx, recording) if transcript != (None, []) else \
+        ("unused", None, None)
+    pending = [n for n, v in (("transcript", transcript), ("visual signals", visual),
+                              ("audio signals", audio)) if v is _PENDING]
+    if pending:
+        raise DependencyPendingJobError(f"waiting for the shared {' and '.join(pending)}")
     transcript_id, words = transcript
     run_id, series = visual
+    audio_state, audio_run, audio_series = audio
     ctx.progress(50)
-    result = highlight_scan.scan_signals(series, words, recording.duration_ms)
+    # Evidence reliability: only words that may trigger a highlight on their own feed
+    # the speech cues (raw transcript unchanged; reasons are in the evidence layer).
+    assessed = evidence_reliability.assess_words(words, audio_series,
+                                                 audio_state=audio_state)
+    triggering = evidence_reliability.triggering(words, assessed, audio_state)
+    if audio_state == "failed":
+        log.warning("audio signals failed; speech cues use the pre-M4 word filter",
+                    extra={"job_id": ctx.job_id, "recording_id": recording.id,
+                           "component": "highlight_scan"})
+    result = highlight_scan.scan_signals(series, triggering, recording.duration_ms)
     result["transcript_id"] = transcript_id
-    result["signal_run_ids"] = {"visual": run_id}
+    result["signal_run_ids"] = {"visual": run_id,
+                                **({"audio": audio_run} if audio_run else {})}
+    result["word_reliability"] = {
+        **evidence_reliability.summary(assessed, audio_state),
+        "fallback": "pre-M4 word filter (audio signals failed)"
+        if audio_state == "failed" else None}
     ctx.check()
     require_storage(ctx)
 
