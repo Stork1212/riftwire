@@ -1,0 +1,67 @@
+RIFTWIRE M5 inference re-verification (qwen3.5:4b)  started 2026-11-25T05:29:46Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m5-inference-9f7b499-20261125T052946Z
+HEAD: 9f7b499ec0b0b8f0f1b619832bf6cd1e97ed3e10 (branch phase2/m5-ai-prep; depends on PR #14)
+free space on the models volume: 122.22 GiB (floor 60 GiB)
+
+== test: scripts/test.sh
+   exit 0  (494 passed, 3 skipped, 1 warning in 102.14s (0:01:42))
+
+== Ollama
+   0.40.18 at /opt/homebrew/bin/ollama (not registered as a login service)
+   listening on 127.0.0.1:11434 only
+   cloud features disabled (log confirms)
+
+== model qwen3.5:4b (reused; no download)
+   digest 7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13 (matches the 05:13Z download)
+manifest sha256: 3b6225ff07117608fdd54a729806671494c57980272eab2b7e7dd2b972423c1c
+   models folder: 3.71 GiB
+   licence: Apache License 2.0 (model-license.txt)
+
+== probe (simplest request first)
+   PASS        health           {"version": "0.40.18"}
+   PASS        model_available  {"digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13", "details": {"parent_model": "", "format": "safetensors", "family": "", "families": null, "parameter_size": "", "quantization_level":
+   PASS        plain_text       {"content": "OK", "thinking_chars": 0, "output_tokens": 1, "load_ms": 2207, "total_ms": 3990, "done_reason": "stop"}
+   PASS        engine_residency {"loaded": [{"name": "qwen3.5:4b", "model": "qwen3.5:4b", "size": 4065441280, "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13", "details": {"parent_model": "", "format": "safetensors"
+   UNAVAILABLE json_mode        {"code": "structured_output_unavailable", "message": "Ollama /api/chat returned HTTP 501: structured output is unavailable"}
+   UNAVAILABLE json_schema_mode {"code": "structured_output_unavailable", "message": "Ollama /api/chat returned HTTP 501: structured output is unavailable"}
+   PASS        provider_path    {"outcome": "failed_validation", "error": "schema: candidates.0.window_id: Field required; schema: candidates.0.start_id: Field required; schema: candidates.0.end_id: Field required; schema: candidates.0.categor
+   PROBE PASSED
+
+== benchmark (synthetic grounded tasks; 2 repeats)
+   server stopped
+   == before server start  05:31:55Z	swap: total = 4096.00M  used = 3334.19M  free = 761.81M  (encrypted)
+   == before probe  05:31:56Z	swap: total = 4096.00M  used = 3334.19M  free = 761.81M  (encrypted)
+   == after probe (model unloaded)  05:32:29Z	swap: total = 5120.00M  used = 4015.94M  free = 1104.06M  (encrypted)
+   == after benchmark (model unloaded)  05:39:35Z	swap: total = 5120.00M  used = 4105.06M  free = 1014.94M  (encrypted)
+   == server stopped  05:39:37Z	swap: total = 5120.00M  used = 4105.06M  free = 1014.94M  (encrypted)
+   == 30 s after shutdown  05:40:07Z	swap: total = 5120.00M  used = 4105.06M  free = 1014.94M  (encrypted)
+   == 60 s after shutdown  05:40:37Z	swap: total = 5120.00M  used = 4105.06M  free = 1014.94M  (encrypted)
+identity: {"provider": "ollama", "model": "qwen3.5:4b", "digest": "7f3251fa6878a78a606bcb3c074283306e5ad2ea411a7774a9dd98a4bc7f2d13", "details": {"parent_model": "", "format": "safetensors", "family": "", "families": null, "parameter_size": "", "quantization_level": "nvfp4", "runner": "mlx", "size_bytes": 3973305013}, "kind": "local_model"}
+verified: True  gate failures: []
+  tasks_run: 10
+  inference_verified: True
+  generations_with_output: 26
+  output_constraint: ['none']
+  constraint_notes: ['Ollama /api/chat returned HTTP 501: structured output is unavailable']
+  errors_by_message: {'schema: candidates.0.what_happens: Field required; schema: candidates.0.why_entertaining: Field required; schema: candidates.0.standalone: Field required; schema: candidates.0.title: Field required; schema: candidates.0.scores: Field required': 3, 'schema: candidates.0.what_happens: Field required; schema: candidates.0.why_entertaining: Field required; schema: candidates.0.standalone: Field required; schema: candidates.0.evidence: List should have at most 12 items after validation, not 42; schema: candidates.0.description: Extra inputs are not permitted': 2, 'schema: candidates.0.category: Field required; schema: candidates.0.what_happens: Field required; schema: candidates.0.why_entertaining: Field required; schema: candidates.0.standalone: Field required; schema: candidates.0.hook: Field required': 2, 'schema: candidates.0.what_happens: Field required; schema: candidates.0.why_entertaining: Field required; schema: candidates.0.hook: Field required; schema: candidates.0.evidence: List should have at most 12 items after validation, not 40; schema: candidates.0.description: Extra inputs are not permitted': 1}
+  thinking_chars_max: 0
+  accepted: 2
+  valid_first_try: 2
+  failed_validation: 8
+  provider_errors: 0
+  mean_precision: 1.0
+  mean_recall: 1.0
+  trap_selected: 0
+  padded: 0
+  unsupported_claims: 0
+  payoff_kept: []
+  first_load_ms: 0.6
+  prompt_tok_per_s_median: 735.4
+  output_tok_per_s_median: 35.9
+  wall_s_median: 43.7
+  memory: {"ollama_loaded_peak_mb": 4453.4, "ollama_rss_peak_mb": 2829.3, "ollama_rss_before_mb": 30.5, "swap_used_before_mb": 4015.94, "swap_used_peak_mb": 4117.31, "swap_used_after_mb": 4105.06, "free_before_mb": 8002.7, "free_min_mb": 1827.6, "pressure_free_pct_before": 55, "pressure_free_pct_after": 36}
+
+RESULT  test=0  localhost=0  cloud-off=0  licence=0  probe=0  bench=0
+free space: before 122.22 GiB, after 121.27 GiB
+ALL PASSED: genuine local inference verified (generated tokens, no provider errors, accepted answers).
+Benchmark numbers are synthetic engineering measurements, not highlight quality.

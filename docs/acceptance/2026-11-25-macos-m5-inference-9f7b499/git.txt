@@ -1,0 +1,67 @@
+/Users/gregstork/Claude/riftwire-env/riftwire-m5prep-9f7b499.bundle is okay
+The bundle contains this ref:
+9f7b499ec0b0b8f0f1b619832bf6cd1e97ed3e10 refs/heads/phase2/m5-ai-prep
+The bundle requires this ref:
+c7179ad6de5af5b405ab66b1a6ac1af60f5e3567 
+The bundle uses this hash algorithm: sha1
+From /Users/gregstork/Claude/riftwire-env/riftwire-m5prep-9f7b499.bundle
+   c7179ad..9f7b499  phase2/m5-ai-prep -> bundle/m5-ai-prep
+Already on 'phase2/m5-ai-prep'
+Updating c7179ad..9f7b499
+Fast-forward
+ backend/app/ai/providers/base.py                   |   4 +
+ backend/app/ai/providers/ollama.py                 |  56 +-
+ backend/tests/test_ai.py                           |  61 +-
+ bench/llm/llm_bench.py                             | 102 +++-
+ bench/llm/probe.py                                 | 143 +++++
+ docs/AI_PROVIDERS.md                               |  38 +-
+ .../README.md                                      |  26 +
+ .../api-version.json                               |   1 +
+ .../bench.txt                                      |  12 +
+ .../brew-install.txt                               |  75 +++
+ .../df-after.txt                                   |   2 +
+ .../df-before.txt                                  |   2 +
+ .../environment.txt                                |   8 +
+ .../git.txt                                        |   9 +
+ .../listen.txt                                     |   2 +
+ .../llm-bench.json                                 | 634 +++++++++++++++++++++
+ .../llm-bench.md                                   |  89 +++
+ .../memory-pressure-after.txt                      |   2 +
+ .../memory-pressure-before.txt                     |   2 +
+ .../model-license.txt                              | 203 +++++++
+ .../model-modelfile.txt                            | 218 +++++++
+ .../model-show.txt                                 |  32 ++
+ .../ollama-list.txt                                |   2 +
+ .../ollama-ps-after.txt                            |   1 +
+ .../ollama-serve.txt                               |  77 +++
+ .../ollama-version.txt                             |   2 +
+ .../summary.txt                                    |  44 ++
+ .../swap.txt                                       |   2 +
+ .../test.txt                                       | 116 ++++
+ .../verify-script.sh                               | 187 ++++++
+ 30 files changed, 2121 insertions(+), 31 deletions(-)
+ create mode 100644 bench/llm/probe.py
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/README.md
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/api-version.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/bench.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/brew-install.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/df-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/df-before.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/environment.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/git.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/listen.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/llm-bench.json
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/llm-bench.md
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/memory-pressure-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/memory-pressure-before.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/model-license.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/model-modelfile.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/model-show.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/ollama-list.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/ollama-ps-after.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/ollama-serve.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/ollama-version.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/summary.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/swap.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/test.txt
+ create mode 100644 docs/acceptance/2026-11-25-macos-m5-ollama-c7179ad-NOT-VERIFIED/verify-script.sh

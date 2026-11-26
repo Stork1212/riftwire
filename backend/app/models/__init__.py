@@ -15,6 +15,15 @@ from app.models.entities import (
     ThumbnailStatus,
     Worker,
 )
+from app.models.highlights import (
+    AIRun,
+    CandidateStatus,
+    HighlightCandidate,
+    HighlightRequest,
+    RequestStatus,
+    ReviewStatus,
+    RunStatus,
+)
 from app.models.rights import (
     AcquisitionMethod,
     BrandChannel,
@@ -50,6 +59,13 @@ from app.models.transcripts import (
 )
 
 __all__ = [
+    "AIRun",
+    "CandidateStatus",
+    "HighlightCandidate",
+    "HighlightRequest",
+    "RequestStatus",
+    "ReviewStatus",
+    "RunStatus",
     "Keyframe",
     "SignalKind",
     "SignalRun",

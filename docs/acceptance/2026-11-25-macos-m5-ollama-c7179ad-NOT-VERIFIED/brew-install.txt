@@ -1,0 +1,75 @@
+==> Auto-updating Homebrew...
+Adjust how often this is run with `$HOMEBREW_AUTO_UPDATE_SECS` or disable with
+`$HOMEBREW_NO_AUTO_UPDATE=1`. Hide these hints with `$HOMEBREW_NO_ENV_HINTS=1` (see `man brew`).
+==> Auto-updated Homebrew!
+Updated 3 taps (supabase/tap, homebrew/core and homebrew/cask).
+==> New Formulae
+lan-orangutan: Self-hosted network scanner and device inventory with a web dashboard
+
+You have 1 outdated formula installed.
+
+==> Downloading bottle manifests
+✔︎ Bottle Manifest ollama (0.40.18)
+==> Would install 1 formula:
+ollama 0.40.18 (22.8MB)
+==> Would install 8 dependencies for ollama:
+mpdecimal    4.0.1
+readline     8.3.6
+sqlite       3.54.1
+lz4          1.11.1
+zstd         1.6.0
+python@3.15  3.15.2
+mlx          0.32.4
+mlx-c        0.8.0
+==> Fetching downloads for: ollama
+✔︎ Bottle Manifest sqlite (3.54.1)
+✔︎ Bottle Manifest readline (8.3.6)
+✔︎ Bottle Manifest lz4 (1.11.1)
+✔︎ Bottle Manifest mpdecimal (4.0.1)
+✔︎ Bottle Manifest zstd (1.6.0)
+✔︎ Bottle Manifest python@3.15 (3.15.2)
+✔︎ Bottle Manifest mlx (0.32.4)
+✔︎ Bottle Manifest mlx-c (0.8.0)
+✔︎ Bottle mpdecimal (4.0.1)
+✔︎ Bottle lz4 (1.11.1)
+✔︎ Bottle sqlite (3.54.1)
+✔︎ Bottle readline (8.3.6)
+✔︎ Bottle mlx-c (0.8.0)
+✔︎ Bottle zstd (1.6.0)
+✔︎ Bottle ollama (0.40.18)
+✔︎ Bottle mlx (0.32.4)
+✔︎ Bottle python@3.15 (3.15.2)
+==> Installing dependencies for ollama: mpdecimal, readline, sqlite, lz4, zstd, python@3.15, mlx and mlx-c
+==> Installing ollama dependency: mpdecimal (4.0.1)
+==> Pouring mpdecimal--4.0.1.arm64_tahoe.bottle.1.tar.gz
+🍺  /opt/homebrew/Cellar/mpdecimal/4.0.1: 22 files, 627.9KB
+==> Installing ollama dependency: readline (8.3.6)
+==> Pouring readline--8.3.6.arm64_tahoe.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/readline/8.3.6: 56 files, 2.6MB
+==> Installing ollama dependency: sqlite (3.54.1)
+==> Pouring sqlite--3.54.1.arm64_tahoe.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/sqlite/3.54.1: 13 files, 5.4MB
+==> Installing ollama dependency: lz4 (1.11.1)
+==> Pouring lz4--1.11.1.arm64_tahoe.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/lz4/1.11.1: 28 files, 835.7KB
+==> Installing ollama dependency: zstd (1.6.0)
+==> Pouring zstd--1.6.0.arm64_tahoe.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/zstd/1.6.0: 35 files, 2.7MB
+==> Installing ollama dependency: python@3.15 (3.15.2)
+==> Pouring python@3.15--3.15.2.arm64_tahoe.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/python@3.15/3.15.2: 3,995 files, 79.7MB
+==> Installing ollama dependency: mlx (0.32.4)
+==> Pouring mlx--0.32.4.arm64_tahoe.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/mlx/0.32.4: 466 files, 171.4MB
+==> Installing ollama dependency: mlx-c (0.8.0)
+==> Pouring mlx-c--0.8.0.arm64_tahoe.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/mlx-c/0.8.0: 40 files, 1MB
+==> Installing ollama
+==> Pouring ollama--0.40.18.arm64_tahoe.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/ollama/0.40.18: 15 files, 69MB
+==> Caveats
+==> ollama
+To start ollama now and restart at login:
+  brew services start ollama
+Or, if you don't want/need a background service you can just run:
+  OLLAMA_FLASH_ATTENTION="1" OLLAMA_KV_CACHE_TYPE="q8_0" /opt/homebrew/opt/ollama/bin/ollama serve

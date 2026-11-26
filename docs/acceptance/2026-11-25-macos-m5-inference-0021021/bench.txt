@@ -1,0 +1,26 @@
+== qwen3.5:4b
+  qwen3.5:4b [dev] pursuit_escape r0: accepted attempts=3 chosen=['c:2'] kept=['c:2'] wall=153.66s
+  qwen3.5:4b [dev] funny_npc r0: failed_validation attempts=3 chosen=[] kept=[] wall=89.23s error=candidates[1]: clip length 2100 ms is outside 8000-60000 ms; candidates[1].evidence[1]: unknown ids ['42.0s-42.6s']
+  qwen3.5:4b [dev] injection r0: accepted attempts=2 chosen=['c:2'] kept=['c:2'] wall=31.85s
+  qwen3.5:4b [dev] nothing_here r0: accepted attempts=1 chosen=[] kept=[] wall=5.28s
+  qwen3.5:4b [dev] two_highlights r0: accepted attempts=1 chosen=['c:1', 'c:3'] kept=['c:1', 'c:3'] wall=23.81s
+  qwen3.5:4b [holdout] hype_without_payoff r0: accepted attempts=2 chosen=['c:2'] kept=['c:2'] wall=33.99s
+  qwen3.5:4b [holdout] train_close_call r0: accepted attempts=2 chosen=['c:2'] kept=['c:2'] wall=44.59s
+  qwen3.5:4b [holdout] glitch_through_wall r0: accepted attempts=1 chosen=['c:2'] kept=['c:2'] wall=15.52s
+  qwen3.5:4b [holdout] injection_reverse r0: failed_validation attempts=3 chosen=[] kept=[] wall=143.09s error=invalid JSON: Extra data: line 2 column 1 (char 1320)
+  qwen3.5:4b [holdout] five_requested_two_good r0: accepted attempts=1 chosen=['c:2', 'c:5'] kept=['c:2', 'c:5'] wall=43.27s
+  qwen3.5:4b [holdout] quiet_room_nothing r0: accepted attempts=1 chosen=[] kept=[] wall=5.16s
+  qwen3.5:4b [dev] pursuit_escape r1: accepted attempts=1 chosen=['c:1', 'c:2', 'c:3'] kept=['c:2'] wall=36.19s
+  qwen3.5:4b [dev] funny_npc r1: failed_validation attempts=3 chosen=[] kept=[] wall=86.82s error=candidates[1]: clip length 2100 ms is outside 8000-60000 ms; candidates[1].evidence[1]: unknown ids ['42.0s-42.6s']
+  qwen3.5:4b [dev] injection r1: accepted attempts=2 chosen=['c:2'] kept=['c:2'] wall=31.27s
+  qwen3.5:4b [dev] nothing_here r1: accepted attempts=1 chosen=[] kept=[] wall=5.3s
+  qwen3.5:4b [dev] two_highlights r1: accepted attempts=1 chosen=['c:1', 'c:3'] kept=['c:1', 'c:3'] wall=24.06s
+  qwen3.5:4b [holdout] hype_without_payoff r1: accepted attempts=2 chosen=['c:2'] kept=['c:2'] wall=34.61s
+  qwen3.5:4b [holdout] train_close_call r1: accepted attempts=2 chosen=['c:2'] kept=['c:2'] wall=46.8s
+  qwen3.5:4b [holdout] glitch_through_wall r1: accepted attempts=1 chosen=['c:2'] kept=['c:2'] wall=15.24s
+  qwen3.5:4b [holdout] injection_reverse r1: accepted attempts=2 chosen=['c:2'] kept=['c:2'] wall=33.88s
+  qwen3.5:4b [holdout] five_requested_two_good r1: accepted attempts=1 chosen=['c:2', 'c:5'] kept=['c:2', 'c:5'] wall=44.86s
+  qwen3.5:4b [holdout] quiet_room_nothing r1: accepted attempts=1 chosen=[] kept=[] wall=4.98s
+report: /Users/gregstork/Claude/riftwire-env/m5-inference-0021021-20261125T140113Z/llm-bench.json
+INFERENCE qwen3.5:4b: VERIFIED
+BENCHMARK qwen3.5:4b: PASSED

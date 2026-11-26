@@ -1,0 +1,8 @@
+date: 2026-11-25T14:01:13Z
+ProductName:		macOS
+ProductVersion:		26.5.2
+BuildVersion:		25F84
+Apple M3 Pro
+mem_bytes: 19327352832
+swap: total = 6144.00M  used = 4808.38M  free = 1335.62M  (encrypted)
+Python 3.13.2

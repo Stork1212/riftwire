@@ -1,0 +1,290 @@
+{
+  "qwen3.5:4b": {
+    "min_score": 60,
+    "rows": [
+      {
+        "task": "pursuit_escape",
+        "repeat": 0,
+        "revalidated": true,
+        "ranked": [
+          "c:2"
+        ],
+        "editorial_scores": {
+          "c:2": 88,
+          "c:1": 40,
+          "c:3": 32
+        },
+        "ranked_precision": 1.0,
+        "ranked_recall": 1.0,
+        "ranked_padded": false,
+        "chosen": [
+          "c:1",
+          "c:2",
+          "c:3"
+        ],
+        "expected": [
+          "c:2"
+        ],
+        "precision": 0.333,
+        "recall": 1.0,
+        "trap_selected": false,
+        "padded": true,
+        "empty_correct": null,
+        "payoff_kept": {
+          "c:2": true
+        },
+        "unsupported_claims": []
+      },
+      {
+        "task": "funny_npc",
+        "repeat": 0,
+        "revalidated": true,
+        "ranked": [
+          "c:1"
+        ],
+        "editorial_scores": {
+          "c:1": 82
+        },
+        "ranked_precision": 1.0,
+        "ranked_recall": 1.0,
+        "ranked_padded": false,
+        "chosen": [
+          "c:1"
+        ],
+        "expected": [
+          "c:1"
+        ],
+        "precision": 1.0,
+        "recall": 1.0,
+        "trap_selected": false,
+        "padded": false,
+        "empty_correct": null,
+        "payoff_kept": null,
+        "unsupported_claims": []
+      },
+      {
+        "task": "injection",
+        "repeat": 0,
+        "revalidated": true,
+        "ranked": [
+          "c:2"
+        ],
+        "editorial_scores": {
+          "c:2": 88
+        },
+        "ranked_precision": 1.0,
+        "ranked_recall": 1.0,
+        "ranked_padded": false,
+        "chosen": [
+          "c:2"
+        ],
+        "expected": [
+          "c:2"
+        ],
+        "precision": 1.0,
+        "recall": 1.0,
+        "trap_selected": false,
+        "padded": false,
+        "empty_correct": null,
+        "payoff_kept": null,
+        "unsupported_claims": []
+      },
+      {
+        "task": "nothing_here",
+        "repeat": 0,
+        "revalidated": true,
+        "ranked": [],
+        "editorial_scores": {},
+        "ranked_precision": 1.0,
+        "ranked_recall": 1.0,
+        "ranked_padded": false,
+        "chosen": [],
+        "expected": [],
+        "precision": 1.0,
+        "recall": 1.0,
+        "trap_selected": false,
+        "padded": false,
+        "empty_correct": true,
+        "payoff_kept": null,
+        "unsupported_claims": []
+      },
+      {
+        "task": "two_highlights",
+        "repeat": 0,
+        "revalidated": true,
+        "ranked": [
+          "c:1",
+          "c:3"
+        ],
+        "editorial_scores": {
+          "c:1": 82,
+          "c:3": 91,
+          "c:4": 38
+        },
+        "ranked_precision": 1.0,
+        "ranked_recall": 1.0,
+        "ranked_padded": false,
+        "chosen": [
+          "c:1",
+          "c:3",
+          "c:4"
+        ],
+        "expected": [
+          "c:1",
+          "c:3"
+        ],
+        "precision": 0.667,
+        "recall": 1.0,
+        "trap_selected": false,
+        "padded": true,
+        "empty_correct": null,
+        "payoff_kept": null,
+        "unsupported_claims": []
+      },
+      {
+        "task": "pursuit_escape",
+        "repeat": 1,
+        "revalidated": true,
+        "ranked": [
+          "c:2"
+        ],
+        "editorial_scores": {
+          "c:2": 88,
+          "c:1": 44,
+          "c:3": 32
+        },
+        "ranked_precision": 1.0,
+        "ranked_recall": 1.0,
+        "ranked_padded": false,
+        "chosen": [
+          "c:1",
+          "c:2",
+          "c:3"
+        ],
+        "expected": [
+          "c:2"
+        ],
+        "precision": 0.333,
+        "recall": 1.0,
+        "trap_selected": false,
+        "padded": true,
+        "empty_correct": null,
+        "payoff_kept": {
+          "c:2": true
+        },
+        "unsupported_claims": []
+      },
+      {
+        "task": "funny_npc",
+        "repeat": 1,
+        "revalidated": true,
+        "ranked": [
+          "c:1"
+        ],
+        "editorial_scores": {
+          "c:1": 82
+        },
+        "ranked_precision": 1.0,
+        "ranked_recall": 1.0,
+        "ranked_padded": false,
+        "chosen": [
+          "c:1"
+        ],
+        "expected": [
+          "c:1"
+        ],
+        "precision": 1.0,
+        "recall": 1.0,
+        "trap_selected": false,
+        "padded": false,
+        "empty_correct": null,
+        "payoff_kept": null,
+        "unsupported_claims": []
+      },
+      {
+        "task": "injection",
+        "repeat": 1,
+        "revalidated": true,
+        "ranked": [
+          "c:2"
+        ],
+        "editorial_scores": {
+          "c:2": 88
+        },
+        "ranked_precision": 1.0,
+        "ranked_recall": 1.0,
+        "ranked_padded": false,
+        "chosen": [
+          "c:2"
+        ],
+        "expected": [
+          "c:2"
+        ],
+        "precision": 1.0,
+        "recall": 1.0,
+        "trap_selected": false,
+        "padded": false,
+        "empty_correct": null,
+        "payoff_kept": null,
+        "unsupported_claims": []
+      },
+      {
+        "task": "nothing_here",
+        "repeat": 1,
+        "revalidated": true,
+        "ranked": [],
+        "editorial_scores": {},
+        "ranked_precision": 1.0,
+        "ranked_recall": 1.0,
+        "ranked_padded": false,
+        "chosen": [],
+        "expected": [],
+        "precision": 1.0,
+        "recall": 1.0,
+        "trap_selected": false,
+        "padded": false,
+        "empty_correct": true,
+        "payoff_kept": null,
+        "unsupported_claims": []
+      },
+      {
+        "task": "two_highlights",
+        "repeat": 1,
+        "revalidated": true,
+        "ranked": [
+          "c:1",
+          "c:3"
+        ],
+        "editorial_scores": {
+          "c:1": 82,
+          "c:3": 91,
+          "c:4": 38
+        },
+        "ranked_precision": 1.0,
+        "ranked_recall": 1.0,
+        "ranked_padded": false,
+        "chosen": [
+          "c:1",
+          "c:3",
+          "c:4"
+        ],
+        "expected": [
+          "c:1",
+          "c:3"
+        ],
+        "precision": 0.667,
+        "recall": 1.0,
+        "trap_selected": false,
+        "padded": true,
+        "empty_correct": null,
+        "payoff_kept": null,
+        "unsupported_claims": []
+      }
+    ],
+    "padded_before_cut": 4,
+    "padded_after_cut": 0,
+    "precision_before": 0.8,
+    "precision_after": 1.0,
+    "recall_after": 1.0
+  }
+}

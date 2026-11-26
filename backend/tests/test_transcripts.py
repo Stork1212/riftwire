@@ -432,7 +432,7 @@ def test_downgrade_refuses_while_transcripts_exist(db, settings, engine, tmp_pat
     with pytest.raises(Exception, match="transcript"):
         command.downgrade(alembic_cfg, "0009")
     conn = sqlite3.connect(settings.db_path)
-    assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [("0011",)]
+    assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [("0012",)]
     assert conn.execute("SELECT count(*) FROM transcripts").fetchone() == (1,)
     conn.close()
 

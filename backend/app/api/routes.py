@@ -30,6 +30,8 @@ from app.models import (
 from app.schemas.api import (
     ClipListIn,
     EventOut,
+    HighlightRequestIn,
+    HighlightReviewIn,
     ImportResponse,
     JobOut,
     Page,
@@ -37,6 +39,7 @@ from app.schemas.api import (
     RecordingOut,
 )
 from app.services import (
+    ai_highlights,
     analysis_evidence,
     clip_lists,
     clips,
@@ -306,6 +309,29 @@ def get_keyframe(recording_id: str, keyframe_id: str, db: DB, cfg: CFG):
     if not path.is_file():
         raise NotFoundError("Keyframe file not found")
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@api.post("/recordings/{recording_id}/highlights", dependencies=[Depends(require_schema)])
+def request_highlights(recording_id: str, body: HighlightRequestIn, db: DB, cfg: CFG):
+    with db.session() as session:
+        req = ai_highlights.request(session, cfg, recording_id, game=body.game,
+                                    channel=body.channel, target_count=body.target_count,
+                                    prompt_id=body.prompt_id)
+        return {"request_id": req.id, "job_id": req.job_id, "status": req.status}
+
+
+@api.get("/recordings/{recording_id}/highlights", dependencies=[Depends(require_schema)])
+def get_highlights(recording_id: str, db: DB):
+    with db.session() as session:
+        return ai_highlights.describe(session, recording_id)
+
+
+@api.patch("/recordings/{recording_id}/highlights/{candidate_id}",
+           dependencies=[Depends(require_schema)])
+def review_highlight(recording_id: str, candidate_id: str, body: HighlightReviewIn, db: DB):
+    with db.session() as session:
+        return ai_highlights.set_review(session, recording_id, candidate_id,
+                                        body.review_status)
 
 
 @api.get("/recordings/{recording_id}/highlight-scan/frame/{index}",
