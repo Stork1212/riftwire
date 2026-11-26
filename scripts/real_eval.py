@@ -17,6 +17,7 @@ pre-registered rule in the protocol (:func:`match`); nothing here is tuned on th
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -31,6 +32,9 @@ from pathlib import Path
 GIB = 1024**3
 FLOOR_BYTES = 60 * GIB
 MATCH_OVERLAP = 0.5
+CUT_TOLERANCE_MS = 1_000          # protocol §2: a setup/payoff cut is reported beyond 1 s
+DUPLICATE_OVERLAP = 0.5           # two returned highlights sharing half the shorter span
+_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _TIME = re.compile(r"^(?:(\d{1,3}):)?([0-5]?\d):([0-5]\d)(?:\.(\d{1,3}))?$")
 BASES = {"ownership", "creator_permission", "licence"}
 
@@ -84,6 +88,8 @@ def load_manifest(path: Path) -> tuple[list[Item], list[str]]:
     recs = data.get("recordings") if isinstance(data, dict) else None
     if not isinstance(recs, list) or not recs:
         return [], ["manifest needs a non-empty 'recordings' list"]
+    seen_names: set[str] = set()
+    seen_paths: set[Path] = set()
     for n, r in enumerate(recs, 1):
         where = f"recording {n}"
         bad: list[str] = []
@@ -93,13 +99,29 @@ def load_manifest(path: Path) -> tuple[list[Item], list[str]]:
         p = Path(str(r.get("path", ""))).expanduser()
         if not p.is_absolute() or not p.is_file():
             bad.append(f"path {str(p)!r} is not an existing absolute file path")
+        elif p.resolve() in seen_paths:
+            bad.append(f"path {str(p)!r} is listed twice")
+        else:
+            seen_paths.add(p.resolve())
+        # The name becomes output file names: no separators or traversal.
+        name = str(r.get("name") or p.stem)
+        if not _NAME.match(name):
+            bad.append(f"'name' {name!r} must be 1-64 letters, digits, '.', '_' or '-' "
+                       "(it names the output files)")
+        elif name in seen_names:
+            bad.append(f"'name' {name!r} is used twice")
+        else:
+            seen_names.add(name)
+        if r.get("marked_before_analysis") is not True:
+            bad.append("'marked_before_analysis' must be true: the spans are marked before "
+                       "the system analyses this recording (protocol §1)")
         if r.get("authorized") is not True:
             bad.append("'authorized' must be true (the owner confirms this footage may be "
                        "used for this evaluation)")
         statement = str(r.get("authorization") or "").strip()
         if len(statement) < 10:
             bad.append("'authorization' needs the owner's statement (at least 10 characters)")
-        basis = str(r.get("basis") or "ownership")
+        basis = str(r.get("basis") or "")
         if basis not in BASES:
             bad.append(f"'basis' must be one of {sorted(BASES)} (public availability is "
                        "not a basis)")
@@ -128,9 +150,52 @@ def load_manifest(path: Path) -> tuple[list[Item], list[str]]:
             errors += [f"{where}: {b}" for b in bad]
             continue
         items.append(Item(p, statement, basis, str(r.get("game") or "gta"),
-                          str(r.get("channel") or "rumbleframe"), request, marks,
-                          str(r.get("name") or p.stem)))
+                          str(r.get("channel") or "rumbleframe"), request, marks, name))
     return items, errors
+
+
+def probe_item(item: Item, run=None) -> list[str]:
+    """Content checks before anything is imported: the file is a video with an audio track
+    (the transcript needs it) and every mark lies inside the recording."""
+    run = run or _run
+    r = run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type:format=duration",
+             "-of", "json", str(item.path)], 120)
+    try:
+        info = json.loads(r.stdout or "{}")
+        duration_ms = int(float(info["format"]["duration"]) * 1000)
+    except (ValueError, KeyError, TypeError):
+        return [f"{item.name}: ffprobe cannot read {item.path} as media"]
+    kinds = {s.get("codec_type") for s in info.get("streams", [])}
+    bad = []
+    if "video" not in kinds:
+        bad.append(f"{item.name}: no video stream")
+    if "audio" not in kinds:
+        bad.append(f"{item.name}: no audio stream (the transcript and audio signals need "
+                   "one)")
+    for k, m in enumerate(item.marks, 1):
+        if m.end_ms > duration_ms + 500:
+            bad.append(f"{item.name}: mark {k} ends at {m.end_ms / 1000:.1f} s, after the "
+                       f"recording ends ({duration_ms / 1000:.1f} s)")
+    return bad
+
+
+def preregistration(manifest: Path, items: list[Item]) -> dict:
+    """What was fixed before analysis: the manifest's digest and each recording's marks,
+    written before anything is imported, so the marks cannot be changed afterwards
+    without the change showing."""
+    def digest(b: bytes) -> str:
+        return hashlib.sha256(b).hexdigest()
+    return {
+        "written_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "manifest_sha256": digest(Path(manifest).read_bytes()),
+        "matching": {"overlap": MATCH_OVERLAP, "cut_tolerance_ms": CUT_TOLERANCE_MS,
+                     "duplicate_overlap": DUPLICATE_OVERLAP},
+        "recordings": [{
+            "name": i.name, "bytes": i.path.stat().st_size, "request": i.request,
+            "marks": [asdict(m) for m in i.marks],
+            "marks_sha256": digest(json.dumps([asdict(m) for m in i.marks],
+                                              sort_keys=True).encode())} for i in items],
+    }
 
 
 # ------------------------------------------------------------------------- matching
@@ -162,11 +227,17 @@ def match(highlights: list[dict], marks: list[Mark], *, windows: list[dict] | No
             used_h.add(i)
             used_m.add(j)
             h, m = highlights[i], marks[j]
+            setup = max(0, h["start_ms"] - m.start_ms)     # marked lead-in left out
+            payoff = max(0, m.end_ms - h["end_ms"])        # marked ending left out
             matched.append({
                 "mark": j, "label": m.label, "highlight_rank": h.get("rank"),
                 "overlap": round(coef, 3), "iou": round(iou, 3),
                 "start_delta_s": round((h["start_ms"] - m.start_ms) / 1000, 2),
-                "end_delta_s": round((h["end_ms"] - m.end_ms) / 1000, 2)})
+                "end_delta_s": round((h["end_ms"] - m.end_ms) / 1000, 2),
+                "setup_cut_s": round(setup / 1000, 2), "payoff_cut_s": round(payoff / 1000, 2),
+                "extra_lead_s": round(max(0, m.start_ms - h["start_ms"]) / 1000, 2),
+                "extra_tail_s": round(max(0, h["end_ms"] - m.end_ms) / 1000, 2),
+                "cuts_setup": setup > CUT_TOLERANCE_MS, "cuts_payoff": payoff > CUT_TOLERANCE_MS})
     seen = set()
     for coef, iou, _, i, j in pairs:          # best partial overlap of each leftover
         if coef >= MATCH_OVERLAP or (i in used_h and j in used_m) or (i, j) in seen:
@@ -201,6 +272,8 @@ def match(highlights: list[dict], marks: list[Mark], *, windows: list[dict] | No
     extras = [{"highlight_rank": h.get("rank"), "start_s": h["start_ms"] / 1000,
                "end_s": h["end_ms"] / 1000, "title": h.get("title")}
               for i, h in enumerate(highlights) if i not in used_h]
+    marked_ms = sum(m.end_ms - m.start_ms for m in marks)
+    covered = sum(_covered((m.start_ms, m.end_ms), highlights) for m in marks)
     abs_start = sorted(abs(x["start_delta_s"]) for x in matched)
     abs_end = sorted(abs(x["end_delta_s"]) for x in matched)
     return {
@@ -209,7 +282,64 @@ def match(highlights: list[dict], marks: list[Mark], *, windows: list[dict] | No
         "recall": f"{len(matched)}/{len(marks)}", "precision": f"{len(matched)}/{len(highlights)}",
         "median_abs_start_delta_s": _median(abs_start),
         "median_abs_end_delta_s": _median(abs_end),
+        "marked_time_covered": f"{covered / 1000:.1f}/{marked_ms / 1000:.1f} s",
+        "setup_cuts": sum(x["cuts_setup"] for x in matched),
+        "payoff_cuts": sum(x["cuts_payoff"] for x in matched),
+        "duplicates": duplicates(highlights),
     }
+
+
+def _covered(span: tuple[int, int], highlights: list[dict]) -> int:
+    """Milliseconds of ``span`` inside any returned highlight (overlaps counted once)."""
+    parts = sorted((max(span[0], h["start_ms"]), min(span[1], h["end_ms"]))
+                   for h in highlights)
+    total, end = 0, span[0]
+    for a, b in parts:
+        a = max(a, end)
+        if b > a:
+            total += b - a
+            end = b
+    return total
+
+
+def duplicates(highlights: list[dict]) -> list[dict]:
+    """Pairs of returned highlights that share at least half of the shorter one."""
+    out = []
+    for i, x in enumerate(highlights):
+        for y in highlights[i + 1:]:
+            coef, iou = overlap((x["start_ms"], x["end_ms"]), (y["start_ms"], y["end_ms"]))
+            if coef >= DUPLICATE_OVERLAP:
+                out.append({"ranks": [x.get("rank"), y.get("rank")], "overlap": round(coef, 3),
+                            "iou": round(iou, 3)})
+    return out
+
+
+def text_review(highlight: dict, clip_words: list[dict], ground) -> dict:
+    """Automatic part of the title/hook check: does either make a factual claim the clip's
+    own words do not contain (the product's claim check, re-run on the stored text), and
+    which claims were already dropped. Whether a title describes what happens is the
+    owner's verdict in the review sheet."""
+    out = {"rank": highlight.get("rank"), "dropped_by_system": highlight.get("text_checks")
+           or []}
+    for key in ("title", "hook"):
+        ok, bad = ground(highlight.get(key) or "", clip_words)
+        out[f"{key}_claims_ok"] = ok
+        out[f"{key}_unsupported"] = bad
+    out["clip_text"] = " ".join(w.get("w", "") for w in clip_words)[:400]
+    return out
+
+
+def batch_summary(run_rows: list[dict]) -> dict:
+    """AI batches by final status (the last run of each batch counts) and every
+    non-accepted run with its error."""
+    final: dict = {}
+    for r in run_rows:
+        final[r["batch"]] = r
+    return {"batches": len(final),
+            "accepted": sum(r["status"] == "accepted" for r in final.values()),
+            "rejected": [{"batch": r["batch"], "status": r["status"], "attempts": r["attempts"],
+                          "error": (r.get("error") or "")[:300]}
+                         for r in run_rows if r["status"] != "accepted"]}
 
 
 def _median(xs: list[float]) -> float | None:
@@ -250,6 +380,23 @@ def check_short(short: Path, outro: Path, clip_s: float, words: list[dict],
     psnr = re.findall(r"average:([\d.]+|inf)", r.stderr)
     out["outro_psnr_db"] = (float("inf") if psnr and psnr[-1] == "inf"
                             else float(psnr[-1]) if psnr else None)
+    framing = sheet.with_name(sheet.name.replace("-captions", "-framing"))
+    times = [round(dur * f, 3) for f in (0.1, 0.35, 0.6, 0.85) if dur * f < dur - 2.5]
+    if times:
+        tiles = []
+        for n, t in enumerate(times):
+            f = framing.with_name(f"{framing.stem}-{n}.png")
+            _run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i",
+                  str(short), "-frames:v", "1", "-vf", "scale=270:480", str(f)])
+            if f.is_file():
+                tiles.append(f)
+        if tiles:
+            _run(["ffmpeg", "-nostdin", "-v", "error", "-y",
+                  *sum((["-i", str(f)] for f in tiles), []), "-filter_complex",
+                  f"hstack=inputs={len(tiles)}" if len(tiles) > 1 else "null", str(framing)])
+            for f in tiles:
+                f.unlink(missing_ok=True)
+        out["framing_sheet"] = framing.name if framing.is_file() else None
     picks = words[:: max(1, len(words) // 6)][:6] if words else []
     frames = []
     for n, w in enumerate(picks):
@@ -290,6 +437,11 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
     manifest, data_dir, out_dir, whisper_py, whisper_model, outro = (
         Path(args[0]), Path(args[1]), Path(args[2]), args[3], args[4], Path(args[5]))
     items, errors = load_manifest(manifest)
+    for item in list(items):                      # content checks before anything runs
+        problems = probe_item(item)
+        if problems:
+            errors += problems
+            items.remove(item)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "manifest-check.json").write_text(json.dumps({
         "recordings_ok": [i.name for i in items], "errors": errors}, indent=1))
@@ -309,6 +461,13 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
         print(f"refusing: {free / GIB:.1f} GiB free on the data volume; importing "
               f"{need / GIB:.1f} GiB (x2 working margin) would go below the 60 GiB floor")
         return 2
+    renders_need = len(items) * 512 * 1024**2          # generous per-recording render budget
+    if os.stat(out_dir).st_dev != os.stat(data_dir).st_dev and \
+            shutil.disk_usage(out_dir).free - renders_need < FLOOR_BYTES:
+        print("refusing: the output volume would go below the 60 GiB floor")
+        return 2
+    (out_dir / "preregistration.json").write_text(json.dumps(
+        preregistration(manifest, items), indent=1))  # before any analysis
     for k in [k for k in os.environ if k.startswith("RIFTWIRE_")]:
         del os.environ[k]
     os.environ.update({
@@ -322,7 +481,15 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
     from app.core import config as config_mod
     from app.db.session import Database
     from app.models import AIRun, Job
-    from app.services import acquisition, ai_highlights, clips, rights, sources
+    from app.services import (
+        acquisition,
+        ai_highlights,
+        clips,
+        highlight_candidates,
+        rights,
+        sources,
+        transcripts,
+    )
     from app.services.ingest import UploadSession, complete_upload
     from app.services.locations import load_layout
     from app.workers.worker import WorkerProcess
@@ -418,6 +585,16 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
         hl = st["highlights"]
         verdict = match(hl, item.marks, windows=list(windows.values()),
                         candidates=st["highlights"] + st["rejected"])
+        texts = []
+        with db.session() as s:
+            for h in hl:
+                ws = transcripts.words(s, h["transcript_id"], h["start_ms"], h["end_ms"]) \
+                    if h.get("transcript_id") else []
+                texts.append({**text_review(h, ws, highlight_candidates.ground_text),
+                              "title": h["title"], "hook": h["hook"],
+                              "what_happens": h.get("what_happens"),
+                              "span_s": [h["start_ms"] / 1000, h["end_ms"] / 1000]})
+        (out_dir / f"{item.name}-title-review.md").write_text(title_sheet(item.name, texts))
         renders = []
         for h in hl[:render_top]:
             short = out_dir / f"{item.name}-rank{h['rank']}-short.mp4"
@@ -441,7 +618,8 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
                 "rank", "start_ms", "end_ms", "title", "hook", "category", "editorial_score",
                 "model_editorial_score", "penalties", "confidence", "boundary_notes",
                 "text_checks")} for h in hl],
-            "match": verdict, "ai_runs": run_rows, "stages": stages,
+            "match": verdict, "ai_runs": run_rows, "batches": batch_summary(run_rows),
+            "text": texts, "stages": stages,
             "runtime_s": {"import_and_metadata": round(t_import, 1),
                           "analysis_and_ai": round(time.monotonic() - t1, 1),
                           "end_to_end": round(wall, 1)},
@@ -467,6 +645,23 @@ def _count(xs) -> dict:
         key = re.sub(r"\d+(\.\d+)?", "N", str(x))
         out[key] = out.get(key, 0) + 1
     return out
+
+
+def title_sheet(name: str, texts: list[dict]) -> str:
+    """The owner's review sheet: does each title and hook describe what happens?"""
+    lines = [f"# Title and hook review: {name}", "",
+             "Fill in the last column (accurate / misleading / vague) after watching the clip.",
+             "", "| # | Span s | Title | Hook | Claim check | Clip words (start) | Owner verdict |",
+             "|---|---|---|---|---|---|---|"]
+    for t in texts:
+        claims = "ok" if t["title_claims_ok"] and t["hook_claims_ok"] else (
+            "UNSUPPORTED " + ", ".join(t["title_unsupported"] + t["hook_unsupported"]))
+        if t["dropped_by_system"]:
+            claims += "; dropped earlier: " + "; ".join(t["dropped_by_system"])
+        cell = t["clip_text"][:160].replace("|", "/")
+        lines.append(f"| {t['rank']} | {t['span_s'][0]:.1f}-{t['span_s'][1]:.1f} | "
+                     f"{t['title']} | {t['hook']} | {claims} | {cell} | |")
+    return "\n".join(lines) + "\n"
 
 
 def render_report(results: list[dict]) -> str:
@@ -517,10 +712,38 @@ def render_report(results: list[dict]) -> str:
         for x in r["match"]["extras"]:
             lines.append(f"- extra #{x['highlight_rank']} {x['start_s']}-{x['end_s']} s "
                          f"{x['title']!r}")
+        mm = r["match"]
+        lines.append(f"- coverage: {mm['recall']} marks found; marked time covered "
+                     f"{mm.get('marked_time_covered')}; setup cuts {mm.get('setup_cuts', 0)}, "
+                     f"payoff cuts {mm.get('payoff_cuts', 0)} (beyond "
+                     f"{CUT_TOLERANCE_MS / 1000:g} s)")
+        for x in mm["matched"]:
+            if x.get("cuts_setup") or x.get("cuts_payoff"):
+                lines.append(f"  - mark {x['mark'] + 1}: setup cut {x['setup_cut_s']} s, "
+                             f"payoff cut {x['payoff_cut_s']} s")
+        for d in mm.get("duplicates", []):
+            lines.append(f"- duplicate: #{d['ranks'][0]} and #{d['ranks'][1]} share "
+                         f"{d['overlap']:.0%} of the shorter clip")
+        b = r.get("batches")
+        if b:
+            lines.append(f"- AI batches: {b['accepted']}/{b['batches']} accepted"
+                         + "".join(f"; batch {x['batch']} {x['status']} after {x['attempts']} "
+                                   f"attempt(s): {x['error'] or '-'}" for x in b["rejected"]))
+        for t in r.get("text", []):
+            if not (t["title_claims_ok"] and t["hook_claims_ok"]) or t["dropped_by_system"]:
+                lines.append(f"- text #{t['rank']}: unsupported "
+                             f"{t['title_unsupported'] + t['hook_unsupported']}; dropped "
+                             f"earlier {t['dropped_by_system']}")
+        if r.get("text"):
+            lines.append(f"- titles/hooks: claim check passed for "
+                         f"{sum(t['title_claims_ok'] and t['hook_claims_ok'] for t in r['text'])}"
+                         f"/{len(r['text'])}; accuracy needs the owner's verdicts in "
+                         f"{r['name']}-title-review.md")
         for x in r["renders"]:
             lines.append(f"- render #{x['rank']}: " + (x.get("error") or json.dumps(
                 x["checks"]) + f"; {x['duration_s']} s; LUFS {x['integrated_lufs']}; "
-                f"peak {x['true_peak_dbfs']} dBFS; outro PSNR {x['outro_psnr_db']} dB"))
+                f"peak {x['true_peak_dbfs']} dBFS; outro PSNR {x['outro_psnr_db']} dB; "
+                f"inspect {x.get('framing_sheet')} and the captions sheet by eye"))
     lines += ["", "Limits: one person's marks; baseline settings only (prompt gaming.gta.v2, "
               "scoring editorial.default v1, qwen3.5:4b, Whisper base); editorial scores are "
               "estimates, not probabilities of going viral."]
