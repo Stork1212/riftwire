@@ -94,6 +94,13 @@ class DependencyPendingJobError(TransientJobError):
     permanent = False
 
 
+class SupersededJobError(DependencyPendingJobError):
+    """M5: the request this AI job was working on was replaced by a newer one. The job is
+    put back at once (no attempt spent) to start the newer request."""
+
+    retry_seconds = 0.0
+
+
 class MemoryPressureJobError(DependencyPendingJobError):
     """M5: not enough free memory to load a local model now. Deferred (no attempt spent)
     for ``retry_seconds`` instead of risking swap or an out-of-memory kill."""

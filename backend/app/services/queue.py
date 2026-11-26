@@ -269,7 +269,8 @@ def _apply_terminal_failure(s: Session, job: Job, error: str) -> None:
     if job.recording_id is not None and job.job_type == JobType.AI_HIGHLIGHTS.value:
         from app.services import ai_highlights  # its request ends with the job
 
-        ai_highlights.fail_active(s, job.recording_id, f"the AI job failed: {error}")
+        ai_highlights.fail_active(s, job.recording_id,
+                                  ai_highlights.JOB_FAILED_PREFIX + error)
     if job.recording_id is None or job.job_type in ANALYSIS_JOB_TYPES:
         return
     rec = s.get(Recording, job.recording_id)
@@ -514,6 +515,10 @@ def retry_job(s: Session, job_id: str) -> Job:
     job.completed_at = None
     job.started_at = None
     job.updated_at = now
+    if job.recording_id and job.job_type == JobType.AI_HIGHLIGHTS.value:
+        from app.services import ai_highlights  # the request the failure ended resumes
+
+        ai_highlights.reactivate_failed(s, job.recording_id)
     rec = s.get(Recording, job.recording_id) if job.recording_id else None
     if rec is not None and job.job_type not in ANALYSIS_JOB_TYPES:
         if job.job_type == JobType.THUMBNAIL.value:

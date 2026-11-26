@@ -20,7 +20,14 @@ from sqlalchemy import func, select
 from app.ai import registry
 from app.ai.providers.base import Identity, ProviderError, Request, Response
 from app.main import create_app
-from app.models import AIRun, HighlightCandidate, HighlightRequest, Job, TranscriptWord
+from app.models import (
+    AIRun,
+    HighlightCandidate,
+    HighlightRequest,
+    Job,
+    SystemEvent,
+    TranscriptWord,
+)
 from app.services import acquisition, ai_highlights, queue, transcripts
 from app.workers.worker import WorkerProcess
 from tests.conftest import requires_ffmpeg
@@ -399,7 +406,10 @@ def test_review_supersede_during_the_last_batch_never_finalizes_the_old_request(
             HighlightCandidate.request_id == first)) == 0
         assert s.get(HighlightRequest, holder["second"]).status == "COMPLETE"
         job = s.scalar(select(Job).where(Job.job_type == "AI_HIGHLIGHTS"))
-        assert job.status == "COMPLETED" and job.attempt_count <= 2
+        assert job.status == "COMPLETED"
+        assert s.scalar(select(func.count()).select_from(SystemEvent).where(
+            SystemEvent.related_job_id == job.id,
+            SystemEvent.event_type.in_(["job_retry", "job_failed"]))) == 0
 
 
 @requires_ffmpeg
@@ -511,3 +521,62 @@ def test_review_no_cancelled_run_status(db, settings):
                      "created_at) VALUES ('a', 'q', 0, 'cancelled', 'p', 'm', '{}', 'p', 1, "
                      "'x', 2, 'x', '{}', 'x', '{}', '{}', '', 0, 0, 0, '2026-11-25')")
     conn.close()
+
+
+# ------------------------------------------------ Codex review of 5f243ae / 1a108e6
+@requires_ffmpeg
+def test_codex_review_supersede_between_batches_defers_without_a_failed_attempt(
+        db, settings, recording, provider):
+    settings.ai_windows_per_call = 1
+    settings.ai_max_windows = 6
+    holder = {}
+    inner = Scripted()
+
+    class Superseding(Scripted):
+        def generate(self, request):
+            if "second" not in holder:                      # arrives after the first batch
+                holder["second"] = _ask(db, settings, recording, n=1)
+            return inner.generate(request)
+
+    provider["p"] = Superseding()
+    first = _ask(db, settings, recording, n=3)
+    _run_with_timeout(lambda: drain(db, settings, max_jobs=60))
+    with db.session() as s:
+        assert s.get(HighlightRequest, first).status == "SUPERSEDED"
+        assert s.get(HighlightRequest, holder["second"]).status == "COMPLETE"
+        job = s.scalar(select(Job).where(Job.job_type == "AI_HIGHLIGHTS"))
+        assert s.scalar(select(func.count()).select_from(SystemEvent).where(
+            SystemEvent.related_job_id == job.id,
+            SystemEvent.event_type.in_(["job_retry", "job_failed"]))) == 0
+
+
+@requires_ffmpeg
+def test_codex_review_manual_retry_resumes_the_failed_request(db, settings, recording,
+                                                             provider):
+    class Down(Scripted):
+        def generate(self, request):
+            self.calls.append(request)
+            raise ProviderError("model not loaded", transient=False, code="provider_error")
+
+    provider["p"] = Down()
+    req = _ask(db, settings, recording)
+    drain(db, settings, max_jobs=40)
+    with db.session() as s:
+        assert s.get(HighlightRequest, req).status == "FAILED"
+        job_id = s.scalar(select(Job.id).where(Job.job_type == "AI_HIGHLIGHTS"))
+    provider["p"] = Scripted()                              # the owner fixed the provider
+    with TestClient(create_app(settings)) as client:
+        assert client.post(f"/api/v1/jobs/{job_id}/retry").status_code == 200
+    drain(db, settings, max_jobs=40)
+    with db.session() as s:
+        r = s.get(HighlightRequest, req)
+        assert r.status == "COMPLETE" and r.error is None
+    assert provider["p"].calls                               # the retry really evaluated
+
+
+def test_codex_review_retry_leaves_requests_failed_for_other_reasons(db, settings):
+    from app.models import RequestStatus
+
+    with db.session() as s:
+        assert ai_highlights.reactivate_failed(s, "no-such-recording") is None
+    assert RequestStatus.FAILED.value == "FAILED"
