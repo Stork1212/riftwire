@@ -4,6 +4,7 @@ import { downloadClip, suggestClips, type ClipLayout, type ClipSuggestion } from
 import { formatDuration } from "../services/format";
 import type { Recording } from "../types/api";
 import { HighlightReview } from "./HighlightReview";
+import { TranscriptPanel } from "./TranscriptPanel";
 import { ClipListReview, timecode } from "./ClipListReview";
 import { ActionableError } from "./ActionableError";
 import { Panel } from "./ui";
@@ -55,13 +56,14 @@ export function RecordingClips({ recording }: { recording: Recording }) {
         <p>Link this recording to a <Link to="/sources">licensed source</Link> to analyze it.</p>
       ) : (
         <div className="stack">
-          <p>Local Whisper checks the first five minutes of speech and suggests up to three clips.</p>
+          <p>Suggestions read the first five minutes of the shared transcript and propose up to three clips.</p>
           <div className="toolbar">
             <button type="button" className="btn btn-primary" disabled={Boolean(busy)} onClick={analyze}>
               {busy === "analyze" ? "Analyzing…" : "Find clips"}
             </button>
             <Link to={`/sources/${recording.source_id}`}>View source and rights</Link>
           </div>
+          <TranscriptPanel recordingId={recording.id} disabled={Boolean(busy)} />
           <HighlightReview recordingId={recording.id} disabled={Boolean(busy)} onSelect={(candidate) => {
             setStart(timecode(candidate.start_ms));
             setEnd(timecode(candidate.end_ms));

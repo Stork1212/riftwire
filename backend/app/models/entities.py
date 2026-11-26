@@ -42,6 +42,10 @@ class JobType(enum.StrEnum):
     # ``recording_id`` is set when the recording exists.
     ACQUIRE = "ACQUIRE"
     HIGHLIGHT_SCAN = "HIGHLIGHT_SCAN"
+    # M4: the shared, persistent transcript of a recording (one per configuration).
+    TRANSCRIBE = "TRANSCRIBE"
+    AUDIO_SIGNALS = "AUDIO_SIGNALS"
+    VISUAL_SIGNALS = "VISUAL_SIGNALS"
 
 
 class JobStatus(enum.StrEnum):

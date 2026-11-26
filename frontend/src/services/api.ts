@@ -97,6 +97,50 @@ export function queueHighlightScan(id: string): Promise<Job> {
   return request(`/api/v1/recordings/${encodeURIComponent(id)}/highlight-scan`, { method: "POST" });
 }
 
+export interface TranscriptWord {
+  idx: number;
+  w: string;
+  start_ms: number;
+  end_ms: number;
+  prob: number | null;
+}
+
+export interface TranscriptJob {
+  id: string;
+  status: Job["status"];
+  progress_percent: number;
+  attempt_count: number;
+  max_attempts: number;
+  last_error: string | null;
+}
+
+export interface TranscriptState {
+  engine: { available: true; model_id: string; model_sha256: string; language: string;
+    chunk_ms: number; overlap_ms: number; merge_version: number } |
+    { available: false; reason: string };
+  job: TranscriptJob | null;
+  transcript: {
+    id: string;
+    status: "COMPLETE";
+    word_count: number;
+    duration_ms: number;
+    coverage_ms: number;
+    engine_version: string | null;
+    completed_at: string | null;
+    timestamps: "raw";
+  } | null;
+  words?: TranscriptWord[];
+}
+
+export function getTranscript(id: string, preview = false): Promise<TranscriptState> {
+  const q = preview ? "?words=true&start_ms=0&end_ms=60000" : "";
+  return request(`/api/v1/recordings/${encodeURIComponent(id)}/transcript${q}`);
+}
+
+export function requestTranscript(id: string): Promise<{ queued: boolean; job: TranscriptJob | null }> {
+  return request(`/api/v1/recordings/${encodeURIComponent(id)}/transcript`, { method: "POST" });
+}
+
 export interface ClipRange {
   line: number;
   label: string;

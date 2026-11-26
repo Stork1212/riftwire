@@ -84,7 +84,23 @@ def decode(samples: list[float]) -> list[dict]:
     return words
 
 
-def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int:
+def segment(words: list[dict], gap_ms: float = 600.0) -> list[dict]:
+    """Group words into segments at pauses longer than ``gap_ms`` (like Whisper's segments)
+    and tag each word with its segment index ``seg``."""
+    segments: list[dict] = []
+    for w in words:
+        if not segments or w["start_ms"] - segments[-1]["end_ms"] > gap_ms:
+            segments.append({"start_ms": w["start_ms"], "end_ms": w["end_ms"], "words": []})
+        seg = segments[-1]
+        seg["end_ms"] = w["end_ms"]
+        seg["words"].append(w["w"])
+        w["seg"] = len(segments) - 1
+    return [{"idx": i, "start_ms": s["start_ms"], "end_ms": s["end_ms"],
+             "text": " ".join(s["words"])} for i, s in enumerate(segments)]
+
+
+def main(model_dir: str, audio: str, out_json: str, language: str = "en",
+         options: str = "{}") -> int:
     log = os.environ.get("RIFTWIRE_STUB_WHISPER_LOG")
     fail_after = os.environ.get("RIFTWIRE_STUB_WHISPER_FAIL_AFTER")
     if fail_after is not None and not log:
@@ -96,7 +112,8 @@ def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int
             with open(log, encoding="utf-8") as f:
                 calls = sum(1 for _ in f)
         with open(log, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"model": model_dir, "audio": audio}) + "\n")
+            f.write(json.dumps({"model": model_dir, "audio": audio,
+                                "options": json.loads(options)}) + "\n")
     if fail_after is not None and calls == int(fail_after):
         if os.environ.get("RIFTWIRE_STUB_WHISPER_TRUNCATE"):
             with open(out_json, "w", encoding="utf-8") as f:
@@ -104,10 +121,12 @@ def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int
         print("stub whisper: simulated crash", file=sys.stderr)
         return 70
     words = decode(_pcm(audio))
+    segments = segment(words)
     tmp = out_json + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"words": words, "text": " ".join(w["w"] for w in words),
-                   "language": language, "engine": "stub-tone-decoder",
+        json.dump({"words": words, "segments": segments,
+                   "text": " ".join(w["w"] for w in words), "language": language,
+                   "engine": "stub-tone-decoder", "engine_version": "stub-tone-decoder 1",
                    "mlx_peak_bytes": None, "import_s": None, "load_s": None,
                    "transcribe_s": None, "mlx_version": None, "mlx_whisper_version": None,
                    "torch_installed": None}, f)
@@ -116,4 +135,4 @@ def main(model_dir: str, audio: str, out_json: str, language: str = "en") -> int
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(*sys.argv[1:5]))
+    raise SystemExit(main(*sys.argv[1:6]))

@@ -1,0 +1,86 @@
+{
+ "ok": true,
+ "data_dir": "/var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/riftwire-m4-native-ynzrpwlm",
+ "results": [
+  {
+   "check": "floor",
+   "ok": true,
+   "detail": "min free 60 GiB per volume"
+  },
+  {
+   "check": "transcript",
+   "ok": true,
+   "detail": "30 words, 2 chunks, 4.2 s, engine mlx-whisper 0.4.3"
+  },
+  {
+   "check": "model checksum",
+   "ok": true,
+   "detail": "fingerprinted facddc0e339e8842\u2026"
+  },
+  {
+   "check": "phrase@5s",
+   "ok": true,
+   "detail": "12/12 words recognised near 5 s: the police helicopter is right above us take the next exit now"
+  },
+  {
+   "check": "phrase@117.5s",
+   "ok": true,
+   "detail": "9/10 words recognised near 117.5 s: orange taxis crashed into the fountain at the harbor"
+  },
+  {
+   "check": "phrase@138s",
+   "ok": true,
+   "detail": "6/6 words recognised near 138 s: mission complete that was absolutely incredible"
+  },
+  {
+   "check": "boundary words once, in order",
+   "ok": true,
+   "detail": "boundary region: orange taxis crashed into the fountain at the harbor; duplicates none"
+  },
+  {
+   "check": "raw words immutable",
+   "ok": true,
+   "detail": "direct UPDATE refused by trigger"
+  },
+  {
+   "check": "scan reuses transcript",
+   "ok": true,
+   "detail": "scan COMPLETED, transcript 16462669-6a8e-4355-9ed1-d490ca50e90f, 5 candidates, transcripts=1"
+  },
+  {
+   "check": "captions reuse transcript",
+   "ok": true,
+   "detail": "Mission complete. That was absolutely incredible."
+  },
+  {
+   "check": "no second run",
+   "ok": true,
+   "detail": "request() is a no-op once complete"
+  },
+  {
+   "check": "audio onset@5s",
+   "ok": true,
+   "detail": "onsets near 5 s: [5100]"
+  },
+  {
+   "check": "audio onset@117.5s",
+   "ok": true,
+   "detail": "onsets near 117.5 s: [117600, 118100]"
+  },
+  {
+   "check": "audio onset@138s",
+   "ok": true,
+   "detail": "onsets near 138 s: [138100]"
+  },
+  {
+   "check": "visual signals",
+   "ok": true,
+   "detail": "4500 frames (ffprobe 4500), 1 scenes, 1 keyframes"
+  },
+  {
+   "check": "evidence window",
+   "ok": true,
+   "detail": "10 words, 8 events, unresolved none; fingerprint 0f050668b703785e"
+  }
+ ]
+}

@@ -1,0 +1,41 @@
+RIFTWIRE M4 native verification  started 2026-11-25T16:07:45Z
+evidence folder: /Users/gregstork/Claude/riftwire-env/m4-native-6476044-20261125T160745Z
+HEAD: 6476044a6ce3c10889e91d8de9c0f175f9d27cb3 (branch phase2/m4-transcription, PR #19)
+free space before: 120.44 GiB (floor 60 GiB)
+
+== test: scripts/test.sh
+   exit code 0  (171 s)  free now 120.39 GiB
+
+== acceptance: /Users/gregstork/Claude/riftwire/backend/.venv/bin/python scripts/acceptance.py --port 18931 --min-free-gib 60 --report /Users/gregstork/Claude/riftwire-env/m4-native-6476044-20261125T160745Z/acceptance.json
+   exit code 0  (29 s)  free now 120.39 GiB
+   29/29 steps passed
+
+== smoke: scripts/smoke_test.sh /Users/gregstork/Claude/riftwire-env/m4-native-6476044-20261125T160745Z/smoke-report.txt
+   exit code 0  (10 s)  free now 120.38 GiB
+   smoke instance stopped (port 18930 closed)
+
+== alembic checks (empty disposable database)
+   alembic exit 0 (heads=['0010 (head)'] version=0010 triggers=22 (transcript 8) fk_violations=0)
+
+== demo database migration (disposable copy)
+   demo copy migration exit 0 (details in demo-migration.txt)
+
+== M4 native: real MLX Whisper through the TRANSCRIBE job
+   PASS  floor: min free 60 GiB per volume
+   PASS  transcript: 34 words, 2 chunks, 4.3 s, engine mlx-whisper 0.4.3
+   PASS  model checksum: fingerprinted facddc0e339e8842…
+   PASS  phrase@5s: 12/12 words recognised near 5 s: the police helicopter is right above us take the next exit now
+   FAIL  phrase@117.5s: 5/10 words recognised near 117.5 s: the police fountain helicopter is right above us take the next exit now at the harbor
+   PASS  phrase@138s: 6/6 words recognised near 138 s: mission complete that was absolutely incredible
+   PASS  boundary words once, in order: boundary region: the police fountain helicopter is right above us take the next exit now at the harbor; duplicates none
+   PASS  raw words immutable: direct UPDATE refused by trigger
+   PASS  scan reuses transcript: scan COMPLETED, transcript 2032403a-0888-48c2-a2ec-cd1971e4ce09, 5 candidates, transcripts=1
+   PASS  captions reuse transcript: Mission complete that was absolutely incredible.
+   PASS  no second run: request() is a no-op once complete
+   RESULT FAIL (10/11)
+   m4_native exit 1
+
+working tree after: clean
+free space after: 120.37 GiB
+SOME CHECKS FAILED: test=0 acceptance=0 smoke=0 alembic=0 demo=0 native=1
+Evidence: /Users/gregstork/Claude/riftwire-env/m4-native-6476044-20261125T160745Z

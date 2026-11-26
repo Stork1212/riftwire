@@ -1,0 +1,33 @@
+RIFTWIRE acceptance · data dir /var/folders/mc/v8lx3l4d18xd651swf20t23h0000gn/T/riftwire-acceptance-7pz4_2zn/data · port 18931
+  PASS     1  Start the backend — API healthy
+  PASS     2  Start the worker — worker process running
+  PASS     3  Backend ready and worker reporting heartbeats — ready; ffmpeg: ffmpeg version 9.1; videotoolbox=True
+  PASS     4  Open the local dashboard (served by the API) — dashboard + 1 asset(s) served
+  PASS     5  Import a valid test video — HTTP 201, recording 01252a3b…, 8626082 bytes
+  PASS     6  Observe import + processing progress — upload streamed in 33 chunks; processing states observed: ['COMPLETED', 'PENDING']
+  PASS     7  Recording is stored — recordings/01252a3b-2936-451a-b2fe-17c6082d66ec.mp4 (SHA-256 verified, read-only)
+  PASS     8  Metadata extracted correctly (vs. independent ffprobe) — 1920x1080 @ 30000/1001, 12012 ms, h264/aac
+  PASS     9  Thumbnail generated — 480x270 JPEG (16:9 preserved)
+  PASS    10  Recording appears in the dashboard API — 1 recording(s) listed
+  PASS    11  Processing jobs reach COMPLETED — INGEST=COMPLETED, METADATA=COMPLETED, THUMBNAIL=COMPLETED
+  PASS    12  Restart the application and worker — API and worker restarted (SIGTERM → start)
+  PASS    13  Recordings and job history persist — recording + 3 completed jobs persisted
+  PASS  14-15  Import the same video again → duplicate detected — HTTP 409 — This recording was already imported as 'GTA synthetic heist.mp4'.
+  PASS  16-17  Import an invalid file → safe rejection, clear error — 422 — Invalid or unsupported media: ffprobe could not read the file: <input>…; .txt → 415
+  PASS    X1  Interrupted upload is cleaned up safely — client disconnected at 33% → partial file removed, event logged
+  PASS    X2  Interrupted processing job recovers (crash + orphan FFmpeg) — worker SIGKILLed mid-THUMBNAIL; orphan FFmpeg killed on restart; job completed on attempt 2; WEBM without audio handled
+  PASS    X3  Import refused when free space would drop below the floor — HTTP 507 — Not enough free disk space on the temp drive: this would leave less than the 931
+  PASS    X4  Structured logs written — api.log and worker.log are structured JSON
+  PASS    M1  Storage locations registered and verified — 5 locations online with identity markers; 1 volume(s)
+  PASS    M2  Offline location: writes refused, jobs wait, recovery on return — upload refused (503) with nothing written; INGEST waited with 0 attempts, then completed on attempt 1 after the drive returned
+  PASS    M3  Verified migration of the recordings location — dry run wrote nothing; refused while running; moved 3 file(s) byte-identical; originals kept; new imports land in the new location
+  PASS  M2-1  Configure catalog, creator and a standing licence — game, brand channel, creator with 2 channels, standing licence (v1, attested)
+  PASS  M2-2  Paste a URL: automatic match, rights shown, duplicates refused — creator matched from the link; covered by the licence; variant URL deduplicated
+  PASS  M2-3  Import under a standing licence: linked with provenance — 2 imports linked automatically under one standing licence (no new attestation); provenance chain creator → rights → source → recording
+  PASS  M2-4  Revocation: refused everywhere, housekeeping continues — revoked immediately: editing refused (reason: revoked), licensed import refused before any byte; public availability does not keep the link usable; plain imports (housekeeping) still work, unlinked
+  PASS  M2-5  A standing licence covers further sources automatically — one new licence covers the existing and a new source; no per-source attestation
+  PASS  M2-6  Supersession and immutable history — edit = new version (v2), old one superseded and powerless; direct database edits/deletes of attested rights and provenance refused (5/5)
+  PASS  M2-7  Public availability is not permission; standing permission fetches — public link without permission: saved, explained (no_rights_record), not fetched → creator permission + platform permission recorded → next link queued without a prompt → recording READY, url_fetch; editing refused (use_not_in_scope); stand-in downloader, no platform contacted
+
+29/29 steps passed
+report: /Users/gregstork/Claude/riftwire-env/m4-native-6fb3485-20261125T171207Z/acceptance.json

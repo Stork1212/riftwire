@@ -690,9 +690,9 @@ def test_clip_cut_checks_edit_rights_and_length(w, client, db, settings, media_d
     assert result.headers["content-type"] == "video/mp4"
     assert result.content[4:8] == b"ftyp"
 
-    monkeypatch.setattr(clips, "_transcribe", lambda *_: [
+    monkeypatch.setattr(clips, "_words", lambda *_: ([
         {"w": "Clutch!", "start_ms": 100, "end_ms": 800},
-    ])
+    ], None))
     result = client.post(path, params={**params, "subtitles": "true"})
     assert result.status_code == 200, result.text
     assert b"tx3g" in result.content
@@ -725,15 +725,15 @@ def test_queued_highlight_scan_persists_evidence_and_respects_revocation(
     with db.session() as s:
         acquisition.attach_media(s, settings, source_id, rec.id)
 
-    def analyze(path, duration_ms, **kwargs):
-        kwargs["checkpoint"](60)
+    def analyze(series, words, duration_ms):
+        assert series["motion_mafd"]                    # stored visual signals, not a decode
         return {"duration_ms": duration_ms, "coverage_ms": duration_ms,
                 "speech_available": True, "items": [
                     {"start_ms": 0, "end_ms": 1000, "peak_ms": 500, "score": 2,
                      "motion": 4, "speech_cues": ["reaction"], "excerpt": "No way"},
                 ]}
 
-    monkeypatch.setattr(highlight_scan, "scan_video", analyze)
+    monkeypatch.setattr(highlight_scan, "scan_signals", analyze)
     response = client.post(url)
     assert response.status_code == 200, response.text
     assert response.json()["job_type"] == "HIGHLIGHT_SCAN"
